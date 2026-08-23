@@ -220,6 +220,8 @@
     </div>
 </div>
 
+<%- include('./sidebar') %>
+
 <script>
 (function() {
     // ── Avatar upload ──
@@ -524,53 +526,5 @@
         return div.innerHTML;
     }
 
-    // ── Sidebar mobile toggle ──
-    const sidebarToggle = document.getElementById('sidebarToggle');
-    const sidebar = document.querySelector('.instructor-sidebar, .student-sidebar');
-    const sidebarNav = document.querySelector('.sidebar-nav');
-    const iconMenu = sidebarToggle?.querySelector('.icon-menu');
-    const iconClose = sidebarToggle?.querySelector('.icon-close');
-
-    if (sidebarToggle && sidebar && sidebarNav) {
-        function closeSidebar() {
-            sidebarNav.classList.remove('mobile-open');
-            if (iconMenu) iconMenu.style.display = '';
-            if (iconClose) iconClose.style.display = 'none';
-            sidebarToggle.setAttribute('aria-expanded', 'false');
-        }
-
-        function openSidebar() {
-            sidebarNav.classList.add('mobile-open');
-            if (iconMenu) iconMenu.style.display = 'none';
-            if (iconClose) iconClose.style.display = '';
-            sidebarToggle.setAttribute('aria-expanded', 'true');
-        }
-
-        sidebarToggle.addEventListener('click', function(e) {
-            e.stopPropagation();
-            const isOpen = sidebarNav.classList.contains('mobile-open');
-            isOpen ? closeSidebar() : openSidebar();
-        });
-
-        // Close sidebar when clicking nav items
-        document.querySelectorAll('.nav-item').forEach(item => {
-            item.addEventListener('click', closeSidebar);
-        });
-
-        // Close sidebar when clicking outside
-        document.addEventListener('click', function(e) {
-            const isOpen = sidebarNav.classList.contains('mobile-open');
-            if (isOpen && !sidebar.contains(e.target) && e.target !== sidebarToggle) {
-                closeSidebar();
-            }
-        });
-
-        // Close on Escape key
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape' && sidebarNav.classList.contains('mobile-open')) {
-                closeSidebar();
-            }
-        });
-    }
 })();
 </script>
