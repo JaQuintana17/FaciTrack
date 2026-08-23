@@ -485,6 +485,7 @@ function hideTooltip() {
             slotNotFound: 'That consultation slot no longer exists.',
             noRoomAvailable: 'There is no room available for your consultation',
             dateUnavailable: 'The instructor has marked this date as unavailable. Please choose another slot.',
+            instructorUnavailable: 'This instructor is currently unavailable for consultations. Please check back later.',
         };
         showToast('error', 'Unable to Book', messages[bookingError] || 'Something went wrong. Please try again.');
         window.history.replaceState({}, '', window.location.pathname);
