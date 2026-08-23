@@ -76,7 +76,8 @@ const RoomModel = {
                     room_type = ?, 
                     assigned_faculty = ?, 
                     is_ble_scanner_installed = ?, 
-                    status = ?
+                    status = ?,
+                    capacity = ?
                     WHERE id = ?`;
 
         const [result] = await pool.execute(query, [
@@ -86,6 +87,7 @@ const RoomModel = {
             data.assignedFaculty ?? null,
             data.bleStatus,
             data.status,
+            data.capacity,
             roomId
         ]);
 
