@@ -173,7 +173,7 @@ const AppointmentModel = {
             } catch (notifErr) {
                 console.error('[Notification] Failed to create (createAppointment):', notifErr);
             }
-            
+
             return { success: true, appointmentId: result.insertId, roomId };
         } catch (err) {
             await conn.rollback();
@@ -481,6 +481,30 @@ const AppointmentModel = {
         } finally {
             conn.release();
         }
+    },
+
+    async getAppointmentsNeedingReminder() {
+        const [rows] = await pool.execute(
+            `SELECT
+            a.id, a.student_id, a.instructor_id, a.reminder_sent,
+            ch.consultation_date, ch.start_time,
+            u.first_name AS instructor_first_name, u.last_name AS instructor_last_name
+         FROM appointments a
+         JOIN consultation_hours ch ON a.consultation_hour_id = ch.id
+         JOIN users u ON a.instructor_id = u.id
+         WHERE a.status = 'confirmed'
+           AND a.reminder_sent = 0
+           AND TIMESTAMP(ch.consultation_date, ch.start_time)
+               BETWEEN NOW() AND DATE_ADD(NOW(), INTERVAL 30 MINUTE)`
+        );
+        return rows;
+    },
+
+    async markReminderSent(appointmentId) {
+        await pool.execute(
+            `UPDATE appointments SET reminder_sent = 1 WHERE id = ?`,
+            [appointmentId]
+        );
     },
 };
 
