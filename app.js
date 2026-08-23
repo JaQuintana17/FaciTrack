@@ -8,6 +8,7 @@ const { authContext, requireRole } = require('./middleware/auth');
 const attachNotifications = require('./middleware/attachNotifications');
 const auditNavigation = require('./middleware/auditNavigation');
 const passport = require('./configs/passport');
+const startReminderJob = require('./jobs/reminder');
 
 // Initialize Express app
 const app = express();
@@ -58,6 +59,8 @@ app.use(passport.session());
 app.use(attachNotifications);
 // Middleware: audit navigations
 app.use(auditNavigation);
+
+startReminderJob();
 
 // Routes 
 // app.use('/', require('./routes/index'));
