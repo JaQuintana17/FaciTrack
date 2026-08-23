@@ -1,4 +1,5 @@
 const pool = require('../configs/db');
+const { pushToUser } = require('../realtime/sseRegistry');
 
 function formatRelativeTime(createdAt) {
     const now = Date.now();
@@ -16,11 +17,22 @@ function formatRelativeTime(createdAt) {
 
 const NotificationModel = {
     async create(userId, type, message, relatedAppointmentId = null) {
-        await pool.execute(
+        const [result] = await pool.execute(
             `INSERT INTO notifications (user_id, type, message, related_appointment_id)
              VALUES (?, ?, ?, ?)`,
             [userId, type, message, relatedAppointmentId]
         );
+
+        pushToUser(userId, 'notification:new', {
+            id: result.insertId,
+            type,
+            message,
+            relatedAppointmentId,
+            time: 'Just now',
+            read: false,
+        });
+
+        return result.insertId;
     },
 
     // For a public_id-based user (student/instructor session)
