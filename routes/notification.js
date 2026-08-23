@@ -10,5 +10,7 @@ router.delete('/read', NotificationController.clearRead);
 
 router.get('/more', NotificationController.loadMore);
 
+router.get('/stream', NotificationController.stream);
+
 
 module.exports = router;
