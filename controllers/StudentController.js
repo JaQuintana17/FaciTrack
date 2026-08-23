@@ -3,6 +3,7 @@ const UserModel = require('../models/UserModel');
 const AppointmentModel = require('../models/AppointmentModel');
 const ConsultationModel = require('../models/ConsultationModel');
 const SlotReservation = require('../models/SlotReservationModel');
+const AuditLogModel = require('../models/AuditLogModel');
 const { buildStudentUser } = require('../utils/sessionUser');
 const { to12Hour } = require('../utils/timeFormat');
 
@@ -331,6 +332,10 @@ const StudentController = {
             const slotDetails = await ConsultationModel.getSlotWithFaculty(slotId);
             if (!slotDetails) {
                 return res.redirect('/student/dashboard?bookingError=slotNotFound');
+            }
+
+            if (slotDetails.faculty.availability_status && slotDetails.faculty.availability_status !== 'available') {
+                return res.redirect(`/student/faculty/${slotDetails.faculty.id}?bookingError=instructorUnavailable`);
             }
 
             const result = await AppointmentModel.createAppointment({
