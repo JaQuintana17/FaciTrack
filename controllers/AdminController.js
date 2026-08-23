@@ -103,42 +103,98 @@ const AdminController = {
     async updateUser(req, res) {
         try {
             const { publicId } = req.params;
-            const { firstName, middleName, lastName, email, role, roomId, departmentId, status, employmentType, position } = req.body;
+
+            const {
+                firstName, middleName, lastName, email,
+                role, roomId, departmentId, status,
+                employmentType, position } = req.body;
 
             const errors = {};
-            if (!publicId) errors.id = `User's identifier is missing.`;
-            if (!firstName?.trim()) errors.firstName = 'First name is required.';
-            if (!lastName?.trim()) errors.lastName = 'Last name is required.';
-            if (!email?.trim()) errors.email = 'Email is required.';
-            if (!role?.trim()) errors.role = 'Role is required.';
-            if (!employmentType?.trim()) errors.employmentType = 'Employment type is required.';
-            if (!position?.trim()) errors.position = 'Position/Title is required.';
-            if (!roomId) errors.baseRoom = 'Base Room is required';
+            if (!publicId) {
+                errors.id = `User's identifier is missing.`;
+            }
+            if (!firstName?.trim()) {
+                errors.firstName = 'First name is required.';
+            }
+            if (!lastName?.trim()) {
+                errors.lastName = 'Last name is required.';
+            }
+            if (!email?.trim()) {
+                errors.email = 'Email is required.';
+            }
+            if (!role?.trim()) {
+                errors.role = 'Role is required.';
+            }
+            if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                errors.email = 'Invalid email format.';
+            }
+            if (role !== 'Student') {
+                if (!employmentType?.trim()) {
+                    errors.employmentType = 'Employment type is required.';
+                }
+
+                if (!position?.trim()) {
+                    errors.position = 'Position/Title is required.';
+                }
+
+                if (!roomId) {
+                    errors.baseRoom = 'Base Room is required.';
+                }
+
+                if (!departmentId) {
+                    errors.department = 'Department is required.';
+                }
+            }
 
             if (Object.keys(errors).length > 0) {
-                return res.status(422).json({ success: false, errors });
+                return res.status(422).json({
+                    success: false,
+                    errors
+                });
             }
 
             await UserModel.updateUser(publicId, {
-                firstName, middleName, lastName, email,
-                role, roomId, departmentId, status, employmentType, position
+                firstName,
+                middleName,
+                lastName,
+                email,
+                role,
+                roomId: role === 'Student' ? null : roomId,
+                departmentId: role === 'Student' ? null : departmentId,
+                status,
+                employmentType: role === 'Student' ? null : employmentType,
+                position: role === 'Student' ? null : position
             });
 
             try {
                 const user = await UserModel.getUserByPublicId(req.session.userId);
-                await AuditLogModel.log(user.internal_id, user.role, 'Updated user', 'users');
+                await AuditLogModel.log(
+                    user.internal_id,
+                    user.role,
+                    'Updated user',
+                    'users'
+                );
             } catch (logErr) {
                 console.error('[AuditLog] Failed to log users:', logErr);
             }
-
-            res.json({ success: true, message: `${firstName} ${lastName} updated successfully!` });
-
+            res.json({
+                success: true,
+                message: `${firstName} ${lastName} updated successfully!`
+            });
         } catch (err) {
             if (err.code === 'ER_DUP_ENTRY') {
-                return res.status(409).json({ success: false, errors: { email: 'Email already exists.' } });
+                return res.status(409).json({
+                    success: false,
+                    errors: {
+                        email: 'Email already exists.'
+                    }
+                });
             }
             console.error('[AdminController.updateUser]', err);
-            res.status(500).json({ success: false, error: 'Failed to update user.' });
+            res.status(500).json({
+                success: false,
+                error: 'Failed to update user.'
+            });
         }
     },
 
@@ -180,6 +236,7 @@ const AdminController = {
                         r.room_number, 
                         r.room_type, 
                         r.department_id,
+                        r.capacity,
                         d.full_name AS department_name, 
                         d.building AS building_name, 
                         CONCAT(u.last_name + ', ' + u.first_name) AS assigned_faculty_name, 
@@ -198,7 +255,7 @@ const AdminController = {
 
     async createRoom(req, res) {
         try {
-            const { roomNumber, department, roomType, bleStatus, assignedFaculty, status } = req.body;
+            const { roomNumber, department, roomType, bleStatus, assignedFaculty, status, capacity } = req.body;
 
             const errors = {};
 
@@ -211,11 +268,6 @@ const AdminController = {
             // return early if at least one error is present
             if (Object.keys(errors).length > 0) {
                 return res.status(422).json({ success: false, errors })
-            }
-
-            let capacity = null;
-            if (roomType === 'Consultation Room') {
-                capacity = 5;
             }
 
             // await for the room model to finish inserting new room
@@ -252,7 +304,7 @@ const AdminController = {
     async updateRoom(req, res) {
         try {
             const { roomId } = req.params;
-            const { roomNumber, department, roomType, bleStatus, assignedFaculty, status } = req.body;
+            const { roomNumber, department, roomType, bleStatus, assignedFaculty, status, capacity } = req.body;
 
             const errors = {};
 
@@ -273,7 +325,8 @@ const AdminController = {
                 roomType,
                 bleStatus,
                 assignedFaculty: assignedFaculty || null,
-                status
+                status,
+                capacity
             });
 
             try {
@@ -291,7 +344,7 @@ const AdminController = {
             console.error(`[AdminController.updateRoom] ${err}`);
             res.status(500).json({
                 success: false,
-                error: 'Failed to create room.'
+                error: 'Failed to update room.'
             });
         }
     },
@@ -329,8 +382,8 @@ const AdminController = {
 
             const auditLogs = await AuditLogModel.getAll();
 
-            res.render('pages/admin/reports', { 
-                title: 'FaciTrack - Reports', 
+            res.render('pages/admin/reports', {
+                title: 'FaciTrack - Reports',
                 admin,
                 logs: auditLogs,
             });
