@@ -261,7 +261,7 @@
                 </div>
             </div>
             <div class="form-row" id="positionDeptRow">
-                <div class="form-field">
+                <div class="form-field" id="positionField">
                     <label id="positionLabel">Position / Title<span style="color:#e53e3e;">*</span></label>
                     <input type="text" id="userPosition" placeholder="Instructor I">
                 </div>
@@ -275,12 +275,12 @@
                     </select>
                 </div>
             </div>
-            <div class="form-row">
-                <div class="form-field">
+            <div class="form-row" id="passRoom">
+                <div class="form-field" id="passwordField">
                     <label>Temporary Password <span style="color:#e53e3e;" id="pwdRequired">*</span></label>
                     <input type="password" id="userPassword" placeholder="Minimum of 8 characters">
                 </div>
-                <div class="form-field">
+                <div class="form-field" id="roomField">
                     <label>Base Room/Office</label>
                     <select id="userRoom">
                         <option value="">Select base room/office...</option>
@@ -297,7 +297,7 @@
                 </div>
             </div>
             <div class="form-row">
-                <div class="form-field">
+                <div class="form-field" id="employmentField">
                     <label>Employment Type <span style="color:#e53e3e;">*</span></label>
                     <select id="userEmploymentType">
                         <option value="Job Order">Job Order</option>
@@ -405,6 +405,15 @@ function updateRoleUI(role) {
         posRow.style.display = '';
     }
 }
+function updateStudentFields(role, isEditing = false) {
+    const isStudentEdit = isEditing && role === 'Student';
+    document.getElementById('positionDeptRow').style.display =
+        isStudentEdit ? 'none' : '';
+    document.getElementById('passRoom').style.display =
+        isStudentEdit ? 'none' : '';
+    document.getElementById('employmentField').style.display =
+        isStudentEdit ? 'none' : '';
+}
 
 function renderPage() {
     const rows = getVisibleRows();
@@ -455,6 +464,8 @@ function openAddUserModal() {
     document.getElementById('pwdRequired').style.display = '';
     document.querySelectorAll('.role-tab').forEach((t,i) => t.classList.toggle('active', i === 0));
 
+    updateStudentFields('Instructor', false);
+
     ['userFirstName', 'userMiddleName', 'userLastName', 'userEmail', 'userPosition', 'userPassword']
         .forEach(id => document.getElementById(id).value = '');
 
@@ -490,6 +501,7 @@ function openEditUserModal(index, publicId, firstName, middleName, lastName, ema
     document.getElementById('userPosition').value = position;
     document.getElementById('userPassword').value   = '';
     updateRoleUI(role);
+    updateStudentFields(role, true);
     document.getElementById('userModal').classList.add('show');
 }
 
@@ -524,11 +536,28 @@ async function saveUser() {
     if (!firstName) { showToast('error', 'Required', 'Full name is required.'); return; }
     if (!lastName) { showToast('error', 'Required', 'Last name is required.'); return; }
     if (!email) { showToast('error', 'Required', 'Email address is required.'); return; }
-    if (!empType) { showToast('error', 'Required', 'Employee Type is required.'); return; }
-    if (!position) { showToast('error', 'Required', 'Position/Title is required.'); return; }
-    if (!dept) { showToast('error', 'Required', 'Department is required.'); return; }
-    if (!room) { showToast('error', 'Required', 'Base room is required.'); return; }
-    if (!isEditing && !password) { showToast('error', 'Required', 'Password is required.'); return; }
+    if (!isEditing || role !== 'Student') {
+        if (!empType) {
+            showToast('error', 'Required', 'Employee Type is required.');
+            return;
+        }
+        if (!position) {
+            showToast('error', 'Required', 'Position/Title is required.');
+            return;
+        }
+        if (!dept) {
+            showToast('error', 'Required', 'Department is required.');
+            return;
+        }
+        if (!room) {
+            showToast('error', 'Required', 'Base room is required.');
+            return;
+        }
+    }
+    if (!isEditing && !password) {
+        showToast('error', 'Required', 'Password is required.');
+        return;
+    }
 
     const payload   = { firstName, middleName, lastName, email, role, roomId: room, departmentId: dept, status, employmentType: empType, position, password };
     
@@ -606,9 +635,13 @@ async function confirmDeleteUser() {
 
         // Remove row from DOM
         document.querySelector(`[data-publicid="${deletingPublicId}"]`)?.closest('tr').remove();
-
+        
         deletingPublicId = null;
         
+        // Reload the table to reflect changes
+        setTimeout(() => {
+            window.location.reload();
+        }, 1500);
     } catch (err) {
         console.error('[confirmDeleteUser]', err);
         showToast('error', 'Error', 'Could not reach the server.');
