@@ -67,7 +67,7 @@ app.use('/student', requireRole('Student'), require('./routes/student'));
 app.use('/instructor', requireRole('Instructor'), require('./routes/instructor'));
 app.use('/export', require('./routes/export'));
 app.use('/dean', require('./routes/dean'));
-app.use('/admin', require('./routes/admin'));
+app.use('/admin', requireRole('Admin'), require('./routes/admin'));
 app.use('/superadmin', require('./routes/superadmin'));
 // Error handling middleware
 app.use((err, req, res, next) => {
