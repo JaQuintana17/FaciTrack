@@ -1,9 +1,10 @@
 const pool = require('../configs/db');
 const ConsultationModel = require('../models/ConsultationModel');
 const AppointmentModel = require('../models/AppointmentModel');
+const UserModel = require('../models/UserModel');
+const AuditLogModel = require('../models/AuditLogModel');
 const { to12Hour } = require('../utils/timeFormat');
 const { buildInstructorUser } = require('../utils/sessionUser');
-const UserModel = require('../models/UserModel');
 
 function computeDuration(startTime, endTime) {
     const [sh, sm] = startTime.split(':').map(Number);
