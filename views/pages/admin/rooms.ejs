@@ -110,6 +110,7 @@
                             <tr data-roomid="<%= room.id %>"
                                 data-dept="<%= room.department_name %>" 
                                 data-type="<%= room.room_type %>" 
+                                data-fieldcapacity="<%= room.capacity || '' %>"
                                 data-assigned="<%= room.assigned_faculty_name ? 'assigned' : 'unassigned' %>"
                                 data-name="<%= room.room_number.toLowerCase() %> <%= room.building_name.toLowerCase() %>">
                                 <td style="color:var(--gray-400);font-size:0.8125rem;"><%= i + 1 %></td>
@@ -144,6 +145,7 @@
                                             data-roomnumber="<%= room.room_number %>" 
                                             data-department="<%= room.department_id %>"
                                             data-roomtype="<%= room.room_type %>"
+                                            data-fieldcapacity="<%= room.capacity || '' %>"
                                             data-assignedfaculty="<%= room.assigned_faculty_name %>"
                                             data-bleScanner="<%= room.is_ble_scanner_installed ? 'true' : 'false' %>"
                                             data-status="<%= room.status%>">
@@ -208,6 +210,17 @@
                 <div class="form-field">
                     <label>Assigned Faculty</label>
                     <input type="text" id="roomFaculty" placeholder="Enter faculty name">
+                </div>
+            </div>
+            <div class="form-row" id="fieldCapacityContainer" style="display:none;">
+                <div class="form-field">
+                    <label>Field Capacity <span style="color:#e53e3e;">*</span></label>
+                    <input 
+                        type="number" 
+                        id="fieldCapacity" 
+                        min="1" 
+                        placeholder="Enter capacity"
+                    >
                 </div>
             </div>
             <div class="form-row">
@@ -307,7 +320,7 @@ function renderPage() {
     document.getElementById('roomCount').textContent = total;
 }
 
-function openEditRoom(index, roomNumber, departmentId, roomType, assignedFaculty, bleScanner, status) {
+function openEditRoom(index, roomNumber, departmentId, roomType, assignedFaculty, bleScanner, status ,fieldCapacity) {
     editingRoomIndex = index;
     document.getElementById('roomModalTitle').textContent = 'Edit Room';
     document.getElementById('roomNumber').value = roomNumber;
@@ -316,8 +329,11 @@ function openEditRoom(index, roomNumber, departmentId, roomType, assignedFaculty
     document.getElementById('roomType').value = roomType;
     document.getElementById('roomFaculty').value = assignedFaculty || '';
     document.getElementById('roomBle').value = bleScanner;
+    document.getElementById('fieldCapacity').value = fieldCapacity || '';
     document.getElementById('roomStatus').value = status.charAt(0).toUpperCase() + status.slice(1);
     document.getElementById('roomModal').classList.add('show');
+
+    toggleFieldCapacity();
 }
 
 function closeRoomModal() {
@@ -350,7 +366,25 @@ async function saveRoom() {
 
     const isEditing = editingRoomIndex !== null;
 
-    const payload = { roomNumber, department, roomType, bleStatus, assignedFaculty, status };
+    const capacity = roomType === 'Consultation Room'
+        ? parseInt(document.getElementById('fieldCapacity').value, 10)
+        : null;
+
+    if (roomType === 'Consultation Room' && (!capacity || capacity < 1)) {
+        showToast('error', 'Required', 'Field capacity is required for consultation rooms.');
+        return;
+    }
+
+    const payload = {
+        roomNumber,
+        department,
+        roomType,
+        capacity,
+        bleStatus,
+        assignedFaculty,
+        status,
+        capacity
+    };
 
     try {
         let res, data;
@@ -391,6 +425,21 @@ async function saveRoom() {
     }
 }
 
+const roomTypeSelect = document.getElementById('roomType');
+const fieldCapacityContainer = document.getElementById('fieldCapacityContainer');
+const fieldCapacityInput = document.getElementById('fieldCapacity');
+
+function toggleFieldCapacity() {
+    const isConsultationRoom = roomTypeSelect.value === 'Consultation Room';
+
+    fieldCapacityContainer.style.display = isConsultationRoom ? 'grid' : 'none';
+
+    if (!isConsultationRoom) {
+        fieldCapacityInput.value = '';
+    }
+}
+
+roomTypeSelect.addEventListener('change', toggleFieldCapacity);
 
 // Delete Room
 function openDeleteRoom(id, roomNum, building) {
@@ -459,7 +508,8 @@ document.addEventListener('click', e => {
         d.roomtype,
         d.assignedfaculty,
         d.blescanner,
-        d.status
+        d.status,
+        d.fieldcapacity
     );
 });
 document.getElementById('btnPrev').addEventListener('click', () => { currentPage--; renderPage(); });
