@@ -70,7 +70,7 @@ const ConsultationModel = {
             a.id AS appointment_id,
             u.id AS instructor_id, u.public_id AS faculty_id,
             u.first_name, u.last_name, u.middle_name,
-            u.position, u.email, u.department_id,
+            u.position, u.email, u.department_id, u.availability_status,
             d.full_name AS department_name,
             iu.id AS unavail_id
          FROM consultation_hours ch
@@ -102,6 +102,7 @@ const ConsultationModel = {
                 middle_name: row.middle_name,
                 position: row.position,
                 department_name: row.department_name,
+                availability_status: row.availability_status
             },
         };
     },
