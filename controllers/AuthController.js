@@ -90,7 +90,7 @@ const AuthController = {
 
         } catch (err) {
             console.error('[AuthController.login]', err);
-            res.render('pages/index', {
+            res.render('pages/login', {
                 title: 'FaciTrack - Faculty Appointment & Monitoring System',
                 error: 'Something went wrong. Please try again.',
             });
