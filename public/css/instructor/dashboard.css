@@ -1003,6 +1003,7 @@
     align-items: center;
     justify-content: center;
     opacity: 0;
+    z-index: 1000;
     visibility: hidden;
     transition: all 0.3s ease;
     padding: 1rem;
@@ -1151,11 +1152,14 @@
     right: 1.5rem;
     display: flex;
     flex-direction: column;
+    
     gap: 0.75rem;
     max-width: 400px;
+    pointer-events: none;
 }
 
 .toast {
+    pointer-events: auto;
     background: white;
     border: 1px solid var(--gray-200);
     border-radius: var(--radius-md);
