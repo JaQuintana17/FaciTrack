@@ -18,8 +18,8 @@ function safeBaseFilename(title) {
   return base || 'report';
 }
 
-// PROTOTYPE MODE: Disabled role check to allow free navigation
-// router.use(requireRole('admin', 'dean', 'instructor', 'superadmin'));
+// Role names must match the capitalized values stored in req.session.role
+router.use(requireRole('Admin', 'Dean', 'Instructor'));
 
 router.post('/:format', async (req, res, next) => {
   try {

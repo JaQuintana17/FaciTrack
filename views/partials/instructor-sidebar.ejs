@@ -351,17 +351,28 @@
                     body.innerHTML = '<div class="notif-panel-empty"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><p>No notifications yet</p></div>';
                 }
             }
+
+            // Only read rows are deleted, so the unread total is unchanged —
+            // but resync the bell and subtitle against what is actually left.
+            unreadCount = document.querySelectorAll('.notif-panel-item.unread').length;
+            updateBadge();
+            updateSubtitle();
         });
-        updateBadge();
     }
 
-    // redirect to appointment when a notification is clicked
+    // Open whatever the notification is about when it is clicked
+    function notifTarget(item) {
+        if (item.dataset.type === 'makeup') return '/instructor/makeup/requests';
+        const aptId = item.dataset.aptId;
+        return aptId ? `/instructor/appointments?openApt=${encodeURIComponent(aptId)}` : null;
+    }
+
     if (body) {
         body.addEventListener('click', async function(e) {
         const item = e.target.closest('.notif-panel-item');
         if (!item) return;
 
-        const aptId = item.dataset.aptId;
+        const target = notifTarget(item);
         const notifId = item.dataset.id;
         const wasUnread = item.classList.contains('unread');
 
@@ -374,14 +385,10 @@
                 updateBadge();
                 updateSubtitle();
             }
-            if (aptId) {
-                window.location.href = `/instructor/appointments?openApt=${encodeURIComponent(aptId)}`;
-            }
+            if (target) window.location.href = target;
         } catch (error) {
             console.error('Error marking notification as read:', error);
-            if (aptId) {
-                window.location.href = `/instructor/appointments?openApt=${encodeURIComponent(aptId)}`;
-            }
+            if (target) window.location.href = target;
         }
     });
         

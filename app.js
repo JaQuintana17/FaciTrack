@@ -27,7 +27,6 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Middleware: Parse JSON bodies
 app.use(express.json({ limit: '10mb' }));
-app.use(authContext);
 
 // Security: Basic headers
 app.use((req, res, next) => {
@@ -55,6 +54,10 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
+// Legacy cookie-session context — must run after session() so req.session exists.
+// TODO (Phase 1): remove along with the JSON-file auth stack.
+app.use(authContext);
+
 // Middleware: notifications
 app.use(attachNotifications);
 // Middleware: audit navigations
@@ -69,9 +72,21 @@ app.use('/notifications', require('./routes/notification'));
 app.use('/student', requireRole('Student'), require('./routes/student'));
 app.use('/instructor', requireRole('Instructor'), require('./routes/instructor'));
 app.use('/export', require('./routes/export'));
-app.use('/dean', require('./routes/dean'));
+app.use('/dean', requireRole('Dean'), require('./routes/dean'));
 app.use('/admin', requireRole('Admin'), require('./routes/admin'));
 app.use('/superadmin', require('./routes/superadmin'));
+// 404: nothing above matched. Answer fetch/XHR callers with JSON, browsers with the page.
+app.use((req, res) => {
+    if (req.accepts('html')) {
+        return res.status(404).render('pages/404', {
+            title: 'FaciTrack - Page Not Found',
+            role: req.session?.role || null,
+            requestedPath: req.originalUrl,
+        });
+    }
+    res.status(404).json({ status: 'error', message: 'Not found' });
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
     console.error(`[Error Log]: ${err.message}`);

@@ -1,0 +1,152 @@
+<%- include('../partials/header', { showNotifications: false }) %>
+
+<style>
+  .error-page {
+    min-height: calc(100vh - 220px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1rem;
+  }
+
+  .error-card {
+    max-width: 480px;
+    width: 100%;
+    text-align: center;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 2.5rem 2rem;
+    box-shadow: 0 4px 16px rgba(10, 61, 98, 0.08);
+  }
+
+  .error-icon {
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: #eff6ff;
+    color: #0A3D62;
+  }
+
+  .error-code {
+    font-family: 'Poppins', sans-serif;
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: #0A3D62;
+    line-height: 1;
+    margin-bottom: 0.5rem;
+  }
+
+  .error-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #1f2937;
+    margin-bottom: 0.5rem;
+  }
+
+  .error-message {
+    font-size: 0.9375rem;
+    color: #6b7280;
+    line-height: 1.6;
+    margin-bottom: 1.75rem;
+  }
+
+  .error-path {
+    display: block;
+    font-family: monospace;
+    font-size: 0.8125rem;
+    color: #9ca3af;
+    background: #f9fafb;
+    border: 1px solid #f3f4f6;
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    margin-top: 0.75rem;
+    word-break: break-all;
+  }
+
+  .error-actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .error-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    border-radius: 8px;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: opacity 0.15s ease;
+    cursor: pointer;
+    font-family: inherit;
+    border: none;
+  }
+
+  .error-btn:hover { opacity: 0.85; }
+
+  .error-btn-primary {
+    background: #0A3D62;
+    color: #fff;
+  }
+
+  .error-btn-secondary {
+    background: #f3f4f6;
+    color: #374151;
+    border: 1px solid #e5e7eb;
+  }
+</style>
+
+<main class="error-page">
+  <div class="error-card">
+    <div class="error-icon">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        <line x1="11" y1="8" x2="11" y2="12"/>
+        <line x1="11" y1="15" x2="11.01" y2="15"/>
+      </svg>
+    </div>
+
+    <div class="error-code">404</div>
+    <h1 class="error-title">Page Not Found</h1>
+    <p class="error-message">
+      The page you are looking for doesn't exist or may have been moved.
+      <% if (typeof requestedPath !== 'undefined' && requestedPath) { %>
+        <span class="error-path"><%= requestedPath %></span>
+      <% } %>
+    </p>
+
+    <div class="error-actions">
+      <%# Send the user back to their own dashboard when we know their role %>
+      <% const dashboards = {
+           Student: '/student/dashboard',
+           Instructor: '/instructor/dashboard',
+           Dean: '/dean/dashboard',
+           Admin: '/admin/dashboard'
+         };
+         const homeUrl = dashboards[typeof role !== 'undefined' ? role : null] || '/'; %>
+
+      <a href="<%= homeUrl %>" class="error-btn error-btn-primary">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+          <polyline points="9 22 9 12 15 12 15 22"/>
+        </svg>
+        <%= (typeof role !== 'undefined' && role) ? 'Back to Dashboard' : 'Back to Home' %>
+      </a>
+
+      <button type="button" class="error-btn error-btn-secondary" onclick="history.back()">Go Back</button>
+    </div>
+  </div>
+</main>
+
+<%- include('../partials/footer') %>

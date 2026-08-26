@@ -6,6 +6,18 @@ const SlotReservation = require('../models/SlotReservationModel');
 const AuditLogModel = require('../models/AuditLogModel');
 const { buildStudentUser } = require('../utils/sessionUser');
 const { to12Hour } = require('../utils/timeFormat');
+const { isWithinLeadTime, BOOKING_LEAD_TIME_HOURS } = require('../services/scheduling');
+
+/**
+ * A non-available availability_status is a "right now" signal, so it only bars
+ * slots on TODAY. Planned multi-day absence lives in instructor_unavailability.
+ */
+function statusBlocksSlot(availabilityStatus, slotDate) {
+    if (!availabilityStatus || availabilityStatus === 'available') return false;
+    const today = new Date();
+    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    return String(slotDate).slice(0, 10) === todayKey;
+}
 
 function getTwoWeekWindow() {
     const today = new Date();
@@ -87,7 +99,7 @@ const StudentController = {
             const formattedFaculties = await Promise.all(faculties.map(async f => {
                 const grouped = await ConsultationModel.getSlotsByInstructorGrouped(f.instructor_id);
 
-                const consultationSlots = grouped
+            const consultationSlots = grouped
                     .filter(g => g.date >= startKey && g.date <= endKey)
                     .map(g => ({
                         day: g.day,
@@ -143,6 +155,9 @@ const StudentController = {
                 activeReservations.filter(r => r.student_id !== studentId).map(r => r.slot_id)
             );
 
+            // Online is only offerable once the instructor has saved a meeting link
+            const canDoOnline = !!faculty.default_meeting_link;
+
             const consultationSlots = grouped
                 .filter(g => g.date >= startKey && g.date <= endKey)
                 .map(g => ({
@@ -155,6 +170,9 @@ const StudentController = {
                         isBooked: sub.isBooked,
                         isReservedByOther: reservedByOther.has(sub.id),
                         status: sub.status,
+                        // A slot is only truly bookable if at least one mode works
+                        roomAvailable: sub.roomAvailable !== false,
+                        onlineAvailable: canDoOnline,
                     })),
                 }));
 
@@ -171,6 +189,8 @@ const StudentController = {
                 unavailableDates: unavailability.map(u => u.date),
                 windowStart: windowStart.toISOString(),
                 windowEnd: windowEnd.toISOString(),
+                leadTimeHours: BOOKING_LEAD_TIME_HOURS,
+                canDoOnline,
             });
         } catch (err) {
             console.error('[StudentController.renderFacultyConsultationPage]', err);
@@ -194,6 +214,19 @@ const StudentController = {
                 return res.redirect(`/student/faculty/${slotDetails.faculty.id}?bookingError=slotNotFound`);
             }
 
+            // No room free and no meeting link — there is no way to hold this consultation
+            if (!slotDetails.roomAvailable && !slotDetails.faculty.default_meeting_link) {
+                return res.redirect(`/student/faculty/${slotDetails.faculty.id}?bookingError=noModeAvailable`);
+            }
+
+            if (statusBlocksSlot(slotDetails.faculty.availability_status, slotDetails.date)) {
+                return res.redirect(`/student/faculty/${slotDetails.faculty.id}?bookingError=instructorUnavailable`);
+            }
+
+            if (isWithinLeadTime(slotDetails.date, slotDetails.rawStartTime)) {
+                return res.redirect(`/student/faculty/${slotDetails.faculty.id}?bookingError=tooSoon`);
+            }
+
             if (slotDetails.isBooked) {
                 return res.redirect(`/student/faculty/${slotDetails.faculty.id}?bookingError=slotTaken`);
             }
@@ -210,6 +243,9 @@ const StudentController = {
             const appointmentCount = await AppointmentModel.getStudentCount(user.internal_id);
 
             res.render('pages/student/book', {
+                // Disable modes the instructor cannot actually honour
+                roomAvailable: slotDetails.roomAvailable,
+                canDoOnline: !!slotDetails.faculty.default_meeting_link,
                 title: 'FaciTrack - Book Appointment',
                 student,
                 faculty: slotDetails.faculty,
@@ -284,6 +320,26 @@ const StudentController = {
 
     async createSlotReservation(req, res) {
         try {
+            const slotId = parseInt(req.params.slotId, 10);
+
+            // Do not let a student hold a slot they can no longer book
+            const slot = await ConsultationModel.getSlotWithFaculty(slotId);
+            if (slot && statusBlocksSlot(slot.faculty.availability_status, slot.date)) {
+                return res.status(409).json({
+                    success: false,
+                    reason: 'INSTRUCTOR_UNAVAILABLE',
+                    error: 'The instructor is unavailable right now. Please pick a later date.',
+                });
+            }
+
+            if (slot && isWithinLeadTime(slot.date, slot.rawStartTime)) {
+                return res.status(409).json({
+                    success: false,
+                    reason: 'TOO_SOON',
+                    error: `Slots starting within ${BOOKING_LEAD_TIME_HOURS} hours can no longer be booked.`,
+                });
+            }
+
             const result = await SlotReservation.reserveSlot(
                 parseInt(req.params.slotId, 10),
                 req.session.userId
@@ -334,8 +390,19 @@ const StudentController = {
                 return res.redirect('/student/dashboard?bookingError=slotNotFound');
             }
 
-            if (slotDetails.faculty.availability_status && slotDetails.faculty.availability_status !== 'available') {
+            // The slot list already filters these out, but a stale page or a direct
+            // POST could still target a slot that is now inside the lead-time window.
+            if (isWithinLeadTime(slotDetails.date, slotDetails.rawStartTime)) {
+                return res.redirect(`/student/faculty/${slotDetails.faculty.id}?bookingError=tooSoon`);
+            }
+
+            if (statusBlocksSlot(slotDetails.faculty.availability_status, slotDetails.date)) {
                 return res.redirect(`/student/faculty/${slotDetails.faculty.id}?bookingError=instructorUnavailable`);
+            }
+
+            // The form disables this, but a stale page could still submit it
+            if (consultType === 'Online' && !slotDetails.faculty.default_meeting_link) {
+                return res.redirect(`/student/faculty/${slotDetails.faculty.id}?bookingError=noMeetingLink`);
             }
 
             const result = await AppointmentModel.createAppointment({
@@ -414,15 +481,16 @@ const StudentController = {
             const slotId = await AppointmentModel.getConsultationHourId(appointmentId);
 
             try {
-                await ConsultationModel.updateStatusById(slotId, 'Booked');
+                // Cancelling frees the slot — it must go back to Available,
+                // otherwise it stays 'Booked' and nobody else can take it.
+                await ConsultationModel.updateStatusById(slotId, 'Available');
             } catch (error) {
-                console.error('Error cancelling slot:', error);
-                res.redirect('back');
+                console.error('Error releasing slot:', error);
             }
 
             try {
-                const instructor = await UserModel.getUserByPublicId(req.session.userId);
-                await AuditLogModel.log(instructor.internal_id, instructor.role, 'Cancelled appointment', 'appointment');
+                const student = await UserModel.getUserByPublicId(req.session.userId);
+                await AuditLogModel.log(student.internal_id, student.role, 'Cancelled appointment', 'appointment');
             } catch (err) {
                 console.error('[AuditLog] Failed to log appointment:', err);
             }
@@ -440,6 +508,13 @@ const StudentController = {
             const { facultyId } = req.body;
 
             await ConsultationModel.updateStatusById(slotId, 'Available');
+
+            try {
+                const student = await UserModel.getUserByPublicId(req.session.userId);
+                await AuditLogModel.log(student.internal_id, student.role, 'Released consultation slot', 'consultation slot');
+            } catch (err) {
+                console.error('[AuditLog] Failed to log slot release:', err);
+            }
 
             res.redirect('/student/faculty/' + facultyId);
         } catch (error) {

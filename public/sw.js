@@ -1,4 +1,5 @@
-const CACHE_NAME = 'facitrack-v3';
+// Bump this whenever sw.js changes so the activate handler clears stale caches.
+const CACHE_NAME = 'facitrack-v4';
 
 // Assets to pre-cache on install
 const PRECACHE_ASSETS = [
@@ -97,4 +98,47 @@ self.addEventListener('fetch', (event) => {
         );
         return;
     }
+});
+
+// ── Web Push: show a device notification ──
+// Fires even when FaciTrack is closed — the browser wakes the service worker.
+self.addEventListener('push', (event) => {
+    let data = {};
+    try {
+        data = event.data ? event.data.json() : {};
+    } catch (_) {
+        data = { title: 'FaciTrack', body: event.data ? event.data.text() : '' };
+    }
+
+    event.waitUntil(
+        self.registration.showNotification(data.title || 'FaciTrack', {
+            body: data.body || '',
+            icon: '/images/FaciTrack-logo.png',
+            badge: '/images/FaciTrack-logo.png',
+            // Same tag replaces an older notification for the same appointment
+            // rather than stacking duplicates.
+            tag: data.tag || 'facitrack',
+            renotify: true,
+            data: { url: data.url || '/' }
+        })
+    );
+});
+
+// ── Tapping the notification opens (or focuses) the right page ──
+self.addEventListener('notificationclick', (event) => {
+    event.notification.close();
+    const target = (event.notification.data && event.notification.data.url) || '/';
+
+    event.waitUntil(
+        clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+            // Reuse an already-open FaciTrack tab instead of opening another one
+            for (const client of windowClients) {
+                if (client.url.includes(self.location.origin) && 'focus' in client) {
+                    client.navigate(target);
+                    return client.focus();
+                }
+            }
+            if (clients.openWindow) return clients.openWindow(target);
+        })
+    );
 });

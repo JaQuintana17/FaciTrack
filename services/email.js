@@ -6,6 +6,7 @@
  */
 
 const nodemailer = require('nodemailer');
+const { deepLink } = require('../utils/deepLink');
 
 // ── Transport ──
 // When EMAIL_ENABLED=true and SMTP credentials are set, sends real emails.
@@ -131,8 +132,106 @@ async function sendRescheduleNotification({ studentEmail, studentName, refNumber
     });
 }
 
+/**
+ * Administrator login verification code
+ */
+async function sendOtpCode({ email, name, code, expiresInMinutes }) {
+    return sendEmail({
+        to: email,
+        subject: 'FaciTrack – Your Administrator Verification Code',
+        text: `Hi ${name},\n\nYour FaciTrack verification code is: ${code}\n\nIt expires in ${expiresInMinutes} minutes.\n\nIf you did not try to sign in, someone may have your password — change it immediately.\n\n– FaciTrack, CSPC`,
+        html: `<p>Hi <strong>${name}</strong>,</p>
+               <p>Your FaciTrack verification code is:</p>
+               <p style="font-family:monospace;font-size:2rem;letter-spacing:0.5rem;color:#0a3d62;margin:1rem 0;"><strong>${code}</strong></p>
+               <p>It expires in <strong>${expiresInMinutes} minutes</strong>.</p>
+               <p style="color:#6b7280;font-size:0.875rem;">If you did not try to sign in, someone may have your password — change it immediately.</p>
+               <p>– FaciTrack, CSPC</p>`
+    });
+}
+
+// ── Appointment status update ──
+
+const BASE_URL = process.env.APP_BASE_URL || 'http://localhost:3000';
+
+/**
+ * Absolute link back into the app for this notification.
+ * The path comes from the shared helper so email cannot drift from the bell
+ * and push again — a make-up decision must not link to the appointments page.
+ */
+function appointmentLink(appointmentId, role, type) {
+    const path = deepLink(appointmentId, role, type);
+    return path ? `${BASE_URL.replace(/\/$/, '')}${path}` : null;
+}
+
+// Accent colour per status, so the email reads at a glance
+const STATUS_ACCENT = {
+    approved:    '#16a34a',
+    confirmed:   '#16a34a',
+    declined:    '#dc2626',
+    cancelled:   '#dc2626',
+    rescheduled: '#0369a1',
+    completed:   '#0d9488',
+    reminder:    '#0a3d62',
+};
+
+/**
+ * Status-change email with a button back into the app.
+ * `details` is a list of { label, value } rows shown above the button.
+ */
+async function sendStatusUpdate({ to, name, heading, status, message, details = [], appointmentId, role, type }) {
+    const accent = STATUS_ACCENT[status] || '#0a3d62';
+    const link = appointmentLink(appointmentId, role, type);
+    // The button names the page it opens, so a make-up email cannot promise
+    // an appointment. A role with nowhere to land simply gets no button.
+    const linkLabel = type === 'makeup' ? 'View Make-Up Request' : 'View Appointment';
+
+    const rows = details
+        .filter(d => d && d.value)
+        .map(d => `<tr>
+             <td style="padding:4px 12px 4px 0;color:#6b7280;font-size:14px;">${d.label}</td>
+             <td style="padding:4px 0;color:#111827;font-size:14px;font-weight:600;">${d.value}</td>
+           </tr>`)
+        .join('');
+
+    const text =
+        `Hi ${name},\n\n${message}\n\n` +
+        details.filter(d => d && d.value).map(d => `${d.label}: ${d.value}`).join('\n') +
+        (link ? `\n\nView it here: ${link}` : '') +
+        `\n\n– FaciTrack, CSPC`;
+
+    const html = `
+    <div style="font-family:Segoe UI,Arial,sans-serif;max-width:520px;margin:0 auto;">
+      <div style="border-left:4px solid ${accent};padding:0 0 0 16px;margin-bottom:20px;">
+        <h2 style="margin:0 0 4px;font-size:19px;color:#111827;">${heading}</h2>
+        <p style="margin:0;color:#6b7280;font-size:14px;">FaciTrack &middot; CSPC</p>
+      </div>
+
+      <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 18px;">
+        Hi <strong>${name}</strong>,<br>${message}
+      </p>
+
+      ${rows ? `<table style="border-collapse:collapse;margin:0 0 22px;">${rows}</table>` : ''}
+
+      ${link ? `<a href="${link}"
+         style="display:inline-block;background:${accent};color:#ffffff;text-decoration:none;
+                padding:11px 22px;border-radius:8px;font-size:14px;font-weight:600;">
+        ${linkLabel}
+      </a>
+
+      <p style="color:#9ca3af;font-size:12px;line-height:1.6;margin:22px 0 0;">
+        If the button does not work, copy this link into your browser:<br>
+        <span style="color:#6b7280;word-break:break-all;">${link}</span>
+      </p>` : ''}
+    </div>`;
+
+    return sendEmail({ to, subject: `FaciTrack – ${heading}`, text, html });
+}
+
 module.exports = {
     sendEmail,
+    sendOtpCode,
+    sendStatusUpdate,
+    appointmentLink,
     sendBookingConfirmation,
     sendApprovalNotification,
     sendDeclineNotification,

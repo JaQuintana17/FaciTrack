@@ -1146,21 +1146,23 @@
 }
 
 /* Toast Notifications */
+/* Must outrank the sticky header (1000), modal overlays (1000) and the
+   notification panel (1200) — toasts are fired from inside all three. */
 .toast-container {
     position: fixed;
-    top: 1.5rem;
+    top: calc(64px + 1rem);   /* clear the 64px sticky header */
     right: 1.5rem;
     display: flex;
     flex-direction: column;
-    
     gap: 0.75rem;
     max-width: 400px;
     pointer-events: none;
+    z-index: 1300;
 }
 
 .toast {
     pointer-events: auto;
-    background: white;
+    background: #ffffff;
     border: 1px solid var(--gray-200);
     border-radius: var(--radius-md);
     box-shadow: 0 12px 48px rgba(0, 0, 0, 0.18);
@@ -1171,14 +1173,21 @@
     animation: slideInRight 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
+/* Tints are layered OVER an opaque white base. A single translucent gradient
+   replaces the base colour, which let the page bleed through the toast. */
 .toast.success {
     border-left: 4px solid #16a34a;
-    background: linear-gradient(135deg, #ffffff 0%, rgba(34, 197, 94, 0.03) 100%);
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0) 0%, rgba(34, 197, 94, 0.07) 100%), #ffffff;
 }
 
 .toast.error {
     border-left: 4px solid #dc2626;
-    background: linear-gradient(135deg, #ffffff 0%, rgba(220, 38, 38, 0.03) 100%);
+    background: linear-gradient(135deg, rgba(220, 38, 38, 0) 0%, rgba(220, 38, 38, 0.07) 100%), #ffffff;
+}
+
+.toast.warning {
+    border-left: 4px solid #f59e0b;
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0) 0%, rgba(245, 158, 11, 0.08) 100%), #ffffff;
 }
 
 .toast-icon {
@@ -1193,6 +1202,10 @@
 
 .toast.error .toast-icon {
     color: #dc2626;
+}
+
+.toast.warning .toast-icon {
+    color: #f59e0b;
 }
 
 .toast-content {
@@ -2787,6 +2800,16 @@
         right: 1rem;
         max-width: none;
     }
+
+    /* Full-width at the bottom, so rise into view instead of sliding in sideways */
+    .toast {
+        animation: slideInUp 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    @keyframes slideInUp {
+        from { opacity: 0; transform: translateY(120%); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
 }
 
 /* ── Breakdown label truncation on mobile ── */
@@ -3895,11 +3918,12 @@
         font-size: 1.25rem;
     }
 
-    /* Toast: full width */
+    /* Toast: full width, and stay anchored to the bottom like the 640px rule.
+       Re-setting `top` here used to drag it back under the sticky header. */
     .toast-container {
         left: 0.5rem;
         right: 0.5rem;
-        top: 0.75rem;
+        top: auto;
     }
 
     .toast {

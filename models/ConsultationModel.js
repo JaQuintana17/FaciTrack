@@ -1,7 +1,9 @@
 const pool = require('../configs/db');
 const crypto = require('crypto');
-const { to12Hour, to24Hour, toMins, fromMins } = require('../utils/timeFormat');
+const { to12Hour, to24Hour, toMins, fromMins, formatFullDate } = require('../utils/timeFormat');
 const SlotReservation = require('./SlotReservationModel');
+const NotificationModel = require('./NotificationModel');
+const { BOOKING_LEAD_TIME_HOURS } = require('../services/scheduling');
 
 function generateSubSlots(timeStart, timeEnd, maxCapacity) {
     const start = toMins(timeStart);
@@ -55,6 +57,11 @@ function groupConsultationRows(rows) {
             timeEnd: to12Hour(row.end_time),
             status: row.status,
             isBooked: !!row.appointment_id,
+            // 'pending' | 'confirmed' | undefined (no live appointment, or the
+            // query didn't select it — student booking views don't need it)
+            appointmentStatus: row.appointment_status,
+            // Undefined unless the query asked for it (student booking views)
+            roomAvailable: row.room_available === undefined ? undefined : !!Number(row.room_available),
         });
     });
     return Object.values(grouped);
@@ -71,6 +78,23 @@ const ConsultationModel = {
             u.id AS instructor_id, u.public_id AS faculty_id,
             u.first_name, u.last_name, u.middle_name,
             u.position, u.email, u.department_id, u.availability_status,
+            u.default_meeting_link,
+            EXISTS (
+                SELECT 1 FROM rooms r
+                WHERE r.department_id = u.department_id
+                  AND r.room_type = 'Consultation Room'
+                  AND r.status = 'Active'
+                  AND (
+                      SELECT COUNT(*)
+                      FROM appointments a2
+                      JOIN consultation_hours ch2 ON a2.consultation_hour_id = ch2.id
+                      WHERE a2.room_id = r.id
+                        AND a2.status IN ('pending','confirmed')
+                        AND ch2.consultation_date = ch.consultation_date
+                        AND ch2.start_time < ch.end_time
+                        AND ch2.end_time   > ch.start_time
+                  ) < r.capacity
+            ) AS room_available,
             d.full_name AS department_name,
             iu.id AS unavail_id
          FROM consultation_hours ch
@@ -95,6 +119,7 @@ const ConsultationModel = {
             isUnavailable: !!row.unavail_id,
             instructorId: row.instructor_id,
             departmentId: row.department_id,
+            roomAvailable: !!Number(row.room_available),
             faculty: {
                 id: row.faculty_id,
                 first_name: row.first_name,
@@ -102,7 +127,8 @@ const ConsultationModel = {
                 middle_name: row.middle_name,
                 position: row.position,
                 department_name: row.department_name,
-                availability_status: row.availability_status
+                availability_status: row.availability_status,
+                default_meeting_link: row.default_meeting_link,
             },
         };
     },
@@ -136,7 +162,8 @@ const ConsultationModel = {
                     cs.end_time,
                     cs.status,
                     cs.is_booked,
-                    a.id AS appointment_id
+                    a.id AS appointment_id,
+                    a.status AS appointment_status
                 FROM consultation_hours cs
                 LEFT JOIN appointments a ON cs.id = a.consultation_hour_id AND a.status IN ('pending','confirmed')
                 JOIN users u ON cs.instructor_id = u.id
@@ -159,21 +186,53 @@ const ConsultationModel = {
             `SELECT
             cs.id, cs.day_of_the_week, cs.consultation_date,
             cs.start_time, cs.end_time, cs.status,
-            a.id AS appointment_id
+            a.id AS appointment_id,
+            -- Mirrors assignConsultationRoom(): is any consultation room still
+            -- under capacity for this window? Face-to-Face is impossible if not.
+            EXISTS (
+                SELECT 1 FROM rooms r
+                WHERE r.department_id = u.department_id
+                  AND r.room_type = 'Consultation Room'
+                  AND r.status = 'Active'
+                  AND (
+                      SELECT COUNT(*)
+                      FROM appointments a2
+                      JOIN consultation_hours ch2 ON a2.consultation_hour_id = ch2.id
+                      WHERE a2.room_id = r.id
+                        AND a2.status IN ('pending','confirmed')
+                        AND ch2.consultation_date = cs.consultation_date
+                        AND ch2.start_time < cs.end_time
+                        AND ch2.end_time   > cs.start_time
+                  ) < r.capacity
+            ) AS room_available
          FROM consultation_hours cs
          LEFT JOIN appointments a ON cs.id = a.consultation_hour_id AND a.status IN ('pending','confirmed')
          JOIN users u ON cs.instructor_id = u.id
          WHERE u.public_id = ?
            AND cs.status != 'closed'
-           AND cs.consultation_date >= CURDATE()
+           -- A non-available status is a 'right now' signal, so it only hides
+           -- TODAY's slots. Multi-day absence is handled by instructor_unavailability.
+           AND (u.availability_status IS NULL
+                OR u.availability_status = 'available'
+                OR cs.consultation_date > CURDATE())
+           -- Same-day booking is allowed, but not within the lead-time window
+           AND TIMESTAMP(cs.consultation_date, cs.start_time) >= DATE_ADD(NOW(), INTERVAL ? HOUR)
            AND NOT EXISTS (
                SELECT 1 FROM instructor_unavailability iu
                WHERE iu.instructor_id = u.id AND iu.unavail_date = cs.consultation_date
            )
          ORDER BY cs.consultation_date, cs.start_time`,
-            [publicId]
+            [publicId, BOOKING_LEAD_TIME_HOURS]
         );
         return groupConsultationRows(rows);
+    },
+
+    /** Just the date of one slot — used to bound reschedules server-side. */
+    async getSlotDate(slotId) {
+        const [[row]] = await pool.execute(
+            'SELECT consultation_date FROM consultation_hours WHERE id = ?', [slotId]
+        );
+        return row ? row.consultation_date : null;
     },
 
     async saveSlotBlock(publicId, { date, day, timeStart, timeEnd, maxCapacity, repeatWeeks = 1 }) {
@@ -278,28 +337,93 @@ const ConsultationModel = {
     },
 
     async setUnavailability(publicId, date, reason) {
-        const [[user]] = await pool.execute(
-            'SELECT id FROM users WHERE public_id = ?', [publicId]
-        );
-        if (!user) throw new Error('Instructor not found');
-
-        await pool.execute(
-            `INSERT INTO instructor_unavailability (instructor_id, unavail_date, reason)
-             VALUES (?, ?, ?)
-             ON DUPLICATE KEY UPDATE reason = VALUES(reason)`,
-            [user.id, date, reason || null]
-        );
+        return this.setUnavailabilityRange(publicId, date, date, reason);
     },
 
-    async removeUnavailability(publicId, date) {
+    /**
+     * Block a whole day, or every day in an inclusive range.
+     * Unavailability is always full-day — the table stores one row per date.
+     */
+    async setUnavailabilityRange(publicId, startDate, endDate, reason) {
+        const [[user]] = await pool.execute(
+            'SELECT id FROM users WHERE public_id = ?', [publicId]
+        );
+        if (!user) throw new Error('Instructor not found');
+
+        const dates = [];
+        for (let d = startDate; d <= endDate; d = addDays(d, 1)) {
+            dates.push(d);
+        }
+
+        const conn = await pool.getConnection();
+        try {
+            await conn.beginTransaction();
+            for (const date of dates) {
+                await conn.execute(
+                    `INSERT INTO instructor_unavailability (instructor_id, unavail_date, reason)
+                     VALUES (?, ?, ?)
+                     ON DUPLICATE KEY UPDATE reason = VALUES(reason)`,
+                    [user.id, date, reason || null]
+                );
+            }
+            await conn.commit();
+            return dates;
+        } catch (err) {
+            await conn.rollback();
+            throw err;
+        } finally {
+            conn.release();
+        }
+    },
+
+    /**
+     * Appointments that would be disrupted by blocking this range.
+     * Returns enough detail for the instructor to reschedule or cancel each one.
+     */
+    async getAffectedAppointments(publicId, startDate, endDate) {
+        const [rows] = await pool.execute(
+            `SELECT
+                a.id, a.status, a.topic, a.mode,
+                ch.consultation_date, ch.start_time, ch.end_time,
+                s.first_name AS student_first_name,
+                s.last_name  AS student_last_name,
+                a.student_number, a.section_group_name, a.course_subject
+             FROM appointments a
+             JOIN consultation_hours ch ON a.consultation_hour_id = ch.id
+             JOIN users u ON ch.instructor_id = u.id
+             JOIN users s ON a.student_id = s.id
+             WHERE u.public_id = ?
+               AND ch.consultation_date BETWEEN ? AND ?
+               AND a.status IN ('pending','confirmed')
+             ORDER BY ch.consultation_date, ch.start_time`,
+            [publicId, startDate, endDate]
+        );
+
+        return rows.map(r => ({
+            id: r.id,
+            status: r.status,
+            topic: r.topic,
+            mode: r.mode,
+            date: toDateKey(r.consultation_date),
+            timeStart: to12Hour(r.start_time),
+            timeEnd: to12Hour(r.end_time),
+            studentName: `${r.student_first_name} ${r.student_last_name}`,
+            studentNumber: r.student_number,
+            sectionGroup: r.section_group_name,
+            courseSubject: r.course_subject,
+        }));
+    },
+
+    async removeUnavailability(publicId, date, endDate = null) {
         const [[user]] = await pool.execute(
             'SELECT id FROM users WHERE public_id = ?', [publicId]
         );
         if (!user) throw new Error('Instructor not found');
 
         await pool.execute(
-            'DELETE FROM instructor_unavailability WHERE instructor_id = ? AND unavail_date = ?',
-            [user.id, date]
+            `DELETE FROM instructor_unavailability
+             WHERE instructor_id = ? AND unavail_date BETWEEN ? AND ?`,
+            [user.id, date, endDate || date]
         );
     },
 
@@ -318,19 +442,27 @@ const ConsultationModel = {
     },
 
     async cancelAppointmentsOnDate(publicId, date, reason) {
+        return this.cancelAppointmentsInRange(publicId, date, date, reason);
+    },
+
+    /**
+     * Cancel every live appointment in a blocked range and notify each student.
+     * Freed slots go back to 'Available' so they can be reused once unblocked.
+     */
+    async cancelAppointmentsInRange(publicId, startDate, endDate, reason) {
         const [[user]] = await pool.execute(
-            'SELECT id FROM users WHERE public_id = ?', [publicId]
+            'SELECT id, first_name, last_name FROM users WHERE public_id = ?', [publicId]
         );
         if (!user) throw new Error('Instructor not found');
 
         const [affected] = await pool.execute(
-            `SELECT a.id, a.student_id
+            `SELECT a.id, a.student_id, ch.consultation_date, ch.start_time
          FROM appointments a
          JOIN consultation_hours ch ON a.consultation_hour_id = ch.id
          WHERE ch.instructor_id = ?
-           AND ch.consultation_date = ?
+           AND ch.consultation_date BETWEEN ? AND ?
            AND a.status IN ('pending','confirmed')`,
-            [user.id, date]
+            [user.id, startDate, endDate]
         );
 
         if (affected.length) {
@@ -340,18 +472,30 @@ const ConsultationModel = {
              SET a.status = 'declined',
                  a.decline_reason = ?
              WHERE ch.instructor_id = ?
-               AND ch.consultation_date = ?
+               AND ch.consultation_date BETWEEN ? AND ?
                AND a.status IN ('pending','confirmed')`,
-                [reason, user.id, date]
+                [reason, user.id, startDate, endDate]
             );
 
             await pool.execute(
                 `UPDATE consultation_hours
              SET status = 'Available'
              WHERE instructor_id = ?
-               AND consultation_date = ?`,
-                [user.id, date]
+               AND consultation_date BETWEEN ? AND ?`,
+                [user.id, startDate, endDate]
             );
+
+            // The UI promises students are told — actually tell them
+            const instructorName = `${user.first_name} ${user.last_name}`;
+            for (const apt of affected) {
+                const dateLabel = formatFullDate(apt.consultation_date);
+                await NotificationModel.create(
+                    apt.student_id,
+                    'unavailability',
+                    `${instructorName} is unavailable on ${dateLabel}. Your consultation was cancelled${reason ? ` (${reason})` : ''}. Please book a new slot.`,
+                    apt.id
+                );
+            }
         }
 
         return affected;

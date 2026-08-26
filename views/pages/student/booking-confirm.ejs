@@ -1,9 +1,16 @@
+<style>
+  .meet-pending {
+    display: flex; align-items: flex-start; gap: .5rem;
+    margin: .5rem 0; padding: .65rem .8rem;
+    background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px;
+    color: #1e40af; font-size: .8rem; line-height: 1.5;
+  }
+</style>
 <%- include('../../partials/header') %>
 <link rel="stylesheet" href="/css/instructor/dashboard.css?v=<%= Date.now() %>">
 <link rel="stylesheet" href="/css/student/profile.css?v=<%= Date.now() %>">
 
 <div class="instructor-layout">
-    <%- include('../../partials/student-sidebar', { activePage: 'dashboard', appointmentCount: 0 }) %>
     <main class="instructor-main">
         <div class="main-container" style="display:flex;justify-content:center;align-items:center;:2rem 1rem;">
             <div style="background:#fff;border-radius:var(--radius-xl);padding:2.5rem 2rem;max-width:480px;width:100%;box-shadow:var(--shadow-md);text-align:center;">
@@ -23,6 +30,23 @@
                         <div><strong>When:</strong> <%= appointment.day_of_the_week %>, <%= new Date(appointment.consultation_date).toLocaleDateString('en-PH', { month:'long', day:'numeric', year:'numeric' }) %></div>
                         <div><strong>Topic:</strong> <%= appointment.topic %></div>
                         <div><strong>Mode:</strong> <%= appointment.mode %></div>
+                        <% if (appointment.mode === 'Online') { %>
+                            <% if (appointment.meeting_link) { %>
+                                <div><strong>Meeting link:</strong>
+                                  <a href="<%= appointment.meeting_link %>" target="_blank" rel="noopener noreferrer"
+                                     style="color:var(--primary-blue);font-weight:600;word-break:break-all;">
+                                    <%= appointment.meeting_link %>
+                                  </a>
+                                </div>
+                            <% } else { %>
+                                <div class="meet-pending">
+                                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:.1rem;">
+                                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+                                  </svg>
+                                  <span>Your instructor has not added the meeting link yet. It will appear here and in your notifications once they do.</span>
+                                </div>
+                            <% } %>
+                        <% } %>
                         <% if (appointment.mode === 'Face-to-Face' && appointment.room_number) { %>
                             <div><strong>Room:</strong> <%= appointment.room_number %><% if (appointment.building_name) { %> — <%= appointment.building_name %><% } %></div>
                         <% } %>

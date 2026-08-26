@@ -167,7 +167,8 @@ function createOTP(email) {
            <p>– FaciTrack, CSPC</p>`,
   });
 
-  console.log(`[OTP] Generated for ${email}: ${otp} (Token: ${otpToken})`);
+  // Never log the code itself — it is delivered by email only
+  console.log(`[OTP] Issued for ${email} (Token: ${otpToken})`);
 
   return { otpToken, expiresAt };
 }

@@ -5,7 +5,7 @@
 @media(max-width:1100px){ .settings-grid { grid-template-columns: 1fr; } }
 
 /* Profile card */
-.profile-card-top { display:flex; flex-direction:column; align-items:center; padding: 2rem 1.5rem 1.5rem; border-bottom: 1px solid var(--gray-100); text-align:center; }
+.profile-card-top { position:relative; display:flex; flex-direction:column; align-items:center; padding: 2rem 1.5rem 1.5rem; border-bottom: 1px solid var(--gray-100); text-align:center; }
 .settings-avatar-wrap { position:relative; width:88px; height:88px; margin-bottom:1rem; }
 .settings-avatar-wrap .profile-avatar-mini { width:88px; height:88px; font-size:1.75rem; }
 .settings-avatar-wrap .avatar-upload-overlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.45); border-radius:50%; opacity:0; transition:opacity .2s; cursor:pointer; color:#fff; }
@@ -13,74 +13,173 @@
 .settings-name { font-size:1.0625rem; font-weight:700; color:var(--gray-900); margin:0 0 .2rem; }
 .settings-email { font-size:.8125rem; color:var(--gray-500); margin:0; }
 
+/* Read-only field */
+.modal-input[readonly] { background:var(--gray-50); color:var(--gray-500); cursor:not-allowed; }
+.field-hint { font-size:.75rem; color:var(--gray-500); margin:.35rem 0 0; line-height:1.5; }
+
 /* Status toggle */
-.status-toggle-group {
-      display: grid;
-      grid-template-columns: auto auto;
-      gap: .75rem;
-      margin-top: .25rem;
-    }
+#statusGroup { display:grid; grid-template-columns:1fr 1fr; gap:.75rem; margin-top:.25rem; }
+#statusGroup .status-option:first-child { grid-column:1 / -1; }
+#statusGroup .status-option {
+  display:flex; align-items:center; justify-content:center; gap:.5rem;
+  padding:.625rem 1rem; border:2px solid var(--gray-200); border-radius:10px;
+  cursor:pointer; font-size:.8125rem; font-weight:600; color:var(--gray-500);
+  transition:all .18s; user-select:none; text-align:center;
+}
+#statusGroup .status-option input { display:none; }
+#statusGroup .status-option.active-available { border-color:#16a34a; background:rgba(22,163,74,.07); color:#15803d; }
+#statusGroup .status-option.active-alert     { border-color:#dc2626; background:rgba(220,38,38,.07); color:#b91c1c; }
+.status-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
 
-    .status-option:first-child {
-      grid-column: 1 / -1;
-    }
-.status-option {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: .5rem;
-      padding: .625rem 1rem;
-      border: 2px solid var(--gray-200);
-      border-radius: 10px;
-      cursor: pointer;
-      font-size: .8125rem;
-      font-weight: 600;
-      color: var(--gray-500);
-      transition: all .18s;
-      user-select: none;
-    }
+/* Five tap targets do not fit a phone — swap the grid for a select */
+.status-select-wrap { display:none; }
+.status-select {
+  width:100%; padding:.7rem .875rem;
+  border:1.5px solid var(--gray-300); border-radius:var(--radius-md);
+  font-size:.875rem; font-weight:600; font-family:var(--font-body);
+  color:var(--gray-800); background:#fff;
+}
+@media(max-width:640px){
+  #statusGroup { display:none; }
+  .status-select-wrap { display:block; }
+}
 
-    .status-option input {
-      display: none;
-    }
+/* Away notice shown for travel / leave */
+.status-away-note {
+  display:none; margin-top:1rem; padding:.8rem .9rem; border-radius:var(--radius-md);
+  background:#fffbeb; border:1px solid #fde68a; font-size:.78rem; color:#92400e; line-height:1.6;
+}
+.status-away-note.show { display:block; }
+.status-away-note a { color:#92400e; font-weight:700; }
 
-    .status-option.active-available {
-      border-color: #16a34a;
-      background: rgba(22, 163, 74, .07);
-      color: #15803d;
-    }
-
-    .status-option.active-alert {
-      border-color: #dc2626;
-      background: rgba(220, 38, 38, .07);
-      color: #b91c1c;
-    }
-
-    .status-dot {
-      width: 9px;
-      height: 9px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-/* Section right column */
+/* Right column */
 .settings-right { display:flex; flex-direction:column; gap:1.5rem; }
 
-/* Availability message */
-.avail-message-wrap { margin-top:.75rem; display:none; }
-.avail-message-wrap.visible { display:block; }
+/* Weeks stepper */
+.weeks-stepper { display:flex; align-items:center; gap:.5rem; }
+.weeks-stepper .stepper-btn {
+  width:34px; height:34px; display:flex; align-items:center; justify-content:center;
+  border:1.5px solid var(--gray-300); background:#fff; border-radius:8px; cursor:pointer; color:var(--gray-700);
+}
+.weeks-stepper .stepper-btn:hover { border-color:var(--primary-blue); color:var(--primary-blue); }
+.weeks-stepper input { width:64px; text-align:center; padding:.5rem; border:1.5px solid var(--gray-300); border-radius:8px; font-size:.875rem; font-weight:700; font-family:var(--font-body); }
+.repeat-settings-panel { margin-top:1rem; }
+.repeat-settings-panel.hidden { display:none; }
+.settings-note {
+  margin-top:1rem; padding:.85rem; background:var(--gray-50);
+  border:1px solid var(--gray-200); border-radius:var(--radius-md);
+  font-size:.78rem; color:var(--gray-600); line-height:1.6;
+}
 
-/* Repeat settings panel */
-.repeat-settings-panel{transition:all .3s;max-height:1000px;overflow:hidden}
-.repeat-settings-panel.hidden{max-height:0;opacity:0}
-.day-selector-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:.5rem}
-.day-selector-item{position:relative;cursor:pointer}
-.day-selector-item input{display:none}
-.day-selector-label{display:flex;align-items:center;justify-content:center;padding:.75rem;border:2px solid var(--gray-200);border-radius:var(--radius-md);background:#fff;font-size:.8125rem;font-weight:600;color:var(--gray-600);transition:all .2s;user-select:none}
-.day-selector-item:hover .day-selector-label{border-color:var(--gray-300);background:var(--gray-50)}
-.day-selector-item input:checked + .day-selector-label{border-color:var(--primary-blue);background:rgba(10,61,98,.06);color:var(--primary-blue);font-weight:700}
-@media(max-width:768px){
-  .day-selector-grid{grid-template-columns:repeat(4,1fr)}
+/* Device notifications */
+.push-row { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; }
+.push-copy { min-width:0; }
+.push-title { font-size:.875rem; font-weight:700; color:var(--gray-900); margin:0 0 .2rem; }
+.push-desc { font-size:.8rem; color:var(--gray-600); line-height:1.6; margin:0; }
+.push-msg { display:none; font-size:.78rem; margin:.7rem 0 0; }
+.push-test {
+  margin-top:.8rem; background:none; border:none; padding:0; cursor:pointer;
+  font-size:.78rem; font-weight:600; color:var(--primary-blue);
+  text-decoration:underline; font-family:var(--font-body);
+}
+/* The toggle stays on the right at every width; only the copy reflows */
+.push-row .toggle-switch { flex-shrink:0; }
+@media (max-width:520px){
+  .push-row { gap:.75rem; }
+  .push-desc { font-size:.75rem; }
+}
+
+/* Meeting link row */
+.link-row { display:flex; gap:.6rem; flex-wrap:wrap; align-items:flex-start; }
+.link-row input {
+  flex:1; min-width:220px; padding:.625rem .875rem; border:1.5px solid var(--gray-300);
+  border-radius:var(--radius-md); font-size:.875rem; font-family:var(--font-body);
+}
+
+/* Unsaved-changes tracking */
+.unsaved-pill {
+  display:none; align-items:center; gap:.4rem; padding:.25rem .6rem;
+  border-radius:var(--radius-full);
+  background:rgba(10,61,98,.08); color:var(--primary-blue);
+  font-size:.68rem; font-weight:700; text-transform:uppercase;
+  letter-spacing:.03em; white-space:nowrap;
+}
+.unsaved-pill::before {
+  content:''; width:6px; height:6px; border-radius:50%;
+  background:var(--teal-light); flex-shrink:0;
+}
+.settings-card.is-dirty .unsaved-pill { display:inline-flex; }
+.settings-card.is-dirty {
+  border-color:var(--teal-light);
+  box-shadow:0 0 0 3px rgba(30,136,229,.10), 0 2px 8px rgba(0,0,0,.04);
+}
+.settings-card .card-header { display:flex; align-items:center; justify-content:space-between; gap:.75rem; }
+.profile-card-top .unsaved-pill { position:absolute; top:.85rem; right:.85rem; }
+
+/* Save bar. Sticks to the bottom of the scrolling content rather than the
+   viewport, so it never lands on top of the footer. */
+.dirty-bar { position:sticky; bottom:1rem; z-index:900; display:none; margin-top:1.5rem; }
+.dirty-bar.show { display:block; }
+.dirty-bar-inner {
+  display:flex; align-items:center; justify-content:space-between; gap:1.25rem;
+  padding:.9rem 1.25rem;
+  background:var(--bg-white);
+  border:1px solid var(--gray-200);
+  border-left:4px solid var(--teal-light);
+  border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-lg);
+  animation:dirtyBarUp var(--transition-slow) ease-out;
+}
+@keyframes dirtyBarUp {
+  from { opacity:0; transform:translateY(14px); }
+  to   { opacity:1; transform:none; }
+}
+.dirty-bar-text { font-size:.85rem; font-weight:700; color:var(--gray-900); margin:0; }
+.dirty-bar-sub  { font-size:.75rem; color:var(--gray-500); margin:.15rem 0 0; }
+.dirty-bar-actions { display:flex; gap:.6rem; flex-shrink:0; }
+.dirty-bar button {
+  padding:.625rem 1.5rem; border-radius:var(--radius-md); border:none; cursor:pointer;
+  font-size:.875rem; font-weight:600; font-family:var(--font-body);
+  transition:all var(--transition-base);
+}
+.dirty-bar .btn-discard {
+  background:transparent; color:var(--gray-600); border:1.5px solid var(--gray-300);
+}
+.dirty-bar .btn-discard:hover { background:var(--gray-100); color:var(--gray-800); }
+.dirty-bar .btn-save-all { background:var(--primary-blue); color:#fff; }
+.dirty-bar .btn-save-all:hover {
+  background:var(--primary-dark);
+  transform:translateY(-1px);
+  box-shadow:0 4px 12px rgba(10,61,98,.25);
+}
+/* Below 1024px the layout stacks and the window scrolls instead of
+   .instructor-main, so sticky has nothing to stick to — pin it to the viewport. */
+@media(max-width:1024px){
+  .dirty-bar { position:fixed; left:0; right:0; bottom:0; margin-top:0; }
+  .dirty-bar-inner {
+    border-radius:var(--radius-lg) var(--radius-lg) 0 0;
+    border-left:1px solid var(--gray-200);
+    border-top:4px solid var(--teal-light);
+    box-shadow:0 -6px 20px rgba(0,0,0,.12);
+  }
+  body.has-unsaved .main-container { padding-bottom:10rem; }
+}
+@media(max-width:640px){
+  .dirty-bar-inner { flex-direction:column; align-items:stretch; gap:.75rem; }
+  .dirty-bar-actions button { flex:1; padding:.625rem .75rem; }
+}
+
+#leaveOverlay .btn-primary { background:var(--primary-blue); color:#fff; }
+#leaveOverlay .btn-primary:hover {
+  background:var(--primary-dark);
+  transform:translateY(-1px);
+  box-shadow:0 4px 12px rgba(10,61,98,.25);
+}
+.leave-modal-actions { display:flex; flex-direction:column; gap:.55rem; margin-top:1.25rem; }
+.leave-modal-actions button { width:100%; }
+@media(min-width:560px){
+  .leave-modal-actions { flex-direction:row; justify-content:flex-end; }
+  .leave-modal-actions button { width:auto; }
 }
 </style>
 
@@ -97,21 +196,23 @@
 
       <div class="settings-grid">
 
-        <!-- LEFT: Profile card -->
+        <!-- LEFT COLUMN -->
         <div style="display:flex;flex-direction:column;gap:1.5rem;">
 
-          <div class="content-card">
+          <!-- Personal information -->
+          <div class="content-card settings-card" data-card="profile">
             <div class="profile-card-top">
+              <span class="unsaved-pill">Unsaved</span>
               <div class="settings-avatar-wrap">
                 <div class="profile-avatar-mini" id="settingsAvatar">
                   <% if (instructor.profilePhoto) { %>
                     <img src="<%= instructor.profilePhoto %>" alt="<%= instructor.name %>" class="avatar-img">
                   <% } else { %>
-                    <span class="avatar-initials"><%= instructor.name.split(' ').map(function(n){return n[0];}).join('') %></span>
+                    <span class="avatar-initials"><%= ((instructor.firstName || ' ')[0] + (instructor.lastName || ' ')[0]).toUpperCase().trim() %></span>
                   <% } %>
                   <label class="avatar-upload-overlay" title="Change photo">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                    <input type="file" id="settingsAvatarInput" accept="image/*" style="display:none;">
+                    <input type="file" id="settingsAvatarInput" accept="image/*" style="display:none;" data-no-track>
                   </label>
                 </div>
               </div>
@@ -120,239 +221,247 @@
             </div>
             <div class="card-body">
               <div class="form-group">
-                <label class="modal-label">Full Name</label>
-                <input type="text" class="modal-input" id="inputName" value="<%= instructor.name %>">
+                <label class="modal-label" for="inputFirstName">First Name</label>
+                <input type="text" class="modal-input" id="inputFirstName" value="<%= instructor.firstName || '' %>">
               </div>
               <div class="form-group">
-                <label class="modal-label">Email Address</label>
-                <input type="email" class="modal-input" id="inputEmail" value="<%= instructor.email %>">
+                <label class="modal-label" for="inputMiddleName">Middle Name <span style="font-weight:400;color:var(--gray-400)">(optional)</span></label>
+                <input type="text" class="modal-input" id="inputMiddleName" value="<%= instructor.middleName || '' %>">
               </div>
               <div class="form-group">
-                <label class="modal-label">Phone Number</label>
-                <input type="tel" class="modal-input" id="inputPhone" value="">
+                <label class="modal-label" for="inputLastName">Last Name</label>
+                <input type="text" class="modal-input" id="inputLastName" value="<%= instructor.lastName || '' %>">
               </div>
-              <button class="btn-save-settings" id="btnSaveProfile">Save Changes</button>
+              <div class="form-group">
+                <label class="modal-label" for="inputEmail">Email Address</label>
+                <input type="email" class="modal-input" id="inputEmail" value="<%= instructor.email %>" readonly data-no-track>
+                <p class="field-hint">Your institutional email is how you sign in. Contact the administrator to change it.</p>
+              </div>
             </div>
           </div>
 
-          <!-- Status -->
-          <div class="content-card">
+          <!-- Campus status -->
+          <div class="content-card settings-card" data-card="status">
             <div class="card-header">
               <h3 class="card-title">Status</h3>
+              <span class="unsaved-pill">Unsaved</span>
             </div>
             <div class="card-body">
-              <p class="settings-description" style="margin-bottom:1rem;">Set your current campus status. This is visible to students and the dean.</p>
-              <div class="status-toggle-group" id="statusGroup">
-                  <label class="status-option status-full" id="optAvailable">
-                  <input type="radio" name="campusStatus" value="Available">
-                  <span class="status-dot" style="background:#16a34a;"></span>
-                  Available
-              </label>
-
-              <label class="status-option" id="optDND">
-                  <input type="radio" name="campusStatus" value="Do Not Disturb">
-                  <span class="status-dot" style="background:#dc2626;"></span>
-                  Do Not Disturb
-              </label>
-              <label class="status-option" id="optTravel">
-                  <input type="radio" name="campusStatus" value="On Official Travel" checked>
-                  <span class="status-dot" style="background:#dc2626;"></span>
-                  On Official Travel
-              </label>
-              <label class="status-option" id="optLeave">
-                  <input type="radio" name="campusStatus" value="On Leave">
-                  <span class="status-dot" style="background:#dc2626;"></span>
-                  On Leave
-              </label>
-              <label class="status-option" id="optMeeting">
-                  <input type="radio" name="campusStatus" value="On Meeting">
-                  <span class="status-dot" style="background:#dc2626;"></span>
-                  On Meeting
-              </label>
+              <p class="settings-description" style="margin-bottom:1rem;">Set your current campus status. Students see this before booking, and anything other than Available blocks same-day bookings.</p>
+              <div id="statusGroup">
+                <label class="status-option">
+                  <input type="radio" name="campusStatus" value="available" <%= instructor.availabilityStatus === 'available' ? 'checked' : '' %>>
+                  <span class="status-dot" style="background:#16a34a;"></span> Available
+                </label>
+                <label class="status-option">
+                  <input type="radio" name="campusStatus" value="dnd" <%= instructor.availabilityStatus === 'dnd' ? 'checked' : '' %>>
+                  <span class="status-dot" style="background:#dc2626;"></span> Do Not Disturb
+                </label>
+                <label class="status-option">
+                  <input type="radio" name="campusStatus" value="meeting" <%= instructor.availabilityStatus === 'meeting' ? 'checked' : '' %>>
+                  <span class="status-dot" style="background:#dc2626;"></span> On Meeting
+                </label>
+                <label class="status-option">
+                  <input type="radio" name="campusStatus" value="travel" <%= instructor.availabilityStatus === 'travel' ? 'checked' : '' %>>
+                  <span class="status-dot" style="background:#dc2626;"></span> On Official Travel
+                </label>
+                <label class="status-option">
+                  <input type="radio" name="campusStatus" value="leave" <%= instructor.availabilityStatus === 'leave' ? 'checked' : '' %>>
+                  <span class="status-dot" style="background:#dc2626;"></span> On Leave
+                </label>
               </div>
-              <button class="btn-save-settings" id="btnSaveStatus" style="margin-top:1.25rem;">Apply Status</button>
+
+              <div class="status-select-wrap">
+                <label class="modal-label" for="statusSelect">Current status</label>
+                <select class="status-select" id="statusSelect" data-no-track>
+                  <option value="available">Available</option>
+                  <option value="dnd">Do Not Disturb</option>
+                  <option value="meeting">On Meeting</option>
+                  <option value="travel">On Official Travel</option>
+                  <option value="leave">On Leave</option>
+                </select>
+              </div>
+
+              <div class="status-away-note" id="statusAwayNote">
+                Away for more than today? Block those dates on your
+                <a href="/instructor/consultation-schedule">Consultation Schedule</a>
+                so students are not left booking slots you cannot keep.
+              </div>
+
             </div>
           </div>
 
         </div>
 
-        <!-- RIGHT: other settings -->
+        <!-- RIGHT COLUMN -->
         <div class="settings-right">
 
-          <!-- Consultation Availability -->
-          <div class="content-card">
-            <div class="card-header">
-              <h3 class="card-title">Consultation Availability</h3>
-            </div>
-            <div class="card-body">
-              <div class="settings-toggle-list">
-                <div class="settings-toggle-row">
-                  <div>
-                    <p class="toggle-label">Accept Consultation Requests</p>
-                    <p class="toggle-desc">Allow students to book appointments with you</p>
-                  </div>
-                  <label class="toggle-switch">
-                    <input type="checkbox" id="toggleAcceptBookings" checked>
-                    <span class="toggle-slider"></span>
-                  </label>
-                </div>
-                <div class="settings-toggle-row">
-                  <div>
-                    <p class="toggle-label">Walk-in Consultations</p>
-                    <p class="toggle-desc">Allow unscheduled drop-in visits during office hours</p>
-                  </div>
-                  <label class="toggle-switch">
-                    <input type="checkbox" id="toggleWalkin" checked>
-                    <span class="toggle-slider"></span>
-                  </label>
-                </div>
-              </div>
-              <div class="avail-message-wrap" id="unavailMsgWrap">
-                <label class="modal-label">Unavailability Message <span style="font-weight:400;color:var(--gray-400)">(shown to students)</span></label>
-                <textarea class="modal-input" id="unavailMsg" rows="2" style="resize:vertical;min-height:60px;"></textarea>
-              </div>
-              <button class="btn-save-settings" id="btnSaveAvail">Save Availability</button>
-            </div>
-          </div>
-
-          <!-- Consultation Schedule Settings -->
-          <div class="content-card">
+          <!-- Consultation schedule defaults -->
+          <div class="content-card settings-card" data-card="schedule">
             <div class="card-header">
               <h3 class="card-title">Consultation Schedule Settings</h3>
+              <span class="unsaved-pill">Unsaved</span>
             </div>
             <div class="card-body">
-              <p class="settings-description" style="margin-bottom:1rem;">Configure how your consultation schedule repeats each week.</p>
-              
+              <p class="settings-description" style="margin-bottom:1rem;">Applied automatically whenever you add a new consultation slot.</p>
+
               <div class="settings-toggle-list">
                 <div class="settings-toggle-row">
                   <div>
                     <p class="toggle-label">Repeat Weekly</p>
-                    <p class="toggle-desc">Automatically repeat your schedule every week</p>
+                    <p class="toggle-desc">New slots are created on the same weekday for several weeks</p>
                   </div>
                   <label class="toggle-switch">
-                    <input type="checkbox" id="toggleRepeatWeekly" checked>
+                    <input type="checkbox" id="toggleRepeatWeekly" <%= settings.repeatWeekly ? 'checked' : '' %>>
                     <span class="toggle-slider"></span>
                   </label>
                 </div>
               </div>
 
-              <div id="repeatSettingsPanel" class="repeat-settings-panel">
-                <label class="modal-label" style="margin-top:1rem;">Active Days</label>
-                <p class="settings-description" style="margin-bottom:.75rem;font-size:.8125rem;">Select which days your consultation schedule repeats</p>
-                <div class="day-selector-grid">
-                  <label class="day-selector-item">
-                    <input type="checkbox" id="dayMon" checked>
-                    <span class="day-selector-label">Mon</span>
-                  </label>
-                  <label class="day-selector-item">
-                    <input type="checkbox" id="dayTue" checked>
-                    <span class="day-selector-label">Tue</span>
-                  </label>
-                  <label class="day-selector-item">
-                    <input type="checkbox" id="dayWed" checked>
-                    <span class="day-selector-label">Wed</span>
-                  </label>
-                  <label class="day-selector-item">
-                    <input type="checkbox" id="dayThu" checked>
-                    <span class="day-selector-label">Thu</span>
-                  </label>
-                  <label class="day-selector-item">
-                    <input type="checkbox" id="dayFri" checked>
-                    <span class="day-selector-label">Fri</span>
-                  </label>
-                  <label class="day-selector-item">
-                    <input type="checkbox" id="daySat">
-                    <span class="day-selector-label">Sat</span>
-                  </label>
-                  <label class="day-selector-item">
-                    <input type="checkbox" id="daySun">
-                    <span class="day-selector-label">Sun</span>
-                  </label>
-                </div>
-
-                <label class="modal-label" style="margin-top:1rem;">Duration</label>
-                <p class="settings-description" style="margin-bottom:.75rem;font-size:.8125rem;">How many weeks to repeat (0 = indefinitely)</p>
-                <div style="display:flex;align-items:center;gap:.75rem;">
-                  <input type="number" class="modal-input" id="repeatWeeks" value="0" min="0" max="52" style="max-width:120px;">
-                  <span style="font-size:.875rem;color:var(--gray-600);">weeks</span>
-                </div>
-
-                <div style="margin-top:1rem;padding:1rem;background:var(--gray-50);border-radius:var(--radius-md);border:1px solid var(--gray-200);">
-                  <p style="font-size:.8125rem;color:var(--gray-600);margin:0;line-height:1.6;">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:middle;margin-right:.375rem;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                    Your current consultation slots will automatically repeat on the selected days each week.
-                  </p>
+              <div id="repeatSettingsPanel" class="repeat-settings-panel <%= settings.repeatWeekly ? '' : 'hidden' %>">
+                <label class="modal-label" for="repeatWeeks">Number of weeks</label>
+                <div class="weeks-stepper">
+                  <button type="button" class="stepper-btn" id="weeksMinus" aria-label="Fewer weeks">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  </button>
+                  <input type="number" id="repeatWeeks" min="2" max="52" value="<%= settings.repeatWeeks %>" readonly>
+                  <button type="button" class="stepper-btn" id="weeksPlus" aria-label="More weeks">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  </button>
                 </div>
               </div>
 
-              <button class="btn-save-settings" id="btnSaveSchedule">Save Schedule Settings</button>
+              <p class="settings-note" id="repeatSummary"></p>
             </div>
           </div>
 
-          <!-- Notification Preferences -->
-          <div class="content-card">
+          <!-- Online consultation link -->
+          <div class="content-card settings-card" data-card="link">
             <div class="card-header">
-              <h3 class="card-title">Notification Preferences</h3>
+              <h3 class="card-title">Online Consultation Link</h3>
+              <span class="unsaved-pill">Unsaved</span>
             </div>
             <div class="card-body">
+              <p class="settings-description" style="margin-bottom:.9rem;">
+                Your personal meeting room. When a consultation is set to <strong>Online</strong>,
+                this link is attached automatically and shown to the student.
+              </p>
+              <div class="link-row">
+                <input type="url" id="meetingLinkInput"
+                       placeholder="https://meet.google.com/abc-defg-hij"
+                       value="<%= instructor.defaultMeetingLink || '' %>">
+              </div>
+              <p class="field-hint">Leave this empty to stop offering online consultations.</p>
+            </div>
+          </div>
+
+          <!-- Notification preferences -->
+          <div class="content-card settings-card" data-card="notifications">
+            <div class="card-header">
+              <h3 class="card-title">Notification Preferences</h3>
+              <span class="unsaved-pill">Unsaved</span>
+            </div>
+            <div class="card-body">
+              <p class="settings-description" style="margin-bottom:1rem;">
+                Choose which updates reach you by email and on your devices.
+                Your in-app notification bell always shows everything.
+              </p>
               <div class="settings-toggle-list">
                 <div class="settings-toggle-row">
                   <div>
                     <p class="toggle-label">New Appointment Requests</p>
-                    <p class="toggle-desc">Get notified when a student books a consultation</p>
+                    <p class="toggle-desc">When a student books a consultation</p>
                   </div>
-                  <label class="toggle-switch"><input type="checkbox" checked><span class="toggle-slider"></span></label>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="notifyNewRequests" <%= settings.notifyNewRequests ? 'checked' : '' %>>
+                    <span class="toggle-slider"></span>
+                  </label>
                 </div>
                 <div class="settings-toggle-row">
                   <div>
                     <p class="toggle-label">Appointment Cancellations</p>
-                    <p class="toggle-desc">Get notified when a student cancels</p>
+                    <p class="toggle-desc">When a student cancels a booking</p>
                   </div>
-                  <label class="toggle-switch"><input type="checkbox" checked><span class="toggle-slider"></span></label>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="notifyCancellations" <%= settings.notifyCancellations ? 'checked' : '' %>>
+                    <span class="toggle-slider"></span>
+                  </label>
                 </div>
                 <div class="settings-toggle-row">
                   <div>
                     <p class="toggle-label">Consultation Reminders</p>
-                    <p class="toggle-desc">Reminder 30 minutes before a scheduled consultation</p>
+                    <p class="toggle-desc">Shortly before a scheduled consultation starts</p>
                   </div>
-                  <label class="toggle-switch"><input type="checkbox" checked><span class="toggle-slider"></span></label>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="notifyReminders" <%= settings.notifyReminders ? 'checked' : '' %>>
+                    <span class="toggle-slider"></span>
+                  </label>
                 </div>
                 <div class="settings-toggle-row">
                   <div>
-                    <p class="toggle-label">BLE Absence Alerts</p>
-                    <p class="toggle-desc">Alert when presence is not detected during scheduled hours</p>
+                    <p class="toggle-label">Presence Alerts</p>
+                    <p class="toggle-desc">When presence is not detected during your consultation hours</p>
                   </div>
-                  <label class="toggle-switch"><input type="checkbox"><span class="toggle-slider"></span></label>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="notifyBleAbsence" <%= settings.notifyBleAbsence ? 'checked' : '' %>>
+                    <span class="toggle-slider"></span>
+                  </label>
                 </div>
                 <div class="settings-toggle-row">
                   <div>
                     <p class="toggle-label">Dean's Office Announcements</p>
-                    <p class="toggle-desc">Receive department-wide notices from the dean</p>
+                    <p class="toggle-desc">Department-wide notices from the dean</p>
                   </div>
-                  <label class="toggle-switch"><input type="checkbox" checked><span class="toggle-slider"></span></label>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="notifyAnnouncements" <%= settings.notifyAnnouncements ? 'checked' : '' %>>
+                    <span class="toggle-slider"></span>
+                  </label>
                 </div>
               </div>
-              <button class="btn-save-settings" id="btnSaveNotifs">Save Preferences</button>
             </div>
           </div>
 
-          <!-- Security -->
+          <!-- Device notifications: applied immediately, so not change-tracked -->
+          <div class="content-card">
+            <div class="card-header">
+              <h3 class="card-title">Device Notifications</h3>
+            </div>
+            <div class="card-body">
+              <div class="push-row">
+                <div class="push-copy">
+                  <p class="push-title">Notify me on this device</p>
+                  <p class="push-desc">
+                    Get new requests and appointment updates as notifications on this device,
+                    even when FaciTrack is closed. Turn this on for each device you use.
+                  </p>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="pushToggle" disabled data-no-track>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              <p id="pushMsg" class="push-msg"></p>
+              <button type="button" id="pushTestBtn" class="push-test" style="display:none;">Send a test notification</button>
+            </div>
+          </div>
+
+          <!-- Security: not change-tracked, the fields are cleared after saving -->
           <div class="content-card">
             <div class="card-header">
               <h3 class="card-title">Security</h3>
             </div>
             <div class="card-body">
               <div class="form-group">
-                <label class="modal-label">Current Password</label>
-                <input type="password" class="modal-input" id="inputCurrentPw">
+                <label class="modal-label" for="inputCurrentPw">Current Password</label>
+                <input type="password" class="modal-input" id="inputCurrentPw" autocomplete="current-password" data-no-track>
               </div>
               <div class="form-group">
-                <label class="modal-label">New Password</label>
-                <input type="password" class="modal-input" id="inputNewPw">
+                <label class="modal-label" for="inputNewPw">New Password</label>
+                <input type="password" class="modal-input" id="inputNewPw" autocomplete="new-password" data-no-track>
               </div>
               <div class="form-group">
-                <label class="modal-label">Confirm New Password</label>
-                <input type="password" class="modal-input" id="inputConfirmPw">
+                <label class="modal-label" for="inputConfirmPw">Confirm New Password</label>
+                <input type="password" class="modal-input" id="inputConfirmPw" autocomplete="new-password" data-no-track>
               </div>
               <button class="btn-save-settings" id="btnChangePassword">Update Password</button>
             </div>
@@ -360,212 +469,45 @@
 
         </div>
       </div>
+
+      <!-- Unsaved-changes bar -->
+      <div class="dirty-bar" id="dirtyBar">
+        <div class="dirty-bar-inner">
+          <div>
+            <p class="dirty-bar-text" id="dirtyBarText">You have unsaved changes.</p>
+            <p class="dirty-bar-sub">They will be lost if you leave this page.</p>
+          </div>
+          <div class="dirty-bar-actions">
+            <button type="button" class="btn-discard" id="btnDiscardAll">Discard</button>
+            <button type="button" class="btn-save-all" id="btnSaveAll">Save all changes</button>
+          </div>
+        </div>
+      </div>
     </div>
   </main>
+</div>
+
+<!-- Leave confirmation, for in-app navigation -->
+<div class="modal-overlay" id="leaveOverlay">
+  <div class="modal-content" style="max-width:420px;">
+    <div class="modal-header">
+      <h3 class="modal-title">Unsaved changes</h3>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:.875rem;color:var(--gray-600);line-height:1.65;margin:0;" id="leaveBody">
+        You have unsaved changes on this page. What would you like to do?
+      </p>
+      <div class="leave-modal-actions">
+        <button type="button" class="btn-modal btn-cancel" id="leaveStay">Stay on page</button>
+        <button type="button" class="btn-modal btn-cancel" id="leaveDiscard">Leave without saving</button>
+        <button type="button" class="btn-modal btn-primary" id="leaveSave">Save &amp; leave</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="toast-container" id="toastContainer"></div>
 <%- include('../../partials/footer') %>
 <%- include('../../partials/script') %>
-<script>
-(function(){
-  function showToast(type, title, message) {
-    var c = document.getElementById('toastContainer');
-    var t = document.createElement('div');
-    t.className = 'toast ' + type;
-    t.innerHTML = '<div class="toast-content"><p class="toast-title">' + title + '</p><p class="toast-message">' + message + '</p></div>';
-    c.appendChild(t);
-    setTimeout(function(){ t.style.opacity='0'; setTimeout(function(){ t.remove(); }, 300); }, 4000);
-  }
-
-  // ── Profile save ──
-  document.getElementById('btnSaveProfile').addEventListener('click', function(){
-    var name  = document.getElementById('inputName').value.trim();
-    var email = document.getElementById('inputEmail').value.trim();
-    if(!name || !email){ showToast('error','Missing Fields','Please fill in your name and email.'); return; }
-    document.querySelector('.settings-name').textContent  = name;
-    document.querySelector('.settings-email').textContent = email;
-    showToast('success','Saved','Personal information updated.');
-  });
-
-  // ── Status toggle ──
-  var statusOpts = document.querySelectorAll('.status-option');
-  statusOpts.forEach(function(opt){
-    opt.addEventListener('click', function(){
-      statusOpts.forEach(function(o){ o.classList.remove('active-travel','active-leave'); });
-      var val = opt.querySelector('input').value;
-      opt.classList.add(val === 'in-travel' ? 'active-travel' : 'active-leave');
-    });
-  });
-  document.getElementById('btnSaveStatus').addEventListener('click', function(){
-    var val = document.querySelector('input[name="campusStatus"]:checked').value;
-    var labels = { 'in-travel': 'In Travel', 'in-leave': 'On Leave' };
-    showToast('success','Status Updated','Your status is now set to "' + (labels[val] || val) + '".');
-  });
-
-  // ── Availability ──
-  var toggleBookings = document.getElementById('toggleAcceptBookings');
-  var unavailWrap    = document.getElementById('unavailMsgWrap');
-  toggleBookings.addEventListener('change', function(){
-    unavailWrap.classList.toggle('visible', !this.checked);
-  });
-  document.getElementById('btnSaveAvail').addEventListener('click', function(){
-    showToast('success','Saved','Consultation availability updated.');
-  });
-
-  // ── Repeat Weekly Schedule ──
-  var toggleRepeat = document.getElementById('toggleRepeatWeekly');
-  var repeatPanel  = document.getElementById('repeatSettingsPanel');
-  toggleRepeat.addEventListener('change', function(){
-    if(this.checked){
-      repeatPanel.classList.remove('hidden');
-    } else {
-      repeatPanel.classList.add('hidden');
-    }
-  });
-
-  // Day selector changes
-  var dayCheckboxes = document.querySelectorAll('.day-selector-item input[type="checkbox"]');
-  dayCheckboxes.forEach(function(cb){
-    cb.addEventListener('change', function(){ hasUnsavedChanges = true; });
-  });
-
-  // Repeat weeks input
-  document.getElementById('repeatWeeks').addEventListener('input', function(){ hasUnsavedChanges = true; });
-
-  // Save schedule settings
-  document.getElementById('btnSaveSchedule').addEventListener('click', function(){
-    var enabled = toggleRepeat.checked;
-    var selectedDays = [];
-    dayCheckboxes.forEach(function(cb){
-      if(cb.checked) selectedDays.push(cb.id.replace('day',''));
-    });
-    var weeks = document.getElementById('repeatWeeks').value;
-    
-    if(enabled && selectedDays.length === 0){
-      showToast('error','No Days Selected','Please select at least one day for weekly repetition.');
-      return;
-    }
-
-    var msg = enabled 
-      ? 'Schedule will repeat on ' + selectedDays.join(', ') + (weeks > 0 ? ' for ' + weeks + ' weeks' : ' indefinitely')
-      : 'Weekly repetition disabled';
-    
-    showToast('success','Saved', msg + '.');
-    hasUnsavedChanges = false;
-  });
-
-  // ── Notifications ──
-  document.getElementById('btnSaveNotifs').addEventListener('click', function(){
-    showToast('success','Saved','Notification preferences updated.');
-  });
-
-  // ── Password ──
-  document.getElementById('btnChangePassword').addEventListener('click', function(){
-    var cur  = document.getElementById('inputCurrentPw').value;
-    var nw   = document.getElementById('inputNewPw').value;
-    var conf = document.getElementById('inputConfirmPw').value;
-    if(!cur || !nw || !conf){ showToast('error','Missing Fields','Please fill in all password fields.'); return; }
-    if(nw.length < 8){ showToast('error','Too Short','New password must be at least 8 characters.'); return; }
-    if(nw !== conf){ showToast('error','Mismatch','New passwords do not match.'); return; }
-    document.getElementById('inputCurrentPw').value = '';
-    document.getElementById('inputNewPw').value = '';
-    document.getElementById('inputConfirmPw').value = '';
-    showToast('success','Updated','Password changed successfully.');
-  });
-
-  // ── Avatar upload (syncs with sidebar) ──
-  var settingsInput  = document.getElementById('settingsAvatarInput');
-  var settingsAvatar = document.getElementById('settingsAvatar');
-  if(settingsInput && settingsAvatar){
-    settingsInput.addEventListener('change', function(){
-      var file = this.files[0];
-      if(!file || !file.type.startsWith('image/')) return;
-      var reader = new FileReader();
-      reader.onload = function(e){
-        ['settingsAvatar','sidebarAvatar'].forEach(function(id){
-          var el = document.getElementById(id);
-          if(!el) return;
-          var initials = el.querySelector('.avatar-initials');
-          var existing = el.querySelector('.avatar-img');
-          if(initials) initials.remove();
-          if(existing) existing.remove();
-          var img = document.createElement('img');
-          img.src = e.target.result;
-          img.className = 'avatar-img';
-          var overlay = el.querySelector('.avatar-upload-overlay');
-          el.insertBefore(img, overlay || null);
-        });
-        localStorage.setItem('instructorProfilePhoto', e.target.result);
-      };
-      reader.readAsDataURL(file);
-    });
-    // Restore saved photo
-    var saved = localStorage.getItem('instructorProfilePhoto');
-    if(saved){
-      var initials = settingsAvatar.querySelector('.avatar-initials');
-      var existing = settingsAvatar.querySelector('.avatar-img');
-      if(initials) initials.remove();
-      if(existing) existing.remove();
-      var img = document.createElement('img');
-      img.src = saved; img.className = 'avatar-img';
-      settingsAvatar.insertBefore(img, settingsAvatar.querySelector('.avatar-upload-overlay') || null);
-    }
-  }
-}());
-
-// ── Unsaved Changes Warning ──
-(function(){
-  let hasUnsavedChanges = false;
-  const formInputs = document.querySelectorAll('.modal-input, input[type="checkbox"], input[type="radio"]');
-  
-  // Track changes in form inputs
-  formInputs.forEach(input => {
-    input.addEventListener('input', () => { hasUnsavedChanges = true; });
-    input.addEventListener('change', () => { hasUnsavedChanges = true; });
-  });
-
-  // Clear flag when save buttons are clicked
-  const saveButtons = document.querySelectorAll('.btn-save-settings');
-  saveButtons.forEach(btn => {
-    btn.addEventListener('click', () => {
-      setTimeout(() => { hasUnsavedChanges = false; }, 100);
-    });
-  });
-
-  // Warning banner at top of page
-  function showUnsavedWarning() {
-    const existingBanner = document.querySelector('.unsaved-warning-banner');
-    if (existingBanner) return;
-
-    const banner = document.createElement('div');
-    banner.className = 'unsaved-warning-banner';
-    banner.innerHTML = `
-      <div style="display:flex; align-items:center; gap:0.75rem; padding:0.875rem 1.25rem; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; margin-bottom:1rem;">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-          <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-        </svg>
-        <span style="flex:1; font-size:0.875rem; color:#92400e; font-weight:600;">You have unsaved changes on this page.</span>
-      </div>
-    `;
-    document.querySelector('.main-container').insertBefore(banner, document.querySelector('.page-header'));
-  }
-
-  // Before leaving page
-  window.addEventListener('beforeunload', (e) => {
-    if (hasUnsavedChanges) {
-      e.preventDefault();
-      e.returnValue = 'You have unsaved changes. Are you sure you want to leave?';
-      return e.returnValue;
-    }
-  });
-
-  // Show banner when changes detected
-  formInputs.forEach(input => {
-    input.addEventListener('input', () => {
-      if (hasUnsavedChanges) showUnsavedWarning();
-    });
-  });
-}());
-</script>
+<script src="/js/push-subscribe.js"></script>
+<script src="/js/instructor-settings.js?v=<%= Date.now() %>"></script>

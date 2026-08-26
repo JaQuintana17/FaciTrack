@@ -237,6 +237,11 @@
                 const dot = row.querySelector('.notif-unread-dot');
                 if (dot) dot.remove();
             });
+
+            // The server marks every unread row as read, so the bell must go to
+            // zero. Without resetting this first, updateBadge() just repainted
+            // the stale count and the badge appeared stuck.
+            unreadCount = 0;
             updateBadge();
             updateSubtitle();
         });
@@ -260,6 +265,12 @@
                     body.innerHTML = '<div class="notif-panel-empty"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><p>No notifications yet</p></div>';
                 }
             }
+
+            // Only read rows are deleted, so the unread total is unchanged —
+            // but resync the bell and subtitle against what is actually left.
+            unreadCount = document.querySelectorAll('.notif-panel-item.unread').length;
+            updateBadge();
+            updateSubtitle();
         });
     }
 
@@ -271,10 +282,21 @@
 
             const aptId = item.dataset.aptId;
             const notifId = item.dataset.id;
+            const wasUnread = item.classList.contains('unread');
 
             try {
                 if (notifId) {
                     await fetch(`/notifications/${notifId}/mark-read`, { method: 'POST' });
+                }
+                // A notification with no linked appointment does not navigate
+                // away, so the bell has to be decremented here or it goes stale.
+                if (wasUnread) {
+                    item.classList.remove('unread');
+                    const dot = item.querySelector('.notif-panel-dot');
+                    if (dot) dot.remove();
+                    unreadCount = Math.max(0, unreadCount - 1);
+                    updateBadge();
+                    updateSubtitle();
                 }
                 if (aptId) {
                     window.location.href = `/student/appointments?openApt=${encodeURIComponent(aptId)}`;

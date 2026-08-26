@@ -15,6 +15,12 @@
                     <p class="page-subtitle">Review and respond to student appointment requests</p>
                 </div>
                 <div class="header-actions">
+                    <% const pendingApts = appointments.filter(a => a.status === 'pending'); %>
+                    <button class="btn-header-action apt-btn-approve-all" id="approveAllBtn"
+                            <%= pendingApts.length ? '' : 'hidden' %>>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                        Approve All (<span id="approveAllCount"><%= pendingApts.length %></span>)
+                    </button>
                     <button class="btn-header-action" id="genLogsBtn">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                         Generate Logs
@@ -72,10 +78,20 @@
                     <option value="all">All Statuses</option>
                     <option value="pending">Pending</option>
                     <option value="confirmed">Confirmed</option>
+                    <option value="completed">Completed</option>
                     <option value="cancelled">Cancelled</option>
                     <option value="declined">Declined</option>
                     <option value="rescheduled">Rescheduled</option>
                 </select>
+                <%# Blocking a date affects these appointments, so the action belongs here too %>
+                <button type="button" class="apt-btn-unavail" onclick="UnavailModal.open()">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/>
+                        <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+                        <line x1="9" y1="16" x2="15" y2="16"/>
+                    </svg>
+                    Mark Date Unavailable
+                </button>
                 <div class="apt-view-toggle">
                     <button class="apt-view-btn" data-view="list" title="List view">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
@@ -198,6 +214,35 @@
 
 <!-- Toast container -->
 <div class="toast-container" id="aptToastContainer"></div>
+
+<!-- Approve All confirmation.
+     Handles its own backdrop taps: a finished run has to refresh the page,
+     so it opts out of the global handler in main.js. -->
+<div class="modal-overlay" id="approveAllModal" data-backdrop-close="manual">
+    <div class="modal-content" style="max-width:480px;">
+        <div class="modal-header">
+            <h3 class="modal-title">Approve all pending requests</h3>
+            <button class="modal-close" id="approveAllClose">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div id="approveAllPrompt">
+                <p class="modal-description">
+                    This confirms <strong id="approveAllTotal">0</strong> pending request<span id="approveAllPlural">s</span>
+                    at once. Every student is notified, and the slots are locked in.
+                </p>
+                <ul class="apt-approve-list" id="approveAllList"></ul>
+                <p class="apt-approve-warn">This cannot be undone in bulk — you would have to cancel each one individually.</p>
+            </div>
+            <div id="approveAllResult" hidden></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-modal btn-cancel" id="approveAllCancel">Cancel</button>
+            <button class="btn-modal btn-confirm-green" id="approveAllConfirm">Approve all</button>
+        </div>
+    </div>
+</div>
 
 <!-- Generate Logs Modal -->
 <div class="modal-overlay" id="genLogsModal">
@@ -327,4 +372,66 @@ window.APT_DATA = <%- JSON.stringify(appointments) %>;
         closeModal();
     });
 }());
+
+// Blocking a date changes this list — reload once the modal is done
+window.onUnavailabilityChanged = function () {
+    window.location.reload();
+};
 </script>
+
+<%- include('../../partials/unavailability-modal') %>
+<script src="/js/instructor-unavailability.js"></script>
+
+<style>
+.apt-btn-unavail {
+    display: inline-flex; align-items: center; gap: .4rem;
+    padding: .5rem .85rem; border-radius: 8px; cursor: pointer;
+    background: #fef2f2; color: #dc2626; border: 1.5px solid #fecaca;
+    font-size: .8rem; font-weight: 700; font-family: var(--font-body);
+    white-space: nowrap; transition: all .15s;
+}
+.apt-btn-unavail:hover { background: #dc2626; color: #fff; border-color: #dc2626; }
+
+/* ── Approve all ── */
+.apt-btn-approve-all {
+    background: #e8f2ff; color: var(--primary-blue); border-color: #bfdbfe;
+}
+.apt-btn-approve-all:hover {
+    background: var(--primary-blue); color: #fff; border-color: var(--primary-blue);
+}
+.apt-btn-approve-all[hidden] { display: none; }
+
+.apt-approve-list {
+    list-style: none; margin: .9rem 0; padding: 0;
+    max-height: 220px; overflow-y: auto;
+    display: flex; flex-direction: column; gap: .4rem;
+}
+.apt-approve-list li {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: .75rem; flex-wrap: wrap;
+    padding: .5rem .7rem; border: 1px solid var(--gray-200);
+    border-radius: 8px; background: var(--gray-50); font-size: .8rem;
+}
+.apt-approve-list li strong { color: var(--gray-900); }
+.apt-approve-list li span { color: var(--gray-500); font-size: .74rem; }
+
+.apt-approve-warn {
+    margin: 0; font-size: .76rem; line-height: 1.55; color: #92400e;
+    background: #fffbeb; border: 1px solid #fde68a;
+    border-radius: 8px; padding: .55rem .7rem;
+}
+.apt-approve-heading {
+    font-size: .78rem; font-weight: 700; color: var(--gray-700); margin: 1rem 0 0;
+}
+.apt-approve-note {
+    margin: 0; padding: .6rem .75rem; border-radius: 8px;
+    font-size: .8rem; line-height: 1.55;
+}
+.apt-approve-note.ok  { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+.apt-approve-note.bad { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; }
+
+@media (max-width: 560px) {
+    .apt-btn-approve-all { flex: 1; justify-content: center; }
+    .apt-approve-list li { flex-direction: column; gap: .15rem; }
+}
+</style>

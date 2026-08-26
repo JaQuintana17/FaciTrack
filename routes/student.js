@@ -3,6 +3,7 @@ const router = express.Router();
 const instructorRouter = require('./instructor');
 const emailService = require('../services/email');
 const StudentController = require('../controllers/StudentController');
+const { buildStudentUser } = require('../utils/sessionUser');
 
 router.use((req, res, next) => {
     console.log(`[Student Router] ${req.method} ${req.originalUrl}`);
@@ -354,9 +355,13 @@ router.post('/faculty/consultation/:slotId/cancel', StudentController.updateStat
 router.get('/appointments', StudentController.renderAppointmentsPage);
 router.post('/appointments/:appointmentId/cancel', StudentController.cancelAppointment);
 
+// NOTE: still renders the hardcoded facultyList — scheduled for DB migration.
+// `student` is required by student-sidebar.ejs; omitting it crashed the render.
 router.get('/availability', (req, res) => {
     res.render('pages/student/availability', {
-        title: 'FaciTrack - Faculty Availability', facultyList
+        title: 'FaciTrack - Faculty Availability',
+        student: buildStudentUser(req.session),
+        facultyList
     });
 });
 

@@ -55,9 +55,55 @@ function bookingConflictsWithBlock(booking, block, blockDateKey) {
   return startMinutes < blockEnd && endMinutes > blockStart;
 }
 
+
+// ── Booking lead time ──
+// Students may book same-day, but not a slot starting within this many hours.
+// Override with BOOKING_LEAD_TIME_HOURS in .env.
+const BOOKING_LEAD_TIME_HOURS = Number(process.env.BOOKING_LEAD_TIME_HOURS) || 4;
+
+/** Earliest instant a slot may start and still be bookable. */
+function earliestBookableStart(now = new Date()) {
+  return new Date(now.getTime() + BOOKING_LEAD_TIME_HOURS * 60 * 60 * 1000);
+}
+
+/**
+ * True when a slot starts too soon to book.
+ * @param {string} dateKey   YYYY-MM-DD
+ * @param {string} startTime HH:MM or HH:MM:SS (24h)
+ */
+function isWithinLeadTime(dateKey, startTime, now = new Date()) {
+  const mins = toMinutesOfDay(startTime);
+  if (mins === null) return false;
+  const parts = String(dateKey).slice(0, 10).split("-").map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return false;
+  const slotStart = new Date(parts[0], parts[1] - 1, parts[2], Math.floor(mins / 60), mins % 60, 0, 0);
+  return slotStart < earliestBookableStart(now);
+}
+
+/**
+ * Minutes past midnight from either a 24h DB time ("14:30:00", "14:30")
+ * or a 12h display time ("2:30 PM"). parseTimeToMinutes only accepts the
+ * latter and returns null on the seconds suffix MySQL sends back.
+ */
+function toMinutesOfDay(value) {
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (/(AM|PM)$/i.test(raw)) return parseTimeToMinutes(raw);
+  const m = raw.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m) return parseTimeToMinutes(raw);
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
 module.exports = {
   normalizeDateKey,
   getBlockDateKeys,
   parseTimeToMinutes,
-  bookingConflictsWithBlock
+  bookingConflictsWithBlock,
+  BOOKING_LEAD_TIME_HOURS,
+  earliestBookableStart,
+  isWithinLeadTime,
+  toMinutesOfDay
 };

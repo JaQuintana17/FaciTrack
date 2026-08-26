@@ -22,6 +22,16 @@ let dayPanelEl = null;
 let popReschedPicker = null;
 
 const $ = id => document.getElementById(id);
+
+// Below this width the calendar cells are too small for name badges, so a day
+// with appointments is shown as a filled cell and opens its list on one tap.
+const MOBILE_CAL = '(max-width: 640px)';
+const isMobileCal = () => window.matchMedia(MOBILE_CAL).matches;
+
+/** Short label for the consultation venue, shown wherever an appointment is listed. */
+function modeLabel(apt) {
+    return apt.mode === 'Online' ? 'Online' : 'Face-to-Face';
+}
 const MONTHS = ['January','February','March','April','May','June',
                 'July','August','September','October','November','December'];
 
@@ -47,6 +57,8 @@ function refreshStats() {
     $('aptStatPending').textContent   = appointments.filter(a=>a.status==='pending').length;
     $('aptStatConfirmed').textContent = appointments.filter(a=>a.status==='confirmed').length;
     $('aptStatDeclined').textContent  = appointments.filter(a=>a.status==='declined').length;
+    // Approving or declining the last pending request retires the bulk button
+    if (window.syncApproveAllButton) window.syncApproveAllButton();
 }
 
 /* ── Calendar ── */
@@ -103,19 +115,37 @@ function renderCalendar() {
 
         const eventsEl = document.createElement('div');
         eventsEl.className = 'apt-cal-events';
-        visible.slice(0, 3).forEach(apt => {
-            const b = document.createElement('span');
-            b.className = `apt-badge ${apt.status}`;
-            b.textContent = apt.studentName;
-            b.dataset.aptId = apt.id;
-            b.addEventListener('click', e => { e.stopPropagation(); openPopover(apt.id, b); });
-            eventsEl.appendChild(b);
-        });
-        if (visible.length > 3) {
-            const more = document.createElement('span');
-            more.className = 'apt-badge-more';
-            more.textContent = `+${visible.length - 3} more`;
-            eventsEl.appendChild(more);
+
+        if (isMobileCal()) {
+            // One glance: does this day have anything on it?
+            if (visible.length) {
+                cell.classList.add('has-apts');
+                const count = document.createElement('span');
+                count.className = 'apt-cal-count';
+                count.textContent = visible.length;
+                eventsEl.appendChild(count);
+            }
+        } else {
+            visible.slice(0, 3).forEach(apt => {
+                const b = document.createElement('span');
+                b.className = `apt-badge ${apt.status}`;
+                b.textContent = apt.studentName;
+                b.dataset.aptId = apt.id;
+                b.addEventListener('click', e => { e.stopPropagation(); openPopover(apt.id, b); });
+                eventsEl.appendChild(b);
+            });
+            if (visible.length > 3) {
+                const more = document.createElement('span');
+                more.className = 'apt-badge-more';
+                more.textContent = `+${visible.length - 3} more`;
+                // Clicking "+N more" should show the whole day, not select the cell
+                more.addEventListener('click', e => {
+                    e.stopPropagation();
+                    if (singleClickTimer) { clearTimeout(singleClickTimer); singleClickTimer = null; }
+                    openDayPanel(dateStr, visible, cell);
+                });
+                eventsEl.appendChild(more);
+            }
         }
         cell.appendChild(eventsEl);
         cell.addEventListener('click', handleCellClick.bind(null, dateStr, cell));
@@ -127,6 +157,16 @@ function renderCalendar() {
 /* ── Cell click / dblclick ── */
 function handleCellClick(dateStr, cellEl, e) {
     if (e.target.closest('.apt-badge')) return;
+
+    // On mobile there is no hover or double-click — tapping a day opens its list
+    if (isMobileCal()) {
+        if (popoverOpen || dayPanelEl) { closePopover(); closeDayPanel(); return; }
+        const visible = visibleAptsOn(dateStr);
+        if (visible.length) openDayPanel(dateStr, visible, cellEl);
+        else showCellHint(cellEl, 'No appointments scheduled');
+        return;
+    }
+
     if (popoverOpen || dayPanelEl) {
         closePopover(); closeDayPanel();
         document.querySelectorAll('.apt-cal-cell.selected-instant').forEach(c=>c.classList.remove('selected-instant','selected'));
@@ -141,14 +181,22 @@ function handleCellClick(dateStr, cellEl, e) {
     singleClickTimer = null;
 }
 
+function visibleAptsOn(dateStr) {
+    const dayApts = (filterStatus === 'all')
+        ? aptsByDate(dateStr)
+        : aptsByDate(dateStr).filter(a => a.status === filterStatus);
+    if (!searchQ) return dayApts;
+    const q = searchQ.toLowerCase();
+    return dayApts.filter(a =>
+        (a.studentName || '').toLowerCase().includes(q) ||
+        (a.studentId || '').toLowerCase().includes(q) ||
+        (a.topic || '').toLowerCase().includes(q));
+}
+
 function handleCellDblClick(dateStr, cellEl, e) {
     if (e.target.closest('.apt-badge')) return;
     if (singleClickTimer) clearTimeout(singleClickTimer);
-    const dayApts = (filterStatus==='all') ? aptsByDate(dateStr) : aptsByDate(dateStr).filter(a=>a.status===filterStatus);
-    const visible = searchQ ? dayApts.filter(a => {
-        const q = searchQ.toLowerCase();
-        return (a.studentName || '').toLowerCase().includes(q)||(a.studentId||'').toLowerCase().includes(q)||(a.topic||'').toLowerCase().includes(q);
-    }) : dayApts;
+    const visible = visibleAptsOn(dateStr);
     if (visible.length === 0) { showCellHint(cellEl, 'No appointments scheduled'); }
     else if (visible.length === 1) { openPopover(visible[0].id, cellEl); }
     else { openDayPanel(dateStr, visible, cellEl); }
@@ -165,12 +213,26 @@ function showCellHint(anchor, msg) {
 
 function positionNear(el, anchor) {
     const r = anchor.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight;
-    el.style.cssText = 'position:fixed;visibility:hidden;display:block;';
+    // Measure without clobbering the element's own display mode — the day panel
+    // is a flex column so its list can scroll inside a capped height.
+    el.style.position = 'fixed';
+    el.style.visibility = 'hidden';
     const ew = el.offsetWidth, eh = el.offsetHeight;
-    let left = r.left, top = r.bottom + 6;
+
+    let left = r.left;
     if (left + ew > vw - 8) left = vw - ew - 8;
+    if (left < 8) left = 8;
+
+    // Prefer below the cell, flip above if it will not fit, then clamp to the
+    // viewport so a tall panel is always reachable instead of scrolled away.
+    let top = r.bottom + 6;
     if (top + eh > vh - 8) top = r.top - eh - 6;
-    el.style.left = left+'px'; el.style.top = top+'px'; el.style.visibility = '';
+    if (top + eh > vh - 8) top = vh - eh - 8;
+    if (top < 8) top = 8;
+
+    el.style.left = left + 'px';
+    el.style.top = top + 'px';
+    el.style.visibility = '';
 }
 function formatFullDate(dateStr) {
     const d = new Date(dateStr + (dateStr.includes('T') ? '' : 'T00:00:00'));
@@ -216,30 +278,49 @@ function openPopover(aptId, anchor) {
 }
 
 function positionPopover(pop, anchor) {
+    // Below 600px the popover is a full-width bottom sheet positioned by CSS —
+    // anchoring it to a cell here would fight that layout.
+    if (window.innerWidth <= 600) { pop.style.opacity = '1'; pop.style.maxHeight = ''; return; }
+
     const r = anchor.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight;
-    const pw = pop.offsetWidth || 300, ph = pop.offsetHeight || 260;
     const vis = r.top < vh && r.bottom > 0 && r.left < vw && r.right > 0;
     pop.style.opacity = vis ? '1' : '0';
     if (!vis) return;
 
-    // Get header and footer heights so popover never overlaps them
+    // Get header and footer heights so the popover never overlaps them
     const headerEl = document.querySelector('.main-header');
     const footerEl = document.querySelector('.main-footer');
     const topBound    = headerEl ? headerEl.getBoundingClientRect().bottom + 6 : 8;
     const bottomBound = footerEl ? footerEl.getBoundingClientRect().top - 6   : vh - 8;
 
-    // Try right side first, fall back to left
+    // Cap the height BEFORE measuring, so opening the reschedule picker makes
+    // the popover scroll rather than grow past the bottom of the screen.
+    pop.style.maxHeight = Math.max(160, bottomBound - topBound) + 'px';
+
+    const pw = pop.offsetWidth || 300;
+    const ph = pop.offsetHeight || 260;
+
+    // Try the right side first, fall back to the left
     let left = r.right + 10;
-    let top  = r.top;
     if (left + pw > vw - 8) left = r.left - pw - 10;
     if (left < 8) left = 8;
 
     // Clamp vertically: stay between header bottom and footer top
+    let top = r.top;
     if (top + ph > bottomBound) top = bottomBound - ph;
     if (top < topBound) top = topBound;
 
     pop.style.left = left + 'px';
     pop.style.top  = top  + 'px';
+}
+
+/**
+ * Re-place the open popover after its contents change size. Without this the
+ * popover keeps the position it had when it was short and slides off-screen.
+ */
+function repositionPopover() {
+    if (!popoverOpen || !window._aptScroll) return;
+    window._aptScroll();
 }
 
 function closePopover(instant) {
@@ -280,19 +361,26 @@ function initPopover() {
         $('popActions').style.display = 'none';
         $('popDeclinePanel').classList.add('open');
         $('popDeclineReason').focus();
+        repositionPopover();
     });
 
     $('popDeclineCancel').addEventListener('click', () => {
         $('popDeclinePanel').classList.remove('open');
         $('popActions').style.display = 'flex';
         $('popDeclineReason').value = '';
+        repositionPopover();
     });
 
     $('popReschedCheck').addEventListener('change', function() {
         const container = $('popReschedContainer');
         const confirmBtn = $('popDeclineConfirm');
         if (this.checked) {
-            popReschedPicker = buildReschedulePicker(() => { confirmBtn.disabled = false; });
+            const current = appointments.find(a => a.id === activePopAptId);
+            popReschedPicker = buildReschedulePicker(
+                () => { confirmBtn.disabled = false; },
+                current && current.mode,
+                repositionPopover
+            );
             container.innerHTML = '';
             container.appendChild(popReschedPicker.el);
             container.style.display = 'block';
@@ -305,6 +393,7 @@ function initPopover() {
             confirmBtn.textContent = 'Decline & Notify';
             confirmBtn.disabled = false;
         }
+        repositionPopover();
     });
 
     $('popDeclineConfirm').addEventListener('click', () => {
@@ -323,13 +412,20 @@ function initPopover() {
         if ($('popReschedCheck').checked) {
             const sel = popReschedPicker && popReschedPicker.getSelected();
             if (!sel) { showToast('error', 'Select a Slot', 'Please choose a new date and time.'); btn.disabled = false; return; }
-            doReschedule(activePopAptId, sel.id, reason, () => showPopResolved('rescheduled', 'Student notified'), () => { btn.disabled = false; });
+            doReschedule(activePopAptId, sel.id, reason, sel.mode,
+                () => showPopResolved('rescheduled', 'Student notified'),
+                () => { btn.disabled = false; });
         } else {
             doDecline(activePopAptId, reason, () => showPopResolved('declined', 'Student notified'), () => { btn.disabled = false; });
         }
     });
 
     document.addEventListener('keydown', e => { if (e.key==='Escape') { closePopover(); closeDayPanel(); } });
+
+    window.addEventListener('resize', () => {
+        repositionPopover();
+        if (dayPanelEl) closeDayPanel();
+    });
 }
 
 function showPopResolved(type, msg) {
@@ -385,7 +481,11 @@ function openDayPanel(dateStr, apts, anchor) {
             `<span class="day-panel-dot ${apt.status}"></span>
              <div class="day-panel-info">
                <div class="day-panel-name">${apt.studentName}</div>
-               <div class="day-panel-meta">${apt.time} · ${apt.duration||'—'} · <em style="color:#94a3b8;">${apt.topic}</em></div>
+               <div class="day-panel-meta">${apt.time} · ${apt.duration||'—'}</div>
+               <div class="day-panel-meta">
+                 <span class="day-panel-mode ${apt.mode === 'Online' ? 'online' : 'f2f'}">${modeLabel(apt)}</span>
+                 <em style="color:#94a3b8;">${apt.topic}</em>
+               </div>
              </div>
              <span class="day-panel-status ${apt.status}">${apt.status}</span>`;
 
@@ -400,6 +500,37 @@ function openDayPanel(dateStr, apts, anchor) {
         viewBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>View`;
         viewBtn.addEventListener('click', e => { e.stopPropagation(); closeDayPanel(); openPopover(apt.id, anchor); });
         actions.appendChild(viewBtn);
+
+        /* Confirmed consultations: switch mode, and close out once the slot has ended */
+        if (apt.status === 'confirmed') {
+            const modeBtn = document.createElement('button');
+            modeBtn.className = 'day-panel-btn mode';
+            const nextMode = apt.mode === 'Online' ? 'Face-to-Face' : 'Online';
+            modeBtn.title = 'Switch to ' + nextMode;
+            modeBtn.textContent = apt.mode === 'Online' ? 'Online' : 'F2F';
+            modeBtn.addEventListener('click', e => {
+                e.stopPropagation();
+                modeBtn.disabled = true;
+                switchMode(apt.id, nextMode, modeBtn);
+            });
+            actions.appendChild(modeBtn);
+
+            // Only offer completion after the consultation has actually ended
+            if (hasEnded(apt)) {
+                const cmpBtn = document.createElement('button');
+                cmpBtn.className = 'day-panel-btn complete';
+                cmpBtn.title = 'Mark as completed';
+                cmpBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Complete';
+                cmpBtn.addEventListener('click', e => {
+                    e.stopPropagation();
+                    cmpBtn.disabled = true;
+                    doComplete(apt.id,
+                        () => markRowDone(wrap, 'completed', '✓ Completed'),
+                        () => { cmpBtn.disabled = false; });
+                });
+                actions.appendChild(cmpBtn);
+            }
+        }
 
         if (isPending) {
             /* Approve button */
@@ -446,7 +577,8 @@ function openDayPanel(dateStr, apts, anchor) {
 
             dpReschedCheck.addEventListener('change', function() {
                 if (this.checked) {
-                    dpReschedPicker = buildReschedulePicker(() => { dfConfirmBtn.disabled = false; });
+                    dpReschedPicker = buildReschedulePicker(
+                        () => { dfConfirmBtn.disabled = false; }, apt.mode);
                     dpReschedContainer.innerHTML = '';
                     dpReschedContainer.appendChild(dpReschedPicker.el);
                     dpReschedContainer.style.display = 'block';
@@ -474,10 +606,24 @@ function openDayPanel(dateStr, apts, anchor) {
                 if (dpReschedCheck.checked) {
                     const sel = dpReschedPicker && dpReschedPicker.getSelected();
                     if (!sel) { showToast('error', 'Select a Slot', 'Please choose a new date and time.'); dfConfirmBtn.disabled = false; return; }
-                    doReschedule(apt.id, sel.id, reason, () => markRowDone(wrap, 'rescheduled', '↻ Notified'), () => { dfConfirmBtn.disabled = false; });
+                    doReschedule(apt.id, sel.id, reason, sel.mode,
+                        () => markRowDone(wrap, 'rescheduled', '↻ Notified'),
+                        () => { dfConfirmBtn.disabled = false; });
                 } else {
                     doDecline(apt.id, reason, () => markRowDone(wrap, 'declined', '✗ Notified'), () => { dfConfirmBtn.disabled = false; });
                 }
+            });
+
+            decPanel.querySelector('.day-panel-df-cancel').addEventListener('click', e => {
+                e.stopPropagation();
+                decPanel.classList.remove('open');
+                decPanel.querySelector('.day-panel-decline-ta').value = '';
+                dpReschedCheck.checked = false;
+                dpReschedContainer.style.display = 'none';
+                dpReschedContainer.innerHTML = '';
+                dpReschedPicker = null;
+                dfConfirmBtn.textContent = 'Decline & Notify';
+                dfConfirmBtn.disabled = false;
             });
 
             decBtn.addEventListener('click', e => {
@@ -581,9 +727,12 @@ function buildCard(apt) {
     card.dataset.status = apt.status;
     card.dataset.aptId  = apt.id;
 
-    const isPending  = apt.status === 'pending';
-    const isDeclined = apt.status === 'declined';
-    const initials   = getInitials(apt.firstName, apt.lastName);
+    const isPending   = apt.status === 'pending';
+    const isDeclined  = apt.status === 'declined';
+    // Manual completion is only ever offered for a confirmed consultation
+    // that has actually happened — the server enforces the same rule.
+    const isCompletable = apt.status === 'confirmed' && hasEnded(apt);
+    const initials    = getInitials(apt.firstName, apt.lastName);
 
     // Avatar col
     const avatarCol = document.createElement('div');
@@ -668,7 +817,8 @@ function buildCard(apt) {
 
         lvReschedCheck.addEventListener('change', function() {
             if (this.checked) {
-                lvReschedPicker = buildReschedulePicker(() => { lvConfirmBtn.disabled = false; });
+                lvReschedPicker = buildReschedulePicker(
+                    () => { lvConfirmBtn.disabled = false; }, apt.mode);
                 lvReschedContainer.innerHTML = '';
                 lvReschedContainer.appendChild(lvReschedPicker.el);
                 lvReschedContainer.style.display = 'block';
@@ -711,7 +861,9 @@ function buildCard(apt) {
             if (lvReschedCheck.checked) {
                 const sel = lvReschedPicker && lvReschedPicker.getSelected();
                 if (!sel) { showToast('error', 'Select a Slot', 'Please choose a new date and time.'); lvConfirmBtn.disabled = false; return; }
-                doReschedule(apt.id, sel.id, reason, () => showToast('success', 'Rescheduled', `${apt.studentName} has been notified.`), () => { lvConfirmBtn.disabled = false; });
+                doReschedule(apt.id, sel.id, reason, sel.mode,
+                    () => showToast('success', 'Rescheduled', `${apt.studentName} has been notified.`),
+                    () => { lvConfirmBtn.disabled = false; });
             } else {
                 doDecline(apt.id, reason, () => showToast('success', 'Declined', `${apt.studentName} has been notified.`), () => { lvConfirmBtn.disabled = false; });
             }
@@ -719,6 +871,22 @@ function buildCard(apt) {
 
         actions.appendChild(approveBtn);
         actions.appendChild(declineBtn);
+    }
+
+    if (isCompletable) {
+        const completeBtn = document.createElement('button');
+        completeBtn.className = 'apt-lv-btn complete';
+        completeBtn.title = 'Manually mark this consultation as completed';
+        completeBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Complete`;
+        completeBtn.addEventListener('click', () => {
+            completeBtn.disabled = true;
+            doComplete(
+                apt.id,
+                () => { showToast('success', 'Completed', `${apt.studentName}'s consultation is now marked complete.`); },
+                () => { completeBtn.disabled = false; }
+            );
+        });
+        actions.appendChild(completeBtn);
     }
 
     // Declined reason display
@@ -738,101 +906,130 @@ function buildCard(apt) {
     return card;
 }
 
-function buildReschedulePicker(onSelect) {
+/**
+ * Slot picker shown when declining-with-reschedule.
+ *
+ * The server only offers slots inside a three-week window, so a month grid with
+ * navigation would mostly show empty months. A flat list of the open days reads
+ * better and makes the limit obvious.
+ *
+ * @param {function} onSelect  called once a slot is chosen
+ * @param {string} currentMode the appointment's present mode, pre-selected
+ * @param {function} [onResize] called after the slot list renders, so a host
+ *                              popover can re-place itself around the new height
+ */
+function buildReschedulePicker(onSelect, currentMode, onResize) {
     const wrap = document.createElement('div');
     wrap.className = 'resched-picker';
     wrap.innerHTML = `
-        <div class="resched-cal-header">
-            <button type="button" class="resched-cal-nav" data-dir="-1">&larr;</button>
-            <span class="resched-cal-title"></span>
-            <button type="button" class="resched-cal-nav" data-dir="1">&rarr;</button>
+        <div class="resched-mode">
+            <span class="resched-mode-label">Consultation mode</span>
+            <div class="resched-mode-opts">
+                <button type="button" class="resched-mode-btn" data-mode="Face-to-Face">Face-to-Face</button>
+                <button type="button" class="resched-mode-btn" data-mode="Online">Online</button>
+            </div>
         </div>
-        <div class="resched-cal-grid"></div>
-        <div class="resched-slot-list"></div>
+        <p class="resched-window"></p>
+        <div class="resched-days"></div>
         <div class="resched-selected" style="display:none;"></div>
     `;
 
-    let year, month, slotsData = [], selected = null;
-    const titleEl = wrap.querySelector('.resched-cal-title');
-    const gridEl  = wrap.querySelector('.resched-cal-grid');
-    const listEl  = wrap.querySelector('.resched-slot-list');
-    const selEl   = wrap.querySelector('.resched-selected');
+    let selected = null;
+    let mode = currentMode === 'Online' ? 'Online' : 'Face-to-Face';
 
-    function renderCal() {
-        titleEl.textContent = MONTHS[month] + ' ' + year;
-        gridEl.innerHTML = '';
-        const byDate = {};
-        slotsData.forEach(g => { if (g.subSlots.length) byDate[g.date] = g; });
+    const daysEl   = wrap.querySelector('.resched-days');
+    const selEl    = wrap.querySelector('.resched-selected');
+    const windowEl = wrap.querySelector('.resched-window');
 
-        ['S','M','T','W','T','F','S'].forEach(d => {
-            const h = document.createElement('div');
-            h.className = 'resched-dow'; h.textContent = d;
-            gridEl.appendChild(h);
+    function paintMode() {
+        wrap.querySelectorAll('.resched-mode-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.mode === mode);
         });
-
-        const first = new Date(year, month, 1).getDay();
-        const daysIn = new Date(year, month + 1, 0).getDate();
-        for (let i = 0; i < first; i++) gridEl.appendChild(document.createElement('div'));
-        for (let d = 1; d <= daysIn; d++) {
-            const key = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-            const cell = document.createElement('div');
-            cell.className = 'resched-day' + (byDate[key] ? ' has-slots' : '');
-            cell.textContent = d;
-            if (byDate[key]) cell.addEventListener('click', () => renderSlots(byDate[key]));
-            gridEl.appendChild(cell);
-        }
     }
-
-    function renderSlots(group) {
-        listEl.innerHTML = `<p class="resched-slot-date">${group.day}, ${group.date}</p>`;
-        const row = document.createElement('div');
-        row.className = 'resched-slot-row';
-        group.subSlots.forEach(sub => {
-            const b = document.createElement('button');
-            b.type = 'button';
-            b.className = 'resched-slot-btn';
-            b.textContent = `${sub.timeStart}–${sub.timeEnd}`;
-            b.addEventListener('click', () => {
-                row.querySelectorAll('.resched-slot-btn').forEach(x => x.classList.remove('active'));
-                b.classList.add('active');
-                selected = { id: sub.id, label: `${group.day}, ${group.date} · ${sub.timeStart}–${sub.timeEnd}` };
-                selEl.innerHTML = `<strong>New time:</strong> ${selected.label}`;
-                selEl.style.display = 'block';
-                if (onSelect) onSelect(selected);
-            });
-            row.appendChild(b);
-        });
-        listEl.appendChild(row);
-    }
-
-    wrap.querySelectorAll('.resched-cal-nav').forEach(btn => {
+    wrap.querySelectorAll('.resched-mode-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            month += parseInt(btn.dataset.dir, 10);
-            if (month < 0) { month = 11; year--; }
-            if (month > 11) { month = 0; year++; }
-            renderCal();
+            mode = btn.dataset.mode;
+            paintMode();
+            // Switching the venue does not invalidate the slot, but the caller
+            // may want to re-enable its confirm button
+            if (selected && onSelect) onSelect(getSelected());
         });
     });
+    paintMode();
+
+    function getSelected() {
+        return selected ? { id: selected.id, label: selected.label, mode: mode } : null;
+    }
+
+    function renderDays(groups) {
+        daysEl.innerHTML = '';
+        groups.forEach(group => {
+            const day = document.createElement('div');
+            day.className = 'resched-day-group';
+
+            const head = document.createElement('p');
+            head.className = 'resched-slot-date';
+            head.textContent = `${group.day}, ${formatFullDate(group.date)}`;
+            day.appendChild(head);
+
+            const row = document.createElement('div');
+            row.className = 'resched-slot-row';
+            group.subSlots.forEach(sub => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'resched-slot-btn';
+                b.textContent = `${sub.timeStart}–${sub.timeEnd}`;
+                b.addEventListener('click', () => {
+                    daysEl.querySelectorAll('.resched-slot-btn').forEach(x => x.classList.remove('active'));
+                    b.classList.add('active');
+                    selected = {
+                        id: sub.id,
+                        label: `${group.day}, ${formatFullDate(group.date)} · ${sub.timeStart}–${sub.timeEnd}`,
+                    };
+                    selEl.innerHTML = '<strong>New time:</strong> ' + selected.label;
+                    selEl.style.display = 'block';
+                    if (onSelect) onSelect(getSelected());
+                });
+                row.appendChild(b);
+            });
+            day.appendChild(row);
+            daysEl.appendChild(day);
+        });
+    }
+
+    daysEl.innerHTML = '<p class="resched-slot-date">Loading available slots…</p>';
 
     fetch('/instructor/appointments/reschedule-options')
         .then(r => r.json())
         .then(d => {
-            if (!d.success) { listEl.innerHTML = '<p class="resched-error">Failed to load slots.</p>'; return; }
-            slotsData = d.slots;
-            const now = new Date();
-            year = now.getFullYear(); month = now.getMonth();
-            renderCal();
-        })
-        .catch(() => { listEl.innerHTML = '<p class="resched-error">Failed to load slots.</p>'; });
+            if (!d.success) { daysEl.innerHTML = '<p class="resched-error">Failed to load slots.</p>'; return; }
 
-    return { el: wrap, getSelected: () => selected };
+            windowEl.textContent = d.minDate && d.maxDate
+                ? `Open slots between ${formatFullDate(d.minDate)} and ${formatFullDate(d.maxDate)}.`
+                : '';
+
+            const groups = (d.slots || []).filter(g => g.subSlots && g.subSlots.length);
+            if (!groups.length) {
+                daysEl.innerHTML =
+                    '<p class="resched-error">No open slots in the next three weeks. Add consultation hours first.</p>';
+            } else {
+                renderDays(groups);
+            }
+            if (onResize) onResize();
+        })
+        .catch(() => {
+            daysEl.innerHTML = '<p class="resched-error">Failed to load slots.</p>';
+            if (onResize) onResize();
+        });
+
+    return { el: wrap, getSelected: getSelected };
 }
 
-function doReschedule(aptId, newSlotId, reason, onSuccess, onError) {
+function doReschedule(aptId, newSlotId, reason, mode, onSuccess, onError) {
     fetch(`/instructor/appointments/${encodeURIComponent(aptId)}/reschedule`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ newSlotId, reason })
+        body: JSON.stringify({ newSlotId, reason, mode })
     })
     .then(r => r.json())
     .then(d => {
@@ -845,6 +1042,120 @@ function doReschedule(aptId, newSlotId, reason, onSuccess, onError) {
         setTimeout(() => { window.location.reload(); }, 1500);
     })
     .catch(() => { showToast('error', 'Error', 'Network error. Please try again.'); if (onError) onError(); });
+}
+
+/* ── Approve all pending ── */
+function initApproveAll() {
+    const btn = $('approveAllBtn');
+    if (!btn) return;
+
+    const modal   = $('approveAllModal');
+    const prompt  = $('approveAllPrompt');
+    const result  = $('approveAllResult');
+    const list    = $('approveAllList');
+    const confirm = $('approveAllConfirm');
+    const cancel  = $('approveAllCancel');
+    let ran = false;
+
+    /** The button only exists while there is something to approve. */
+    function syncButton() {
+        const pending = appointments.filter(a => a.status === 'pending');
+        btn.hidden = pending.length === 0;
+        $('approveAllCount').textContent = pending.length;
+        return pending;
+    }
+
+    function close() {
+        modal.classList.remove('show');
+        // Approving rewrites several rows at once, so let the page catch up
+        if (ran) window.location.reload();
+    }
+
+    function open() {
+        const pending = syncButton();
+        if (!pending.length) return;
+
+        ran = false;
+        prompt.hidden = false;
+        result.hidden = true;
+        result.innerHTML = '';
+        confirm.hidden = false;
+        confirm.disabled = false;
+        confirm.textContent = 'Approve all';
+        cancel.textContent = 'Cancel';
+
+        $('approveAllTotal').textContent = pending.length;
+        $('approveAllPlural').textContent = pending.length === 1 ? '' : 's';
+
+        // Name them, so this is never a blind confirmation
+        list.innerHTML = pending.map(a =>
+            `<li><strong>${escapeHtml(a.studentName)}</strong>` +
+            `<span>${escapeHtml(a.date)} · ${escapeHtml(a.time)}</span></li>`).join('');
+
+        modal.classList.add('show');
+    }
+
+    btn.addEventListener('click', open);
+    $('approveAllClose').addEventListener('click', close);
+    cancel.addEventListener('click', close);
+    modal.addEventListener('click', e => { if (e.target === modal) close(); });
+
+    confirm.addEventListener('click', () => {
+        confirm.disabled = true;
+        confirm.textContent = 'Approving…';
+
+        fetch('/instructor/appointments/approve-all', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        })
+        .then(r => r.json())
+        .then(d => {
+            if (!d.success) {
+                confirm.disabled = false;
+                confirm.textContent = 'Approve all';
+                showResult(`<p class="apt-approve-note bad">${escapeHtml(d.error || 'Could not approve the requests.')}</p>`);
+                return;
+            }
+            ran = d.approved > 0;
+            showResult(summarise(d));
+            confirm.hidden = true;
+            cancel.textContent = 'Close';
+        })
+        .catch(() => {
+            confirm.disabled = false;
+            confirm.textContent = 'Approve all';
+            showResult('<p class="apt-approve-note bad">Network error. Please try again.</p>');
+        });
+    });
+
+    function showResult(html) {
+        prompt.hidden = true;
+        result.hidden = false;
+        result.innerHTML = html;
+    }
+
+    function summarise(d) {
+        let html = `<p class="apt-approve-note ok"><strong>${d.approved} of ${d.total}</strong> ` +
+                   `request${d.total === 1 ? '' : 's'} approved. ` +
+                   `${d.approved ? 'Each student has been notified.' : ''}</p>`;
+        if (d.skipped.length) {
+            html += '<p class="apt-approve-heading">Left pending:</p><ul class="apt-approve-list">';
+            d.skipped.forEach(s => {
+                html += `<li><strong>${escapeHtml(s.student)}</strong><span>${escapeHtml(s.reason)}</span></li>`;
+            });
+            html += '</ul>';
+        }
+        return html;
+    }
+
+    // Approving or declining one request can empty the queue
+    window.syncApproveAllButton = syncButton;
+    syncButton();
+}
+
+function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 }
 
 /* ── API calls ── */
@@ -935,6 +1246,67 @@ function initViewToggle() {
         closeDayPanel();
     }));
 }
+/** True once the appointment's end time has passed. */
+function hasEnded(apt) {
+    if (!apt.date) return false;
+    // apt.time is "9:00 AM – 9:30 AM"; take the end half
+    const parts = String(apt.time || '').split(/[–-]/);
+    const endLabel = (parts[1] || parts[0] || '').trim();
+    const m = endLabel.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (!m) return false;
+    let h = parseInt(m[1], 10);
+    const min = parseInt(m[2], 10);
+    const mer = m[3].toUpperCase();
+    if (mer === 'PM' && h !== 12) h += 12;
+    if (mer === 'AM' && h === 12) h = 0;
+    const d = new Date(String(apt.date).slice(0, 10) + 'T00:00:00');
+    d.setHours(h, min, 0, 0);
+    return d.getTime() < Date.now();
+}
+
+function doComplete(aptId, onSuccess, onError) {
+    fetch(`/instructor/appointments/${encodeURIComponent(aptId)}/complete`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                showToast('error', 'Could Not Complete', data.error || 'Please try again.');
+                if (onError) onError();
+                return;
+            }
+            // Same sync pattern as doApprove/doDecline — without this, completing
+            // from one view (e.g. the calendar day panel) left the appointment
+            // showing as "Confirmed" everywhere else until a full page reload.
+            const apt = appointments.find(a => a.id === aptId);
+            if (apt) apt.status = 'completed';
+            refreshStats();
+            renderCalendar();
+            if (currentView === 'list') renderListView();
+            showToast('success', 'Consultation Completed', 'This consultation is now closed.');
+            if (onSuccess) onSuccess();
+        })
+        .catch(() => { showToast('error', 'Network Error', 'Please try again.'); if (onError) onError(); });
+}
+
+function switchMode(id, mode, btn) {
+    fetch(`/instructor/appointments/${id}/mode`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                showToast('error', 'Could Not Change Mode', data.error || 'Please try again.');
+                if (btn) btn.disabled = false;
+                return;
+            }
+            const where = data.mode === 'Online' ? 'an online meeting' : 'a consultation room';
+            showToast('success', 'Mode Updated', `Now set to ${data.mode} — ${where}.`);
+            setTimeout(() => window.location.reload(), 900);
+        })
+        .catch(() => { showToast('error', 'Network Error', 'Please try again.'); if (btn) btn.disabled = false; });
+}
+
 function showToast(type, title, msg) {
     const c = $('aptToastContainer'); if(!c) return;
     const t = document.createElement('div'); t.className=`toast ${type}`;
@@ -948,6 +1320,7 @@ function showToast(type, title, msg) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    initApproveAll();
     refreshStats(); initCalendar(); initPopover(); initSearchFilter(); initViewToggle();
 
     const params = new URLSearchParams(window.location.search);

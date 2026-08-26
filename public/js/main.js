@@ -23,7 +23,10 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // ── Mobile: close modals on backdrop tap ──
+    // A modal that must confirm before closing opts out with
+    // data-backdrop-close="manual" and handles the tap itself.
     document.querySelectorAll('.modal-overlay').forEach(overlay => {
+        if (overlay.dataset.backdropClose === 'manual') return;
         overlay.addEventListener('click', function (e) {
             if (e.target === this) {
                 this.classList.remove('show');

@@ -5,6 +5,9 @@ const { requireRole, setSessionCookie, clearSessionCookie } = require('../middle
 
 // Import shared stores from instructor router
 const instructorRouter = require('./instructor');
+const MakeupController = require('../controllers/MakeupController');
+const MakeupRequestModel = require('../models/MakeupRequestModel');
+const NotificationModel = require('../models/NotificationModel');
 
 // Router-level middleware: log all dean route requests
 router.use((req, res, next) => {
@@ -188,37 +191,45 @@ function getSharedData() {
 
     const recentActivity = presenceLogs.slice(0, 6);
 
-    const notifications = [
-        { id: 1, type: 'makeup',       message: 'Dr. Maria Santos submitted a make-up class request for Software Engineering.',  time: '1 hour ago',  read: false },
-        { id: 2, type: 'makeup',       message: 'Prof. Jose Dela Cruz submitted a make-up class request for Database Systems.',   time: '3 hours ago', read: false },
-        { id: 3, type: 'presence',     message: 'Dr. Ana Villanueva has not been detected in Room 203 during scheduled hours.',   time: '5 hours ago', read: false },
-        { id: 4, type: 'appointment',  message: 'Juan Dela Cruz booked a consultation with Dr. Maria Santos for today at 2:00 PM.', time: 'Yesterday',  read: true  },
-        { id: 5, type: 'presence',     message: 'Prof. Carlos Bautista entered Room 102 at 7:30 AM.',                             time: 'Yesterday',   read: true  },
-        { id: 6, type: 'appointment',  message: 'Ana Reyes cancelled her appointment with Dr. Maria Santos.',                     time: '2 days ago',  read: true  }
-    ];
-
-    return { dean, faculty, allAppointments, presenceLogs, recentActivity, notifications };
+    return { dean, faculty, allAppointments, presenceLogs, recentActivity };
 }
 
-// Helper to get pending makeup count for sidebar badge
-function getPendingMakeupCount() {
-    const requestStore = instructorRouter.requestStore || {};
-    return Object.values(requestStore).filter(r => r.status === 'pending').length;
+/**
+ * The bits of chrome every dean page needs from the database: the bell and
+ * the sidebar's pending badge. Spread this into the render locals.
+ */
+async function deanChrome(deanPublicId) {
+    const [notifications, pendingMakeupCount] = await Promise.all([
+        NotificationModel.getForUser(deanPublicId).catch(() => []),
+        getPendingMakeupCount(deanPublicId),
+    ]);
+    return { notifications, pendingMakeupCount };
+}
+
+// Sidebar badge — the real queue, scoped to this dean's department
+async function getPendingMakeupCount(deanPublicId) {
+    try {
+        const requests = await MakeupRequestModel.getByDepartment(deanPublicId);
+        return requests.filter(r => r.status === 'pending').length;
+    } catch (err) {
+        console.error('[Dean] Could not count pending make-ups:', err.message);
+        return 0;
+    }
 }
 
 // Dean Dashboard
-router.get('/dashboard', (req, res) => {
+router.get('/dashboard', async (req, res) => {
     const data = getSharedData();
     res.render('pages/dean/dashboard', {
         title: 'FaciTrack - Dean Dashboard',
         ...data,
-        pendingMakeupCount: getPendingMakeupCount()
+        ...(await deanChrome(req.session.userId))
     });
 });
 
 // Faculty list with real-time BLE status
 // Supports query parameters: ?bleStatus=in-room|out-of-room
-router.get('/faculty', (req, res) => {
+router.get('/faculty', async (req, res) => {
     const data = getSharedData();
     const { bleStatus } = req.query;
 
@@ -232,7 +243,7 @@ router.get('/faculty', (req, res) => {
         ...data,
         faculty: filteredFaculty,
         filterBleStatus: bleStatus || '',
-        pendingMakeupCount: getPendingMakeupCount()
+        ...(await deanChrome(req.session.userId))
     });
 });
 
@@ -260,149 +271,66 @@ router.get('/monitoring', (_req, res) => {
 });
 
 // Workload reports per faculty
-router.get('/reports', (req, res) => {
+router.get('/reports', async (req, res) => {
     const data = getSharedData();
     res.render('pages/dean/reports', {
         title: 'FaciTrack - Reports',
         ...data,
-        pendingMakeupCount: getPendingMakeupCount()
+        ...(await deanChrome(req.session.userId))
     });
 });
 
 // Presence Logs
-router.get('/presence', (req, res) => {
+router.get('/presence', async (req, res) => {
     const data = getSharedData();
     res.render('pages/dean/presence', {
         title: 'FaciTrack - Presence Logs',
         ...data,
-        pendingMakeupCount: getPendingMakeupCount()
+        ...(await deanChrome(req.session.userId))
     });
 });
 
 // Settings
-router.get('/settings', (req, res) => {
+router.get('/settings', async (req, res) => {
     const data = getSharedData();
     res.render('pages/dean/settings', {
         title: 'FaciTrack - Settings',
         ...data,
-        pendingMakeupCount: getPendingMakeupCount()
+        ...(await deanChrome(req.session.userId))
     });
 });
 
 // ── Make-Up Class Request routes (Dean) ──
 
 // GET: Dean's review queue
-router.get('/makeup/requests', (req, res) => {
-    const data = getSharedData();
-    const requestStore = instructorRouter.requestStore || {};
-    const allRequests  = Object.values(requestStore).sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
-    const pending   = allRequests.filter(r => r.status === 'pending');
-    const approved  = allRequests.filter(r => r.status === 'approved');
-    const declined  = allRequests.filter(r => r.status === 'declined');
-    const slotToLabel = instructorRouter.slotToLabel || (s => String(s));
+// ── Make-Up Class Requests ──
+// The dean only ever sees their own department; the controller enforces it.
+router.get('/makeup/requests',          MakeupController.renderDeanQueue);
+router.get('/makeup/document/:docId',   MakeupController.downloadDocument);
 
-    res.render('pages/dean/makeup-requests', {
-        title: 'FaciTrack - Make-Up Requests',
-        ...data,
-        pending, approved, declined,
-        pendingMakeupCount: pending.length,
-        slotToLabel
-    });
-});
+// Clearing the whole queue re-validates every request on the way through
+router.post('/makeup/approve-all',      MakeupController.approveAll);
 
-// GET: Stream PDF document for a request
-router.get('/makeup/:id/document', (req, res) => {
-    const requestStore = instructorRouter.requestStore || {};
-    const request = requestStore[req.params.id];
-    if (!request) return res.status(404).send('Request not found.');
-    if (!request.document || !request.document.buffer) return res.status(404).send('No document attached.');
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${request.document.originalname || 'document.pdf'}"`);
-    res.send(request.document.buffer);
-});
-
-// POST: Approve a request
+// Two URLs, one decision path, so approve and decline cannot drift apart
 router.post('/makeup/:id/approve', (req, res) => {
-    const requestStore   = instructorRouter.requestStore   || {};
-    const timetableStore = instructorRouter.timetableStore || {};
-    const notifList      = instructorRouter.notificationsList || [];
-    const slotToLabel    = instructorRouter.slotToLabel || (s => String(s));
-
-    const request = requestStore[req.params.id];
-    if (!request) return res.status(404).json({ success: false, error: 'Request not found.' });
-    if (request.status !== 'pending') return res.status(400).json({ success: false, error: 'Request already actioned.' });
-
-    const confirmed = req.body.confirmed === true || req.body.confirmed === 'true';
-    if (!confirmed) return res.status(400).json({ success: false, error: 'Approval must be confirmed with signature.' });
-
-    request.status     = 'approved';
-    request.approvedBy = 'Dr. Lourdes Reyes';
-    request.deanStatement = String(req.body.statement || '').trim();
-
-    // Write MakeUpClass block to timetableStore
-    if (!timetableStore[request.instructorId]) {
-        timetableStore[request.instructorId] = { subjects: [], blocks: {} };
-    }
-    const blockKey = `${request.day}_${request.startSlot}`;
-    timetableStore[request.instructorId].blocks[blockKey] = {
-        subjectId:   request.subjectCode || request.subjectName,
-        subjectName: request.subjectName || request.subjectCode,
-        room:        request.deliveryMode === 'online' ? 'Online' : request.room,
-        section:     request.section,
-        type:        'Make Up Class',
-        duration:    request.endSlot - request.startSlot,
-        color:       '#10b981'
-    };
-
-    // Notify instructor
-    notifList.unshift({
-        id:      Date.now(),
-        type:    'makeup',
-        message: `Your make-up class request for ${request.subjectCode} on ${request.day} (${slotToLabel(request.startSlot)} – ${slotToLabel(request.endSlot)}) was approved.`,
-        time:    'Just now',
-        read:    false
-    });
-
-    res.json({ success: true, updatedRequest: request });
+    req.body.decision = 'approve';
+    return MakeupController.decide(req, res);
 });
-
-// POST: Decline a request
 router.post('/makeup/:id/decline', (req, res) => {
-    const requestStore = instructorRouter.requestStore || {};
-    const notifList    = instructorRouter.notificationsList || [];
-    const slotToLabel  = instructorRouter.slotToLabel || (s => String(s));
-
-    const request = requestStore[req.params.id];
-    if (!request) return res.status(404).json({ success: false, error: 'Request not found.' });
-    if (request.status !== 'pending') return res.status(400).json({ success: false, error: 'Request already actioned.' });
-
-    const declineReason = String(req.body.reason || '').trim();
-    if (!declineReason) return res.status(400).json({ success: false, error: 'Decline reason is required.' });
-
-    request.status        = 'declined';
-    request.declineReason = declineReason;
-
-    // Notify instructor
-    notifList.unshift({
-        id:      Date.now(),
-        type:    'makeup',
-        message: `Your make-up class request for ${request.subjectCode} on ${request.day} (${slotToLabel(request.startSlot)} – ${slotToLabel(request.endSlot)}) was declined. Reason: ${declineReason}`,
-        time:    'Just now',
-        read:    false
-    });
-
-    res.json({ success: true, updatedRequest: request });
+    req.body.decision = 'decline';
+    req.body.declineReason = req.body.declineReason || req.body.reason;
+    return MakeupController.decide(req, res);
 });
 
 module.exports = router;
 
 
 // 3D Building Viewer
-router.get('/building', (req, res) => {
+router.get('/building', async (req, res) => {
     const data = getSharedData();
     res.render('pages/dean/building', {
         title: 'FaciTrack - 3D Building Viewer',
         ...data,
-        pendingMakeupCount: getPendingMakeupCount()
+        ...(await deanChrome(req.session.userId))
     });
 });

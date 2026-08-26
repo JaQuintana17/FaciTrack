@@ -135,10 +135,6 @@ const UserModel = {
         return rows;
     },
 
-    async getFacultyWithConsultation() {
-        let query = `SELECT `
-    },
-
     async insertUserByAdmin(newUser) {
         const query = `INSERT INTO users
             (first_name, middle_name, last_name, email, role, base_room_id, department_id, status, employment_type, position, profile_picture, hashed_password)
@@ -231,6 +227,8 @@ const UserModel = {
             u.email, u.role, u.status,
             u.position, u.employment_type,
             u.profile_picture, u.department_id,
+            u.availability_status,
+            u.default_meeting_link,
             d.full_name AS department_name
          FROM users u
          LEFT JOIN departments d ON u.department_id = d.id
@@ -238,6 +236,55 @@ const UserModel = {
             [publicId]
         );
         return rows[0] || null;
+    },
+
+    /**
+     * Set an instructor's own availability. Values must match the
+     * users.availability_status enum: available | dnd | travel | leave | meeting.
+     */
+    /** The instructor's personal meeting room, reused for online consultations. */
+    async updateDefaultMeetingLink(publicId, link) {
+        const [result] = await pool.execute(
+            'UPDATE users SET default_meeting_link = ? WHERE public_id = ?',
+            [link || null, publicId]
+        );
+        return result.affectedRows > 0;
+    },
+
+    async updateAvailabilityStatus(publicId, status) {
+        const [result] = await pool.execute(
+            'UPDATE users SET availability_status = ? WHERE public_id = ?',
+            [status, publicId]
+        );
+        return result.affectedRows > 0;
+    },
+
+    /** Instructor edits their own name from Settings. Email is not editable here
+     *  — it is the sign-in identity Google OAuth matches on. */
+    async updateOwnProfile(publicId, { firstName, middleName, lastName }) {
+        const [result] = await pool.execute(
+            `UPDATE users SET first_name = ?, middle_name = ?, last_name = ? WHERE public_id = ?`,
+            [firstName, middleName || null, lastName, publicId]
+        );
+        return result.affectedRows > 0;
+    },
+
+    /** Kept separate from getUserByPublicId so the hash is never fetched by accident. */
+    async getPasswordHash(publicId) {
+        const [rows] = await pool.execute(
+            `SELECT hashed_password FROM users WHERE public_id = ?`,
+            [publicId]
+        );
+        return rows[0] ? rows[0].hashed_password : null;
+    },
+
+    async updatePassword(publicId, plainPassword) {
+        const hash = await bcrypt.hash(plainPassword, 10);
+        const [result] = await pool.execute(
+            `UPDATE users SET hashed_password = ? WHERE public_id = ?`,
+            [hash, publicId]
+        );
+        return result.affectedRows > 0;
     },
 
     async getUserById(internalId) {

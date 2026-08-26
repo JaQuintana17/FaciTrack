@@ -31,7 +31,6 @@ passport.use(new GoogleStrategy({
         if (!user) {
             if (isStudent) {
                 // Auto-provision student accounts on first OAuth login
-                const { v4: uuidv4 } = require('uuid');
                 const newId = await UserModel.insertUserByOAuth({
                     firstName:      profile.name?.givenName  || '',
                     lastName:       profile.name?.familyName || '',

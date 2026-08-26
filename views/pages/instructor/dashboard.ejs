@@ -10,20 +10,36 @@
 .status-indicator.dnd{background:#ef4444;box-shadow:0 0 0 2px rgba(239,68,68,.25);}
 .status-indicator.meeting{background:#f59e0b;box-shadow:0 0 0 2px rgba(245,158,11,.25);}
 .status-indicator.leave{background:#6b7280;box-shadow:0 0 0 2px rgba(107,114,128,.25);}
-.status-indicator.ot{background:#8b5cf6;box-shadow:0 0 0 2px rgba(139,92,246,.25);}
+.status-indicator.travel{background:#8b5cf6;box-shadow:0 0 0 2px rgba(139,92,246,.25);}
 .status-dropdown{position:absolute;top:calc(100% + .4rem);right:0;width:270px;background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);box-shadow:0 10px 30px rgba(0,0,0,.12);opacity:0;visibility:hidden;transform:translateY(-8px);transition:all .2s;z-index:200;}
 .status-dropdown.show{opacity:1;visibility:visible;transform:translateY(0);}
-.status-option{display:flex;align-items:center;gap:.75rem;padding:.75rem 1rem;cursor:pointer;transition:background .15s;border-bottom:1px solid var(--gray-50);}
-.status-option:last-child{border-bottom:none;}
-.status-option:hover,.status-option.active{background:var(--gray-50);}
-.status-option-label{font-size:.8125rem;font-weight:600;color:var(--gray-900);display:block;margin-bottom:.1rem;}
-.status-option-desc{font-size:.71rem;color:var(--gray-500);display:block;}
+/* Scoped to #statusDropdown and explicit on layout properties — dashboard.css
+   defines an UNRELATED .status-option (the settings toggle buttons) with
+   justify-content:center and a 2px border. Without resetting those here,
+   they leak in and center each row's content by its text width, which is
+   why shorter labels like "On Leave" visibly drifted right of the others. */
+#statusDropdown .status-option{display:flex;align-items:center;justify-content:flex-start;flex:none;gap:.75rem;padding:.75rem 1rem;border:none;border-bottom:1px solid var(--gray-50);border-radius:0;cursor:pointer;transition:background .15s;}
+#statusDropdown .status-option:last-child{border-bottom:none;}
+#statusDropdown .status-option:hover,#statusDropdown .status-option.active{background:var(--gray-50);}
+#statusDropdown .status-option-label{font-size:.8125rem;font-weight:600;color:var(--gray-900);display:block;margin-bottom:.1rem;}
+#statusDropdown .status-option-desc{font-size:.71rem;color:var(--gray-500);display:block;}
 /* ── Dashboard Layout ── */
 .dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.375rem;}
 .dash-col{display:flex;flex-direction:column;gap:1.375rem;}
 
 /* ── Today Strip ── */
-.today-strip{background:linear-gradient(135deg,#0a3d62 0%,#1565c0 100%);border-radius:var(--radius-lg);padding:1rem 1.375rem;display:flex;align-items:center;gap:1.25rem;flex-wrap:wrap;box-shadow:0 4px 16px rgba(10,61,98,.2);}
+/* Sits between the page header (0.5s) and the stat cards (0.6s), so it leads the stagger */
+.today-strip{background:linear-gradient(135deg,#0a3d62 0%,#1565c0 100%);border-radius:var(--radius-lg);padding:1rem 1.375rem;display:flex;align-items:center;gap:1.25rem;flex-wrap:wrap;box-shadow:0 4px 16px rgba(10,61,98,.2);margin-bottom:1.5rem;animation:fadeInUp .5s ease-out backwards;animation-delay:.08s;}
+/* Pills fade in just behind the banner itself */
+.today-pill,.today-strip-empty{animation:fadeInUp .4s ease-out backwards;}
+.today-strip-items > *:nth-child(1){animation-delay:.20s;}
+.today-strip-items > *:nth-child(2){animation-delay:.26s;}
+.today-strip-items > *:nth-child(3){animation-delay:.32s;}
+.today-strip-items > *:nth-child(4){animation-delay:.38s;}
+.today-strip-items > *:nth-child(n+5){animation-delay:.44s;}
+@media (prefers-reduced-motion:reduce){
+  .today-strip,.today-pill,.today-strip-empty{animation:none;}
+}
 .today-strip-label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.65);margin:0 0 .2rem;}
 .today-strip-date{font-size:1rem;font-weight:700;color:#fff;margin:0;}
 .today-strip-divider{width:1px;height:36px;background:rgba(255,255,255,.2);flex-shrink:0;}
@@ -35,9 +51,6 @@
 .today-pill.confirmed .today-pill-dot{background:#4ade80;}
 .today-pill.pending .today-pill-dot{background:#fbbf24;}
 .today-strip-empty{font-size:.8rem;color:rgba(255,255,255,.6);font-style:italic;}
-.today-strip-actions{margin-left:auto;display:flex;gap:.5rem;flex-shrink:0;}
-.btn-mark-unavail{display:inline-flex;align-items:center;gap:.4rem;padding:.45rem .9rem;background:rgba(239,68,68,.85);border:1px solid rgba(239,68,68,.5);border-radius:8px;color:#fff;font-size:.75rem;font-weight:700;cursor:pointer;transition:all .2s;white-space:nowrap;font-family:var(--font-body);}
-.btn-mark-unavail:hover{background:#dc2626;box-shadow:0 3px 10px rgba(220,38,38,.4);}
 
 /* ── Pending requests ── */
 .apt-item{display:flex;align-items:center;gap:.75rem;padding:.8rem 1rem;border:1px solid var(--gray-200);border-radius:var(--radius-md);background:#fff;transition:all .2s;}
@@ -92,9 +105,11 @@
 .slot-progress-fill.high{background:#dc2626;}
 .slot-cap-label{font-size:.67rem;color:var(--gray-500);white-space:nowrap;flex-shrink:0;}
 .slot-badge{font-size:.65rem;font-weight:700;padding:.22rem .55rem;border-radius:5px;flex-shrink:0;}
-.slot-badge.open{background:rgba(22,163,74,.12);color:#15803d;}
-.slot-badge.full{background:rgba(107,114,128,.1);color:#374151;}
-.slot-badge.closed{background:rgba(239,68,68,.1);color:#dc2626;}
+/* Matches the pending/confirmed/declined palette used on the appointments page */
+.slot-badge.available{background:rgba(22,163,74,.12);color:#15803d;}
+.slot-badge.pending{background:rgba(251,146,60,.12);color:#c2410c;}
+.slot-badge.confirmed{background:rgba(37,99,235,.12);color:#1d4ed8;}
+.slot-badge.closed{background:rgba(107,114,128,.12);color:#374151;}
 
 /* ── Recent activity ── */
 .act-item{display:flex;align-items:flex-start;gap:.65rem;padding:.65rem .25rem;border-bottom:1px solid var(--gray-50);}
@@ -116,17 +131,6 @@
 .empty-dash p{font-size:.8125rem;margin:0;color:var(--gray-500);}
 .empty-dash strong{font-size:.9rem;color:var(--gray-700);}
 
-/* ── Unavailability modal ── */
-#unavailDashModal .modal-content{max-width:560px;}
-.unavail-presets{display:flex;flex-wrap:wrap;gap:.4rem;margin:.5rem 0 .75rem;}
-.unavail-preset{padding:.3rem .7rem;border:1.5px solid var(--gray-200);border-radius:20px;font-size:.75rem;font-weight:600;color:var(--gray-600);cursor:pointer;transition:all .15s;background:#fff;font-family:var(--font-body);}
-.unavail-preset:hover,.unavail-preset.selected{border-color:#dc2626;color:#dc2626;background:rgba(220,38,38,.05);} 
-.unavail-grid{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;}
-.unavail-mode{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.75rem;}
-.unavail-mode-btn{flex:1;min-width:120px;border:1.5px solid var(--gray-200);background:#fff;color:var(--gray-700);padding:.6rem .75rem;border-radius:10px;font-weight:600;font-size:.8rem;cursor:pointer;transition:all .15s;}
-.unavail-mode-btn.active{border-color:#0a3d62;background:#e8f2ff;color:#0a3d62;}
-.unavail-time-row{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-top:.75rem;}
-.unavail-summary{margin-top:.9rem;padding:.8rem .95rem;border:1px solid #dbeafe;border-radius:10px;background:#f8fbff;color:#1d4ed8;font-size:.8rem;line-height:1.55;}
 .notif-card{display:flex;gap:.7rem;align-items:flex-start;padding:.7rem .2rem;border-bottom:1px solid var(--gray-50);} .notif-card:last-child{border-bottom:none;} .notif-badge{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:9px;background:var(--gray-100);color:var(--gray-700);flex-shrink:0;} .notif-card.unread{background:rgba(10,61,98,.03);} .notif-title{font-size:.78rem;font-weight:700;color:var(--gray-900);margin:0 0 .18rem;} .notif-message{font-size:.74rem;color:var(--gray-600);margin:0;line-height:1.45;} .notif-meta{font-size:.66rem;color:var(--gray-400);margin-top:.2rem;display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;} .notif-dot{width:7px;height:7px;border-radius:50%;background:#0a3d62;flex-shrink:0;margin-top:.35rem;}
 
 /* ── Auto-refresh indicator ── */
@@ -134,8 +138,22 @@
 .refresh-dot{width:6px;height:6px;border-radius:50%;background:#22c55e;animation:pulse-green 2s ease-in-out infinite;}
 @keyframes pulse-green{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.4;transform:scale(.7);}}
 
-@media(max-width:900px){.dash-grid{grid-template-columns:1fr;}}
-@media(max-width:640px){.today-strip{flex-direction:column;align-items:flex-start;gap:.75rem;}.today-strip-divider{display:none;}.today-strip-actions{margin-left:0;}}
+@media(max-width:900px){.dash-grid{grid-template-columns:1fr;}}
+/* Grid and flex children default to min-width:auto, so one wide row inside a
+   card stretched the whole column past the right edge of the screen. */
+.dash-grid,.dash-col,.dash-col > *{min-width:0;}
+.apt-meta-topic::before{content:" · ";}
+@media(max-width:640px){
+  .upco-time{min-width:0;}
+  .upco-item{gap:.5rem;padding:.7rem .75rem;}
+  /* A pill reading "9:00 AM - 9:20 AM · Name (Pending)" cannot fit one line */
+  .today-strip-items{min-width:0;width:100%;}
+  .today-pill{white-space:normal;max-width:100%;}
+  /* Give the topic its own line so the separator never dangles at a wrap */
+  .apt-meta-topic{display:block;}
+  .apt-meta-topic::before{content:none;}
+}
+@media(max-width:640px){.today-strip{flex-direction:column;align-items:flex-start;gap:.75rem;}.today-strip-divider{display:none;}}
 </style>
 
 <div class="instructor-layout">
@@ -150,30 +168,71 @@
           <h1 class="page-title">Dashboard</h1>
           <p class="page-subtitle">
             Welcome back, <strong><%= instructor.name %></strong> · <%= instructor.department %>
-            <span class="refresh-indicator" id="refreshIndicator" title="Auto-refreshing every 45 seconds">
-              <span class="refresh-dot"></span>Live
-            </span>
           </p>
         </div>
         <div class="header-actions">
-          <button type="button" class="btn-header-action" id="btnMarkUnavailHeader" style="color:#dc2626;border-color:#fecaca;">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="9" y1="16" x2="15" y2="16"/></svg>
-            Mark Date Unavailable
-          </button>
+          <%# Marking dates unavailable lives on the consultation schedule and
+              appointments pages. The modal is still included below because
+              choosing On Leave / Official Travel opens it automatically. %>
+          <%# data-status values must match the users.availability_status enum %>
+          <%
+            const _statusLabels = {
+              available: 'Available', dnd: 'Do Not Disturb', meeting: 'In Meeting',
+              leave: 'On Leave', travel: 'Official Travel'
+            };
+            const _status = instructor.availabilityStatus || 'available';
+          %>
           <div class="status-selector-wrap">
             <button class="status-selector-btn" id="statusSelectorBtn" aria-haspopup="true" aria-expanded="false">
-              <span class="status-indicator available" id="statusIndicator"></span>
-              <span id="statusText">Available</span>
+              <span class="status-indicator <%= _status %>" id="statusIndicator"></span>
+              <span id="statusText"><%= _statusLabels[_status] %></span>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
             </button>
             <div class="status-dropdown" id="statusDropdown" role="menu">
-              <div class="status-option" data-status="available" role="menuitem"><span class="status-indicator available"></span><div><span class="status-option-label">Available</span><span class="status-option-desc">Ready for consultations</span></div></div>
-              <div class="status-option" data-status="dnd" role="menuitem"><span class="status-indicator dnd"></span><div><span class="status-option-label">Do Not Disturb</span><span class="status-option-desc">Busy, avoid interruptions</span></div></div>
-              <div class="status-option" data-status="meeting" role="menuitem"><span class="status-indicator meeting"></span><div><span class="status-option-label">In Meeting</span><span class="status-option-desc">Currently in a meeting</span></div></div>
-              <div class="status-option" data-status="leave" role="menuitem"><span class="status-indicator leave"></span><div><span class="status-option-label">On Leave</span><span class="status-option-desc">Out of office</span></div></div>
-              <div class="status-option" data-status="ot" role="menuitem"><span class="status-indicator ot"></span><div><span class="status-option-label">Official Travel</span><span class="status-option-desc">On official business trip</span></div></div>
+              <div class="status-option<%= _status==='available' ? ' active' : '' %>" data-status="available" role="menuitem"><span class="status-indicator available"></span><div><span class="status-option-label">Available</span><span class="status-option-desc">Ready for consultations</span></div></div>
+              <div class="status-option<%= _status==='dnd' ? ' active' : '' %>" data-status="dnd" role="menuitem"><span class="status-indicator dnd"></span><div><span class="status-option-label">Do Not Disturb</span><span class="status-option-desc">Busy, avoid interruptions</span></div></div>
+              <div class="status-option<%= _status==='meeting' ? ' active' : '' %>" data-status="meeting" role="menuitem"><span class="status-indicator meeting"></span><div><span class="status-option-label">In Meeting</span><span class="status-option-desc">Currently in a meeting</span></div></div>
+              <div class="status-option<%= _status==='leave' ? ' active' : '' %>" data-status="leave" role="menuitem"><span class="status-indicator leave"></span><div><span class="status-option-label">On Leave</span><span class="status-option-desc">Out of office</span></div></div>
+              <div class="status-option<%= _status==='travel' ? ' active' : '' %>" data-status="travel" role="menuitem"><span class="status-indicator travel"></span><div><span class="status-option-label">Official Travel</span><span class="status-option-desc">On official business trip</span></div></div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- ── Today Strip ── -->
+      <%
+        const _todayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][new Date().getDay()];
+        const _todayLabel = new Date().toLocaleDateString('en-PH', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+        const _todayApts = appointments.filter(a => a.isToday || (a.date && (new Date(a.date).toDateString() === new Date().toDateString())));
+        const _todayConfirmed = _todayApts.filter(a => a.status === 'confirmed');
+        const _todayPending   = _todayApts.filter(a => a.status === 'pending');
+      %>
+      <div class="today-strip">
+        <div>
+          <p class="today-strip-label">Today</p>
+          <p class="today-strip-date"><%= _todayLabel %></p>
+        </div>
+        <div class="today-strip-divider"></div>
+        <div class="today-strip-items">
+          <% if (_todayApts.length === 0) { %>
+            <span class="today-strip-empty">No consultations scheduled for today</span>
+          <% } else { %>
+            <% _todayConfirmed.slice(0, 4).forEach(apt => { %>
+            <span class="today-pill confirmed">
+              <span class="today-pill-dot"></span>
+              <%= apt.time %> · <%= apt.studentName %>
+            </span>
+            <% }); %>
+            <% _todayPending.slice(0, 2).forEach(apt => { %>
+            <span class="today-pill pending">
+              <span class="today-pill-dot"></span>
+              <%= apt.time %> · <%= apt.studentName %> (Pending)
+            </span>
+            <% }); %>
+            <% if (_todayApts.length > 6) { %>
+            <span class="today-pill" style="background:rgba(255,255,255,.1);">+<%= _todayApts.length - 6 %> more</span>
+            <% } %>
+          <% } %>
         </div>
       </div>
 
@@ -181,7 +240,9 @@
       <% const pendingApts  = appointments.filter(a => a.status === 'pending'); %>
       <% const confirmedApts = appointments.filter(a => a.status === 'confirmed'); %>
       <% const totalSlots   = consultationSlots.length; %>
-      <% const openSlots    = consultationSlots.filter(s => s.status === 'open').length; %>
+      <%# consultation_hours.status is 'Pending'|'Available'|'Booked'|'closed' — 'open' never occurs.
+          A slot is genuinely open when it isn't booked and hasn't been closed. %>
+      <% const openSlots    = consultationSlots.filter(s => s.displayStatus === 'available').length; %>
       <div class="stats-overview">
         <div class="stat-card-large pending">
           <div class="stat-card-icon">
@@ -225,49 +286,6 @@
         </div>
       </div>
 
-      <!-- ── Today Strip ── -->
-      <%
-        const _todayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][new Date().getDay()];
-        const _todayLabel = new Date().toLocaleDateString('en-PH', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
-        const _todayApts = appointments.filter(a => a.isToday || (a.date && (new Date(a.date).toDateString() === new Date().toDateString())));
-        const _todayConfirmed = _todayApts.filter(a => a.status === 'confirmed');
-        const _todayPending   = _todayApts.filter(a => a.status === 'pending');
-      %>
-      <div class="today-strip">
-        <div>
-          <p class="today-strip-label">Today</p>
-          <p class="today-strip-date"><%= _todayLabel %></p>
-        </div>
-        <div class="today-strip-divider"></div>
-        <div class="today-strip-items">
-          <% if (_todayApts.length === 0) { %>
-            <span class="today-strip-empty">No consultations scheduled for today</span>
-          <% } else { %>
-            <% _todayConfirmed.slice(0, 4).forEach(apt => { %>
-            <span class="today-pill confirmed">
-              <span class="today-pill-dot"></span>
-              <%= apt.time %> · <%= apt.studentName %>
-            </span>
-            <% }); %>
-            <% _todayPending.slice(0, 2).forEach(apt => { %>
-            <span class="today-pill pending">
-              <span class="today-pill-dot"></span>
-              <%= apt.time %> · <%= apt.studentName %> (Pending)
-            </span>
-            <% }); %>
-            <% if (_todayApts.length > 6) { %>
-            <span class="today-pill" style="background:rgba(255,255,255,.1);">+<%= _todayApts.length - 6 %> more</span>
-            <% } %>
-          <% } %>
-        </div>
-        <div class="today-strip-actions">
-          <button type="button" class="btn-mark-unavail" id="btnMarkUnavailStrip">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="9" y1="16" x2="15" y2="16"/></svg>
-            Mark Unavailable
-          </button>
-        </div>
-      </div>
-
       <!-- ── Main Dashboard Grid ── -->
       <div class="dash-grid">
 
@@ -294,14 +312,14 @@
               <div style="display:flex;flex-direction:column;gap:.625rem;" id="pendingList">
                 <% pendingApts.slice(0, 5).forEach(apt => { %>
                 <div class="apt-item" data-student="<%= apt.studentName.toLowerCase() %>" data-topic="<%= (apt.topic||'').toLowerCase() %>">
-                  <div class="apt-avatar"><%= apt.studentName.split(' ').map(w=>w[0]).slice(0,2).join('') %></div>
+                  <div class="apt-avatar"><%= ((apt.firstName || '')[0] || '') + ((apt.lastName || '')[0] || '') %></div>
                   <div class="apt-info">
                     <p class="apt-name"><%= apt.studentName %></p>
                     <% if (apt.studentId) { %><p class="apt-sid"><%= apt.studentId %></p><% } %>
                     <p class="apt-meta">
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                       <%= apt.date %> · <%= apt.time %>
-                      <% if (apt.topic) { %> · <em><%= apt.topic.substring(0,40) %><%= apt.topic.length>40?'…':'' %></em><% } %>
+                      <% if (apt.topic) { %><span class="apt-meta-topic"><em><%= apt.topic.substring(0,40) %><%= apt.topic.length>40?'…':'' %></em></span><% } %>
                     </p>
                   </div>
                   <div class="apt-actions">
@@ -338,12 +356,16 @@
               </div>
               <% } else { %>
               <div class="slot-strip">
+                <%
+                  // Each row is one bookable sub-slot — capacity is always 1,
+                  // so the bar is either empty (open) or full (taken).
+                  const _statusLabels = { available: 'Available', pending: 'Pending', confirmed: 'Confirmed', closed: 'Closed' };
+                %>
                 <% consultationSlots.slice(0, 6).forEach(slot => { %>
                 <%
-                  const _booked = parseInt(slot.bookedCount) || 0;
-                  const _cap    = parseInt(slot.maxCapacity) || 1;
-                  const _pct    = Math.min(100, Math.round((_booked / _cap) * 100));
-                  const _fillClass = _pct >= 90 ? 'high' : _pct >= 50 ? 'mid' : 'low';
+                  const _booked = slot.isBooked ? 1 : 0;
+                  const _pct    = _booked ? 100 : 0;
+                  const _fillClass = slot.displayStatus === 'pending' ? 'mid' : _booked ? 'high' : 'low';
                 %>
                 <div class="slot-row">
                   <span class="slot-day-pill"><%= slot.day.substring(0,3).toUpperCase() %></span>
@@ -353,10 +375,10 @@
                       <div class="slot-progress-bar">
                         <div class="slot-progress-fill <%= _fillClass %>" style="width:<%= _pct %>%"></div>
                       </div>
-                      <span class="slot-cap-label"><%= _booked %>/<%= _cap %> booked</span>
+                      <span class="slot-cap-label"><%= _booked %>/1 booked</span>
                     </div>
                   </div>
-                  <span class="slot-badge <%= slot.status %>"><%= slot.status.charAt(0).toUpperCase() + slot.status.slice(1) %></span>
+                  <span class="slot-badge <%= slot.displayStatus %>"><%= _statusLabels[slot.displayStatus] %></span>
                 </div>
                 <% }); %>
                 <% if (consultationSlots.length > 6) { %>
@@ -466,68 +488,7 @@
   </div>
 </div>
 
-<!-- ── Mark Date Unavailable Modal (Dashboard shortcut) ── -->
-<div class="modal-overlay" id="unavailDashModal" onclick="if(event.target===this)closeUnavailDashModal()">
-  <div class="modal-content">
-    <div class="modal-header">
-      <h3 class="modal-title">Create a Schedule Block</h3>
-      <button class="modal-close" type="button" onclick="closeUnavailDashModal()">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
-    </div>
-    <div class="modal-body">
-      <p style="font-size:.875rem;color:var(--gray-600);margin:0 0 1rem;line-height:1.6;">
-        Choose a full-day block or a specific time range. Any affected appointments will be cancelled automatically and students will receive a professional notification to book a new slot.
-      </p>
-      <div class="unavail-mode" id="unavailModeGroup">
-        <button type="button" class="unavail-mode-btn active" data-mode="full-day">Full day</button>
-        <button type="button" class="unavail-mode-btn" data-mode="time-range">Time range</button>
-      </div>
-      <div class="unavail-grid">
-        <div>
-          <label class="modal-label" for="unavailDashStartDate">Start date <span style="color:#dc2626;">*</span></label>
-          <input type="date" id="unavailDashStartDate" class="modal-input" style="width:100%;padding:.625rem .875rem;border:1.5px solid var(--gray-300);border-radius:var(--radius-md);font-size:.875rem;font-family:var(--font-body);">
-        </div>
-        <div>
-          <label class="modal-label" for="unavailDashEndDate">End date</label>
-          <input type="date" id="unavailDashEndDate" class="modal-input" style="width:100%;padding:.625rem .875rem;border:1.5px solid var(--gray-300);border-radius:var(--radius-md);font-size:.875rem;font-family:var(--font-body);">
-        </div>
-      </div>
-      <div class="unavail-time-row" id="unavailTimeRow" style="display:none;">
-        <div>
-          <label class="modal-label" for="unavailDashStartTime">Start time</label>
-          <input type="time" id="unavailDashStartTime" class="modal-input" style="width:100%;padding:.625rem .875rem;border:1.5px solid var(--gray-300);border-radius:var(--radius-md);font-size:.875rem;font-family:var(--font-body);">
-        </div>
-        <div>
-          <label class="modal-label" for="unavailDashEndTime">End time</label>
-          <input type="time" id="unavailDashEndTime" class="modal-input" style="width:100%;padding:.625rem .875rem;border:1.5px solid var(--gray-300);border-radius:var(--radius-md);font-size:.875rem;font-family:var(--font-body);">
-        </div>
-      </div>
-      <div style="margin-top:1rem;">
-        <label class="modal-label">Quick reasons</label>
-        <div class="unavail-presets" id="unavailPresets">
-          <button type="button" class="unavail-preset" data-reason="Faculty meeting">Faculty meeting</button>
-          <button type="button" class="unavail-preset" data-reason="Seminar or training">Seminar or training</button>
-          <button type="button" class="unavail-preset" data-reason="Official university activity">Official university activity</button>
-          <button type="button" class="unavail-preset" data-reason="Personal leave">Personal leave</button>
-          <button type="button" class="unavail-preset" data-reason="Emergency">Emergency</button>
-        </div>
-      </div>
-      <div>
-        <label class="modal-label" for="unavailDashReason">Reason <span style="font-weight:400;color:var(--gray-400)">(shown to students)</span></label>
-        <input type="text" id="unavailDashReason" class="modal-input" placeholder="Describe the reason for the schedule block" maxlength="300" style="width:100%;padding:.625rem .875rem;border:1.5px solid var(--gray-300);border-radius:var(--radius-md);font-size:.875rem;font-family:var(--font-body);">
-      </div>
-      <div id="unavailSummary" class="unavail-summary" style="display:none;"></div>
-      <p id="unavailDashDateErr" style="display:none;font-size:.75rem;color:#dc2626;margin:.75rem 0 0;"></p>
-      <div id="unavailDashSuccess" style="display:none;margin-top:.75rem;padding:.65rem .9rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:.8rem;color:#166534;"></div>
-      <div id="unavailDashError" style="display:none;margin-top:.75rem;padding:.65rem .9rem;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:.8rem;color:#dc2626;"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn-modal btn-cancel" type="button" onclick="closeUnavailDashModal()">Cancel</button>
-      <button class="btn-modal btn-confirm" id="unavailDashConfirmBtn" type="button" style="background:#dc2626;" onclick="confirmUnavailDash()">Create Schedule Block</button>
-    </div>
-  </div>
-</div>
+<%- include('../../partials/unavailability-modal') %>
 
 <div class="toast-container" id="toastContainer"></div>
 
@@ -540,7 +501,7 @@ const statusBtn  = document.getElementById('statusSelectorBtn');
 const statusDrop = document.getElementById('statusDropdown');
 const statusInd  = document.getElementById('statusIndicator');
 const statusTxt  = document.getElementById('statusText');
-let currentStatus = 'available';
+let currentStatus = '<%= _status %>';   // seeded from the database
 
 statusBtn.addEventListener('click', e => {
   e.stopPropagation();
@@ -553,19 +514,59 @@ document.addEventListener('click', () => {
 });
 statusDrop.addEventListener('click', e => e.stopPropagation());
 
+// Persist the choice, rolling the UI back if the request fails
+function applyStatus(status, label) {
+  document.querySelectorAll('#statusDropdown .status-option').forEach(o =>
+    o.classList.toggle('active', o.dataset.status === status));
+  statusTxt.textContent = label;
+  statusInd.className = 'status-indicator ' + status;
+  currentStatus = status;
+}
+
 document.querySelectorAll('#statusDropdown .status-option').forEach(opt => {
-  opt.addEventListener('click', function () {
-    currentStatus = this.dataset.status;
-    document.querySelectorAll('#statusDropdown .status-option').forEach(o => o.classList.remove('active'));
-    this.classList.add('active');
-    statusTxt.textContent = this.querySelector('.status-option-label').textContent;
-    statusInd.className = 'status-indicator ' + currentStatus;
+  opt.addEventListener('click', async function () {
+    const status = this.dataset.status;
+    const label  = this.querySelector('.status-option-label').textContent;
+
     statusDrop.classList.remove('show');
     statusBtn.setAttribute('aria-expanded', 'false');
-    showToast('success', 'Status Updated', 'Your status is now: ' + statusTxt.textContent);
+    if (status === currentStatus) return;
+
+    const previous      = currentStatus;
+    const previousLabel = statusTxt.textContent;
+
+    applyStatus(status, label);   // optimistic
+
+    try {
+      const res  = await fetch('/instructor/availability-status', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      const data = await res.json();
+
+      if (!data.success) {
+        applyStatus(previous, previousLabel);
+        showToast('error', 'Status Not Saved', data.error || 'Please try again.');
+        return;
+      }
+      showToast('success', 'Status Updated', 'Your status is now: ' + label);
+
+      // Leave and Official Travel usually span days, but the status only hides
+      // TODAY. Prompt for the date range so students get proper notice.
+      const MULTI_DAY = { leave: 'On Leave', travel: 'Official Travel' };
+      if (MULTI_DAY[status]) {
+        UnavailModal.open(null, {
+          prompt: 'Select a date range of your unavailable days to block your consultation slots.',
+          reason: MULTI_DAY[status],
+        });
+      }
+    } catch (err) {
+      applyStatus(previous, previousLabel);
+      showToast('error', 'Status Not Saved', 'Network error. Please try again.');
+    }
   });
 });
-document.querySelector('#statusDropdown .status-option[data-status="available"]').classList.add('active');
 
 /* ══════════════════════════════════════
    APPROVE / DECLINE
@@ -675,135 +676,17 @@ document.querySelectorAll('.upco-tab').forEach(tab => {
 });
 
 /* ══════════════════════════════════════
-   MARK UNAVAILABLE (Dashboard modal)
+   MARK UNAVAILABLE (opened by On Leave / Official Travel)
 ══════════════════════════════════════ */
-let currentUnavailMode = 'full-day';
-function openUnavailDashModal() {
-  const today = new Date();
-  const pad = n => String(n).padStart(2, '0');
-  const todayStr = today.getFullYear() + '-' + pad(today.getMonth()+1) + '-' + pad(today.getDate());
-  document.getElementById('unavailDashStartDate').value = todayStr;
-  document.getElementById('unavailDashEndDate').value = todayStr;
-  document.getElementById('unavailDashStartTime').value = '';
-  document.getElementById('unavailDashEndTime').value = '';
-  document.getElementById('unavailDashReason').value = '';
-  document.getElementById('unavailDashDateErr').style.display = 'none';
-  document.getElementById('unavailDashSuccess').style.display = 'none';
-  document.getElementById('unavailDashError').style.display = 'none';
-  document.getElementById('unavailSummary').style.display = 'none';
-  document.getElementById('unavailDashConfirmBtn').disabled = false;
-  document.getElementById('unavailDashConfirmBtn').textContent = 'Create Schedule Block';
-  document.querySelectorAll('.unavail-preset').forEach(p => p.classList.remove('selected'));
-  document.getElementById('unavailDashModal').classList.add('show');
-  document.body.classList.add('modal-open');
-  setUnavailMode('full-day');
-}
-function closeUnavailDashModal() {
-  document.getElementById('unavailDashModal').classList.remove('show');
-  document.body.classList.remove('modal-open');
-}
-function setUnavailMode(mode) {
-  currentUnavailMode = mode;
-  document.querySelectorAll('.unavail-mode-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.mode === mode));
-  document.getElementById('unavailTimeRow').style.display = mode === 'time-range' ? 'grid' : 'none';
-}
-function updateUnavailSummary() {
-  const startDate = document.getElementById('unavailDashStartDate').value;
-  const endDate = document.getElementById('unavailDashEndDate').value || startDate;
-  const summaryEl = document.getElementById('unavailSummary');
-  if (!startDate) { summaryEl.style.display = 'none'; return; }
-  const startLabel = new Date(startDate + 'T00:00:00').toLocaleDateString('en-PH', { month:'long', day:'numeric', year:'numeric' });
-  const endLabel = endDate ? new Date(endDate + 'T00:00:00').toLocaleDateString('en-PH', { month:'long', day:'numeric', year:'numeric' }) : startLabel;
-  const rangeText = startDate === endDate ? startLabel : `${startLabel} to ${endLabel}`;
-  const detailText = currentUnavailMode === 'time-range'
-    ? `Time block: ${document.getElementById('unavailDashStartTime').value || '—'} to ${document.getElementById('unavailDashEndTime').value || '—'}`
-    : 'Full-day block for the selected dates';
-  summaryEl.innerHTML = `<strong>Summary:</strong> ${detailText}. Appointments that overlap with ${rangeText} will be cancelled automatically and students will be prompted to book a new slot.`;
-  summaryEl.style.display = 'block';
-}
 
-// Preset chips for unavailability reason
-document.querySelectorAll('.unavail-preset').forEach(chip => {
-  chip.addEventListener('click', function () {
-    document.querySelectorAll('.unavail-preset').forEach(p => p.classList.remove('selected'));
-    this.classList.add('selected');
-    document.getElementById('unavailDashReason').value = this.dataset.reason;
-  });
-});
-document.querySelectorAll('.unavail-mode-btn').forEach(btn => {
-  btn.addEventListener('click', function () { setUnavailMode(this.dataset.mode); updateUnavailSummary(); });
-});
-['unavailDashStartDate','unavailDashEndDate','unavailDashStartTime','unavailDashEndTime','unavailDashReason'].forEach(id => {
-  const el = document.getElementById(id);
-  if (el) el.addEventListener('input', updateUnavailSummary);
-  if (el) el.addEventListener('change', updateUnavailSummary);
-});
-
-function confirmUnavailDash() {
-  const startDate = document.getElementById('unavailDashStartDate').value;
-  const endDate = document.getElementById('unavailDashEndDate').value || startDate;
-  const reasonVal = document.getElementById('unavailDashReason').value.trim();
-  const errEl = document.getElementById('unavailDashDateErr');
-  const successEl = document.getElementById('unavailDashSuccess');
-  const errorEl = document.getElementById('unavailDashError');
-  const btn = document.getElementById('unavailDashConfirmBtn');
-  errEl.style.display = 'none';
-  successEl.style.display = 'none';
-  errorEl.style.display = 'none';
-
-  if (!startDate) { errEl.textContent = 'Please select a start date.'; errEl.style.display = 'block'; return; }
-  const start = new Date(startDate + 'T00:00:00');
-  const end = new Date(endDate + 'T00:00:00');
-  const today0 = new Date(); today0.setHours(0,0,0,0);
-  if (start < today0) { errEl.textContent = 'Cannot mark a past date as unavailable.'; errEl.style.display = 'block'; return; }
-  if (end < start) { errEl.textContent = 'The end date cannot be earlier than the start date.'; errEl.style.display = 'block'; return; }
-  if (currentUnavailMode === 'time-range') {
-    const startTime = document.getElementById('unavailDashStartTime').value;
-    const endTime = document.getElementById('unavailDashEndTime').value;
-    if (!startTime || !endTime) { errEl.textContent = 'Please select both start and end times.'; errEl.style.display = 'block'; return; }
-    if (startTime >= endTime) { errEl.textContent = 'The end time must be later than the start time.'; errEl.style.display = 'block'; return; }
-  }
-
-  btn.disabled = true;
-  btn.textContent = 'Creating block…';
-
-  fetch('/instructor/unavailability/set', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      startDate,
-      endDate,
-      date: startDate,
-      reason: reasonVal || 'Instructor unavailability',
-      type: currentUnavailMode,
-      startTime: document.getElementById('unavailDashStartTime').value,
-      endTime: document.getElementById('unavailDashEndTime').value
-    })
-  })
-    .then(r => r.json())
-    .then(data => {
-      if (!data.success) { errorEl.textContent = data.error || 'Failed to save the schedule block.'; errorEl.style.display = 'block'; btn.disabled = false; btn.textContent = 'Create Schedule Block'; return; }
-      const rangeText = data.startDate === data.endDate ? data.startDate : `${data.startDate} to ${data.endDate}`;
-      const message = data.cancelledCount > 0
-        ? `${rangeText} blocked. ${data.cancelledCount} appointment(s) were cancelled and ${data.studentsNotified} student${data.studentsNotified === 1 ? '' : 's'} were notified.`
-        : `${rangeText} blocked. No appointments were affected.`;
-      successEl.textContent = message;
-      successEl.style.display = 'block';
-      btn.textContent = 'Saved ✓';
-      showToast(data.cancelledCount > 0 ? 'warning' : 'success', 'Schedule Block Created', message);
-      setTimeout(closeUnavailDashModal, 2200);
-    })
-    .catch(() => { errorEl.textContent = 'Network error. Please try again.'; errorEl.style.display = 'block'; btn.disabled = false; btn.textContent = 'Create Schedule Block'; });
-}
-
-// Wire both Mark Unavailable buttons to the modal
-['btnMarkUnavailHeader','btnMarkUnavailStrip'].forEach(id => {
-  const el = document.getElementById(id);
-  if (el) el.addEventListener('click', openUnavailDashModal);
-});
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { closeDeclineModal(); closeUnavailDashModal(); }
+  if (e.key === 'Escape') { closeDeclineModal(); UnavailModal.requestClose(); }
 });
+
+// Blocking a date can cancel or move appointments — reload so the lists are accurate
+window.onUnavailabilityChanged = function () {
+  window.location.reload();
+};
 
 /* ══════════════════════════════════════
    AUTO-REFRESH PENDING LIST (every 45s)
@@ -834,4 +717,5 @@ function showToast(type, title, message) {
 }
 function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 </script>
+<script src="/js/instructor-unavailability.js"></script>
 <%- include('../../partials/footer') %>

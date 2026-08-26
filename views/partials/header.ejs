@@ -27,6 +27,9 @@
                 </div>
             </div>
             <div class="header-institution">
+                <%# Pages without a sidebar (error pages) opt out — the panel script never loads there %>
+                <% const _showNotif = (typeof showNotifications !== 'undefined') ? showNotifications : true; %>
+                <% if (_showNotif) { %>
                 <% const _notifSource = (typeof notifications !== 'undefined') ? notifications : []; %>
                 <% const unreadCount = _notifSource.filter(n => !n.read).length; %>
                     <div class="notif-wrapper">
@@ -39,6 +42,7 @@
                             <% } %>
                         </button>
                     </div>
+                <% } %>
                 <span>Camarines Sur Polytechnic Colleges</span>
             </div>
         </div>

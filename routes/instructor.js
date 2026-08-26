@@ -1,21 +1,68 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 const { createWorker } = require('tesseract.js');
 const WorkloadController = require('../controllers/WorkloadController');
 const InstructorController = require('../controllers/InstructorController');
 const NotificationController = require('../controllers/NotificationController');
+const MakeupController = require('../controllers/MakeupController');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-// ── PDF upload middleware for make-up class requests ──
-const pdfUpload = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 10 * 1024 * 1024 },
+// ── Document uploads for make-up class requests ──
+// Stored outside public/ and served only through the authenticated
+// /makeup/document/:docId route — these are signed absence documents.
+const MAKEUP_UPLOAD_DIR = path.join(__dirname, '..', 'storage', 'uploads', 'makeup');
+fs.mkdirSync(MAKEUP_UPLOAD_DIR, { recursive: true });
+
+// A supporting document is always a PDF; the polling sheet may also be a
+// spreadsheet. Browsers sometimes send octet-stream for .xlsx, so the
+// extension is the fallback check.
+const DOC_TYPES = {
+    documents: { mimes: ['application/pdf'], exts: ['.pdf'], label: 'PDF' },
+    polling: {
+        mimes: [
+            'application/pdf',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-excel',
+        ],
+        exts: ['.pdf', '.xlsx', '.xls'],
+        label: 'PDF or spreadsheet',
+    },
+};
+
+const makeupUpload = multer({
+    storage: multer.diskStorage({
+        destination: (req, file, cb) => cb(null, MAKEUP_UPLOAD_DIR),
+        filename: (req, file, cb) => {
+            cb(null, crypto.randomUUID() + path.extname(file.originalname || '.pdf'));
+        },
+    }),
+    limits: { fileSize: 10 * 1024 * 1024, files: 6 },
     fileFilter: (req, file, cb) => {
-        if (file.mimetype === 'application/pdf') cb(null, true);
-        else cb(new Error('Only PDF files are allowed.'));
+        const rule = DOC_TYPES[file.fieldname];
+        if (!rule) return cb(new Error('Unexpected upload.'));
+        const ext = path.extname(file.originalname || '').toLowerCase();
+        if (rule.mimes.includes(file.mimetype) || rule.exts.includes(ext)) return cb(null, true);
+        cb(new Error(`${file.originalname} is not a ${rule.label} file.`));
     }
 });
+
+/** Turn multer's own errors into a flash instead of a stack trace. */
+function acceptDocuments(req, res, next) {
+    makeupUpload.fields([
+        { name: 'documents', maxCount: 5 },
+        { name: 'polling', maxCount: 1 },
+    ])(req, res, err => {
+        if (!err) return next();
+        req.session.flash = { type: 'error', message: err.message || 'Invalid file. Please attach a PDF.' };
+        res.redirect(req.params.id
+            ? `/instructor/makeup/request/${req.params.id}/edit`
+            : '/instructor/makeup/request');
+    });
+}
 
 // Simple UUID v4 generator (no external dependency)
 function uuidv4() {
@@ -25,14 +72,6 @@ function uuidv4() {
     });
 }
 
-// ── Per-instructor timetable store (in-memory for prototype) ──
-const timetableStore = {}; // key: instructorId → { subjects, blocks }
-
-// ── Make-Up Class Request store (in-memory for prototype) ──
-const requestStore = {}; // key: request UUID → MakeUpRequest
-
-// ── Flash store for cross-redirect messages ──
-const flashStore = { message: null, type: null };
 
 // ── Slot utilities ──
 function timeToSlot(timeStr) {
@@ -47,49 +86,6 @@ function slotToLabel(slot) {
     const period = h < 12 ? 'AM' : 'PM';
     const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
     return `${h12}:${String(m).padStart(2, '0')} ${period}`;
-}
-
-// ── Room availability checker (scans all instructors) ──
-function checkRoomAvailability(day, reqStart, reqEnd, roomName) {
-    for (const [instrId, data] of Object.entries(timetableStore)) {
-        const blocks = (data && data.blocks) ? data.blocks : {};
-        for (const [key, block] of Object.entries(blocks)) {
-            const parts = key.split('_');
-            const blockDay = parts[0];
-            const blockStartSlot = parseInt(parts[1]);
-            if (blockDay !== day) continue;
-            if (!block.room || block.room.toLowerCase() !== roomName.toLowerCase()) continue;
-            const blockEndSlot = blockStartSlot + (block.duration || 1);
-            if (reqStart < blockEndSlot && reqEnd > blockStartSlot) {
-                return {
-                    conflictingInstructor: instrId,
-                    conflictingBlock: block,
-                    timeRange: `${slotToLabel(blockStartSlot)} – ${slotToLabel(blockEndSlot)}`
-                };
-            }
-        }
-    }
-    return null;
-}
-
-// ── Instructor availability checker ──
-function checkInstructorAvailability(instructorId, day, reqStart, reqEnd) {
-    const data = timetableStore[instructorId];
-    const blocks = (data && data.blocks) ? data.blocks : {};
-    for (const [key, block] of Object.entries(blocks)) {
-        const parts = key.split('_');
-        const blockDay = parts[0];
-        const blockStartSlot = parseInt(parts[1]);
-        if (blockDay !== day) continue;
-        const blockEndSlot = blockStartSlot + (block.duration || 1);
-        if (reqStart < blockEndSlot && reqEnd > blockStartSlot) {
-            return {
-                conflictingBlock: block,
-                timeRange: `${slotToLabel(blockStartSlot)} – ${slotToLabel(blockEndSlot)}`
-            };
-        }
-    }
-    return null;
 }
 
 // ── Shared notifications list (module-level, persists for server session) ──
@@ -156,115 +152,6 @@ function seedSampleNotifications() {
 
 seedSampleNotifications();
 
-function makeDemoPdf(title) {
-    // Minimal valid PDF that displays a message
-    const content = `%PDF-1.4
-1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
-2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
-3 0 obj<</Type/Page/MediaBox[0 0 612 792]/Parent 2 0 R/Resources<</Font<</F1<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>>>>>/Contents 4 0 R>>endobj
-4 0 obj<</Length 120>>
-stream
-BT /F1 18 Tf 72 720 Td (Make-Up Class Request) Tj 0 -30 Td /F1 12 Tf (${title}) Tj 0 -20 Td (This is a demo document for prototype purposes.) Tj ET
-endstream
-endobj
-xref
-0 5
-0000000000 65535 f
-0000000009 00000 n
-0000000058 00000 n
-0000000115 00000 n
-0000000274 00000 n
-trailer<</Size 5/Root 1 0 R>>
-startxref
-446
-%%EOF`;
-    return Buffer.from(content);
-}
-
-function seedDemoMakeupRequests() {
-    if (Object.keys(requestStore).length > 0) return;
-
-    const now = Date.now();
-    const demo = [
-        {
-            id: uuidv4(),
-            instructorId: 1,
-            instructorName: 'Dr. Maria Santos',
-            subjectCode: 'ITEC 321',
-            subjectName: 'Software Engineering',
-            section: 'BSIT 3A',
-            day: 'Saturday',
-            startSlot: timeToSlot('09:00'),
-            endSlot: timeToSlot('11:00'),
-            deliveryMode: 'in-campus',
-            room: 'Room 201',
-            document: {
-                buffer: Buffer.from('Demo PDF placeholder'),
-                originalname: 'makeup-request-it321.pdf',
-                mimetype: 'application/pdf'
-            },
-            submittedAt: new Date(now - 1000 * 60 * 60 * 24).toISOString(),
-            status: 'pending',
-            approvedBy: '',
-            declineReason: ''
-        },
-        {
-            id: uuidv4(),
-            instructorId: 1,
-            instructorName: 'Dr. Maria Santos',
-            subjectCode: 'ITEC 215',
-            subjectName: 'Database Systems',
-            section: 'BSIT 2B',
-            day: 'Friday',
-            startSlot: timeToSlot('13:00'),
-            endSlot: timeToSlot('15:00'),
-            deliveryMode: 'online',
-            room: '',
-            document: {
-                buffer: Buffer.from('Demo PDF placeholder'),
-                originalname: 'makeup-request-it215.pdf',
-                mimetype: 'application/pdf'
-            },
-            submittedAt: new Date(now - 1000 * 60 * 60 * 72).toISOString(),
-            status: 'approved',
-            approvedBy: 'Dr. Lourdes Reyes',
-            deanStatement: 'This make-up class is hereby approved. The instructor is authorized to conduct the session as scheduled. Please coordinate with the registrar for proper documentation.',
-            declineReason: ''
-        },
-        {
-            id: uuidv4(),
-            instructorId: 1,
-            instructorName: 'Dr. Maria Santos',
-            subjectCode: 'ITEC 101',
-            subjectName: 'Introduction to Computing',
-            section: 'BSIT 1A',
-            day: 'Thursday',
-            startSlot: timeToSlot('10:00'),
-            endSlot: timeToSlot('11:00'),
-            deliveryMode: 'in-campus',
-            room: 'Room 105',
-            document: {
-                buffer: Buffer.from('Demo PDF placeholder'),
-                originalname: 'makeup-request-it101.pdf',
-                mimetype: 'application/pdf'
-            },
-            submittedAt: new Date(now - 1000 * 60 * 60 * 120).toISOString(),
-            status: 'declined',
-            approvedBy: '',
-            declineReason: 'Requested room is reserved for accreditation activities.'
-        }
-    ];
-
-    demo.forEach((item) => {
-        requestStore[item.id] = item;
-    });
-}
-
-seedDemoMakeupRequests();
-
-function getTimetable(instructorId) {
-    return timetableStore[instructorId] || { subjects: [], blocks: {} };
-}
 
 // ── Schedule parser: extract blocks from OCR raw text ──
 function parseScheduleText(rawText) {
@@ -384,13 +271,10 @@ function getSchedule(instructorId) {
 // router.use(requireRole('instructor'));
 
 // Instructor Dashboard
-router.get('/dashboard', (req, res) => {
-    const data = getSharedData();
-    res.render('pages/instructor/dashboard', {
-        title: 'FaciTrack - Instructor Dashboard',
-        ...data
-    });
-});
+router.get('/dashboard', InstructorController.renderDashboardPage);
+
+// Faculty sets their own availability status
+router.patch('/availability-status', InstructorController.updateAvailabilityStatus);
 
 // Helper: shared data
 function getSharedData() {
@@ -519,8 +403,14 @@ function getSharedData() {
 
 // Appointments
 router.get('/appointments', InstructorController.renderAppointmentsPage);
+router.post('/appointments/approve-all', InstructorController.approveAllAppointments);
 router.post('/appointments/:id/approve', InstructorController.approveAppointment);
 router.post('/appointments/:id/decline', InstructorController.declineAppointment);
+router.post('/appointments/:id/complete', InstructorController.completeAppointment);
+router.patch('/appointments/:id/mode', InstructorController.updateAppointmentMode);
+
+// Personal meeting room used for online consultations
+router.patch('/meeting-link', InstructorController.updateDefaultMeetingLink);
 
 // reschedule appointment routes
 router.get('/appointments/reschedule-options', InstructorController.getRescheduleOptions);
@@ -543,6 +433,8 @@ router.delete('/schedule/:slotId',  InstructorController.deleteSlot);
 router.get('/unavailability/list',         InstructorController.getUnavailability);
 router.get('/unavailability/check/:date',  InstructorController.checkUnavailability);
 router.post('/unavailability/set',         InstructorController.setUnavailability);
+router.post('/unavailability/cancel-affected', InstructorController.cancelAffectedAppointments);
+router.delete('/unavailability/range',     InstructorController.removeUnavailabilityRange);
 router.delete('/unavailability/:date',     InstructorController.removeUnavailability);
 
 // workload
@@ -607,14 +499,11 @@ router.get('/reports', InstructorController.renderReportsPage);
 
 
 // Settings
-router.get('/settings', (req, res) => {
-    const data = getSharedData();
-    res.render('pages/instructor/settings', {
-        title: 'FaciTrack - Settings',
-        ...data,
-        pendingCount: data.appointments.filter(a => a.status === 'pending').length
-    });
-});
+router.get('/settings', InstructorController.renderSettingsPage);
+router.patch('/profile',              InstructorController.updateOwnProfile);
+router.patch('/password',             InstructorController.changePassword);
+router.patch('/settings/notifications', InstructorController.updateNotificationPrefs);
+router.patch('/settings/schedule',      InstructorController.updateScheduleSettings);
 
 // Presence Logs (redirects to dashboard for now — presence data is shown in the Activity Feed)
 router.get('/presence', (req, res) => {
@@ -675,356 +564,23 @@ router.post('/consultations/:id/decline', (req, res) => {
 });
 
 // ── Make-Up Class Request routes ──
-
-// GET: View submitted PDF document (instructor's own requests)
-router.get('/makeup/:id/document', (req, res) => {
-    const request = requestStore[req.params.id];
-    if (!request) return res.status(404).send('Request not found.');
-    if (!request.document || !request.document.buffer) return res.status(404).send('No document attached.');
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${request.document.originalname || 'document.pdf'}"`);
-    res.send(request.document.buffer);
-});
-
-// GET: Subject code lookup (AJAX)
-router.get('/makeup/subject-lookup', (req, res) => {
-    const code = String(req.query.code || '').trim().toLowerCase();
-    const subjects = (timetableStore[1] && timetableStore[1].subjects) || [];
-    const match = subjects.find(s => s.code && s.code.toLowerCase() === code);
-    res.json({ subjectName: match ? match.name : null });
-});
-
-// ── Helper: Get available rooms (simulated database) ──
-function getAvailableRooms() {
-    return ['Room 101', 'Room 102', 'Room 201', 'Room 202', 'Room 301', 'Room 302', 'Lab A', 'Lab B', 'Online Session'];
-}
-
-// ── Helper: Get all instructor workload ──
-function getAllInstructorWorkload() {
-    const workload = {};
-    for (const [instrId, data] of Object.entries(timetableStore)) {
-        workload[instrId] = data ? data.blocks || {} : {};
-    }
-    return workload;
-}
-
-// ── Helper: Check if slot is available for room ──
-function isRoomAvailableForSlot(room, day, startSlot, endSlot) {
-    const allWorkload = getAllInstructorWorkload();
-    for (const [instrId, blocks] of Object.entries(allWorkload)) {
-        for (const [key, block] of Object.entries(blocks)) {
-            const parts = key.split('_');
-            const blockDay = parts[0];
-            if (blockDay !== day) continue;
-            if (!block.room || block.room.toLowerCase() !== room.toLowerCase()) continue;
-            const blockStartSlot = parseInt(parts[1]);
-            const blockEndSlot = blockStartSlot + (block.duration || 1);
-            if (startSlot < blockEndSlot && endSlot > blockStartSlot) {
-                return false; // Conflict
-            }
-        }
-    }
-    return true; // Available
-}
-
-// ── Helper: Find available time slots for a given day ──
-function getAvailableTimeSlotsForDay(instructorId, day, durationSlots) {
-    const data = timetableStore[instructorId];
-    const blocks = (data && data.blocks) ? data.blocks : {};
-    const occupiedSlots = new Set();
-
-    // Mark all occupied slots for this day
-    for (const [key, block] of Object.entries(blocks)) {
-        const parts = key.split('_');
-        const blockDay = parts[0];
-        if (blockDay !== day) continue;
-        const blockStartSlot = parseInt(parts[1]);
-        const blockEndSlot = blockStartSlot + (block.duration || 1);
-        for (let s = blockStartSlot; s < blockEndSlot; s++) {
-            occupiedSlots.add(s);
-        }
-    }
-
-    // Find available time windows (during business hours: 7 AM to 6 PM = slots 14-36)
-    const availableSlots = [];
-    for (let slot = 14; slot <= 36 - durationSlots; slot++) {
-        let isAvailable = true;
-        for (let s = slot; s < slot + durationSlots; s++) {
-            if (occupiedSlots.has(s)) {
-                isAvailable = false;
-                break;
-            }
-        }
-        if (isAvailable) {
-            availableSlots.push(slot);
-        }
-    }
-
-    return availableSlots;
-}
-
-// POST: Generate available schedule options
-router.post('/makeup/generate-schedule', (req, res) => {
-    const { subjectCode, classType, deliveryMode, section } = req.body;
-    const instructorId = 1; // Current instructor
-    const durationHours = classType === 'Laboratory' ? 3 : 2;
-    const durationSlots = durationHours * 2; // Each slot = 30 min
-
-    if (!subjectCode || !classType || !deliveryMode) {
-        return res.json({ success: false, error: 'Missing required fields' });
-    }
-
-    // Generate options for next 10 business days
-    const today = new Date();
-    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const options = [];
-    let currentDate = new Date(today);
-    currentDate.setDate(currentDate.getDate() + 1); // Start from tomorrow
-
-    const weekdayNames = { 'Monday': 'Monday', 'Tuesday': 'Tuesday', 'Wednesday': 'Wednesday', 'Thursday': 'Thursday', 'Friday': 'Friday' };
-    const weekdayOrder = { 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5 };
-
-    while (options.length < 5 && currentDate < new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000)) {
-        const dow = currentDate.getDay();
-        const dayName = dayNames[dow];
-
-        // Only consider weekdays
-        if (weekdayNames[dayName]) {
-            const availableSlots = getAvailableTimeSlotsForDay(instructorId, dayName, durationSlots);
-
-            // Try to find a good room-time combination
-            for (const slot of availableSlots) {
-                const startSlot = slot;
-                const endSlot = slot + durationSlots;
-                const rooms = getAvailableRooms();
-
-                // Find first available room for this time slot
-                for (const room of rooms) {
-                    if (isRoomAvailableForSlot(room, dayName, startSlot, endSlot)) {
-                        const startTime = slotToLabel(startSlot);
-                        const endTime = slotToLabel(endSlot);
-
-                        options.push({
-                            date: currentDate.toISOString().split('T')[0],
-                            day: dayName,
-                            startTime,
-                            endTime,
-                            room,
-                            startSlot,
-                            endSlot,
-                            duration: durationHours
-                        });
-
-                        break; // Move to next time slot after finding a room
-                    }
-                }
-
-                if (options.length >= 5) break;
-            }
-        }
-
-        currentDate.setDate(currentDate.getDate() + 1);
-    }
-
-    if (options.length === 0) {
-        return res.json({ success: false, error: 'Unable to generate schedule options. Please try again later.' });
-    }
-
-    // Store for validation later
-    req.session = req.session || {};
-    req.session.lastGeneratedOptions = options;
-
-    res.json({ success: true, options });
-});
-
-// GET: Submission form
-router.get('/makeup/request', (req, res) => {
-    const data = getSharedData();
-    const flash = flashStore.message ? { message: flashStore.message, type: flashStore.type } : null;
-    flashStore.message = null; flashStore.type = null;
-    res.render('pages/instructor/makeup-request', {
-        title: 'FaciTrack - Make-Up Class Request',
-        ...data,
-        pendingCount: data.appointments.filter(a => a.status === 'pending').length,
-        flash,
-        formError: null,
-        formValues: {}
-    });
-});
-
-// POST: Submit request (multipart/form-data with PDF)
-router.post('/makeup/request', (req, res, next) => {
-    pdfUpload.single('document')(req, res, (uploadErr) => {
-        const data = getSharedData();
-        const pendingCount = data.appointments.filter(a => a.status === 'pending').length;
-
-        const subjectCode  = String(req.body.subjectCode  || '').trim();
-        const subjectName  = String(req.body.subjectName  || '').trim() || subjectCode;
-        const section      = String(req.body.section      || '').trim();
-        const day          = String(req.body.day          || '').trim();
-        const date         = String(req.body.date         || '').trim();
-        const classType    = String(req.body.classType    || '').trim();
-        const startTime    = String(req.body.startTime    || '').trim();
-        const endTime      = String(req.body.endTime      || '').trim();
-        const deliveryMode = 'in-campus'; // System-generated for makeup classes
-        const room         = String(req.body.room         || '').trim();
-
-        const validDays  = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-        const validModes = ['in-campus','online'];
-
-        const formValues = { subjectCode, subjectName, section, day, startTime, endTime, deliveryMode, room };
-
-        // PDF upload error (wrong file type)
-        if (uploadErr) {
-            return res.render('pages/instructor/makeup-request', {
-                title: 'FaciTrack - Make-Up Class Request',
-                ...data, pendingCount, flash: null,
-                formError: uploadErr.message || 'Invalid file. Please attach a PDF.',
-                formValues
-            });
-        }
-
-        // Field validation
-        if (!subjectCode || !section || !day || !date || !startTime || !endTime || !classType) {
-            return res.render('pages/instructor/makeup-request', {
-                title: 'FaciTrack - Make-Up Class Request',
-                ...data, pendingCount, flash: null,
-                formError: 'All required fields must be filled in.',
-                formValues
-            });
-        }
-        if (!req.file) {
-            return res.render('pages/instructor/makeup-request', {
-                title: 'FaciTrack - Make-Up Class Request',
-                ...data, pendingCount, flash: null,
-                formError: 'A supporting PDF document is required.',
-                formValues
-            });
-        }
-        if (!validDays.includes(day)) {
-            return res.render('pages/instructor/makeup-request', {
-                title: 'FaciTrack - Make-Up Class Request',
-                ...data, pendingCount, flash: null,
-                formError: 'Please select a valid day.',
-                formValues
-            });
-        }
-        if (deliveryMode === 'in-campus' && !room) {
-            return res.render('pages/instructor/makeup-request', {
-                title: 'FaciTrack - Make-Up Class Request',
-                ...data, pendingCount, flash: null,
-                formError: 'Room is required for in-campus make-up classes.',
-                formValues
-            });
-        }
-
-        const startSlot = timeToSlot(startTime);
-        const endSlot   = timeToSlot(endTime);
-        if (endSlot <= startSlot) {
-            return res.render('pages/instructor/makeup-request', {
-                title: 'FaciTrack - Make-Up Class Request',
-                ...data, pendingCount, flash: null,
-                formError: 'End time must be after start time.',
-                formValues
-            });
-        }
-
-        // Room availability check (in-campus only)
-        if (deliveryMode === 'in-campus') {
-            const roomConflict = checkRoomAvailability(day, startSlot, endSlot, room);
-            if (roomConflict) {
-                return res.render('pages/instructor/makeup-request', {
-                    title: 'FaciTrack - Make-Up Class Request',
-                    ...data, pendingCount, flash: null,
-                    formError: `Room conflict: "${room}" is already occupied on ${day} from ${roomConflict.timeRange}.`,
-                    formValues
-                });
-            }
-        }
-
-        // Instructor availability check
-        const instrConflict = checkInstructorAvailability(1, day, startSlot, endSlot);
-        if (instrConflict) {
-            return res.render('pages/instructor/makeup-request', {
-                title: 'FaciTrack - Make-Up Class Request',
-                ...data, pendingCount, flash: null,
-                formError: `Schedule conflict: you already have a class on ${day} from ${instrConflict.timeRange}.`,
-                formValues
-            });
-        }
-
-        // Create request record
-        const id = uuidv4();
-        requestStore[id] = {
-            id,
-            instructorId:   1,
-            instructorName: 'Dr. Maria Santos',
-            subjectCode,
-            subjectName,
-            section,
-            date,
-            day,
-            classType,
-            startSlot,
-            endSlot,
-            startTime,
-            endTime,
-            deliveryMode,
-            room,
-            document: {
-                buffer:       req.file.buffer,
-                originalname: req.file.originalname,
-                mimetype:     req.file.mimetype
-            },
-            submittedAt:   new Date().toISOString(),
-            status:        'pending',
-            approvedBy:    '',
-            declineReason: ''
-        };
-
-        // Add notification
-        addInstructorNotification({
-            type: 'makeup',
-            title: 'Make-up request submitted',
-            message: `Make-up class request submitted for ${subjectCode} on ${day} (${slotToLabel(startSlot)} – ${slotToLabel(endSlot)}).`,
-            category: 'makeup',
-            read: false
-        });
-
-        flashStore.message = `Your make-up class request for ${subjectCode} has been submitted for dean review.`;
-        flashStore.type    = 'success';
-        res.redirect('/instructor/makeup/requests');
-    });
-});
-
-// GET: Instructor's own request list
-router.get('/makeup/requests', (req, res) => {
-    const data = getSharedData();
-    const flash = flashStore.message ? { message: flashStore.message, type: flashStore.type } : null;
-    flashStore.message = null; flashStore.type = null;
-
-    const myRequests = Object.values(requestStore)
-        .filter(r => r.instructorId === 1)
-        .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt));
-
-    res.render('pages/instructor/makeup-requests', {
-        title: 'FaciTrack - My Make-Up Requests',
-        ...data,
-        pendingCount: data.appointments.filter(a => a.status === 'pending').length,
-        flash,
-        myRequests,
-        slotToLabel
-    });
-});
+// Persistence, conflict checking and notifications live in MakeupController.
+// Specific paths are declared before the /:id ones so they are not swallowed.
+router.get('/makeup/requests',            MakeupController.renderRequestList);
+router.get('/makeup/request',             MakeupController.renderRequestForm);
+router.post('/makeup/request',            acceptDocuments, MakeupController.submitRequest);
+router.get('/makeup/request/:id/edit',    MakeupController.renderRequestForm);
+router.post('/makeup/request/:id',        acceptDocuments, MakeupController.submitRequest);
+router.post('/makeup/check-conflicts',    MakeupController.checkConflicts);
+router.post('/makeup/suggest-slots',      MakeupController.suggestSlots);
+router.get('/makeup/document/:docId',     MakeupController.downloadDocument);
+router.post('/makeup/:id/withdraw',       MakeupController.withdrawRequest);
 
 // ── Unavailability Store ──
 // key: 'YYYY-MM-DD' → { date, reason, blockedAt, cancelledRefs: [] }
 const unavailabilityStore = {};
 
-router.requestStore         = requestStore;
-router.timetableStore       = timetableStore;
 router.notificationsList    = notificationsList;
-router.slotToLabel          = slotToLabel;
 router.getScheduleStore     = () => scheduleStore;
 router.unavailabilityStore  = unavailabilityStore;
 

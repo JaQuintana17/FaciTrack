@@ -3,8 +3,60 @@ const ConsultationModel = require('../models/ConsultationModel');
 const AppointmentModel = require('../models/AppointmentModel');
 const UserModel = require('../models/UserModel');
 const AuditLogModel = require('../models/AuditLogModel');
+const NotificationModel = require('../models/NotificationModel');
+const InstructorSettingsModel = require('../models/InstructorSettingsModel');
+const bcrypt = require('bcrypt');
 const { to12Hour } = require('../utils/timeFormat');
 const { buildInstructorUser } = require('../utils/sessionUser');
+
+// Must mirror the users.availability_status enum
+const AVAILABILITY_STATUSES = ['available', 'dnd', 'travel', 'leave', 'meeting'];
+
+/**
+ * How far ahead an appointment may be rescheduled: from today to the end of
+ * the week two weeks after the current one. Anything further out is almost
+ * certainly a mistake, and it keeps the picker to three readable weeks.
+ */
+const RESCHEDULE_WEEKS_AHEAD = 2;
+
+function getRescheduleWindow() {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - today.getDay());
+
+    const end = new Date(weekStart);
+    end.setDate(weekStart.getDate() + 6 + RESCHEDULE_WEEKS_AHEAD * 7);
+
+    const toKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return { minDate: toKey(today), maxDate: toKey(end) };
+}
+
+/** Sunday-start week containing today, as 'YYYY-MM-DD' date keys (inclusive). */
+function getCurrentWeekRange() {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const start = new Date(today);
+    start.setDate(today.getDate() - today.getDay());
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+
+    const toKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return { startKey: toKey(start), endKey: toKey(end) };
+}
+
+/**
+ * One slot, four states: closed by the instructor, booked-and-awaiting
+ * approval, booked-and-confirmed, or open. Distinct from the raw
+ * consultation_hours.status column, which doesn't know about the appointment.
+ */
+function computeSlotDisplayStatus(sub) {
+    if (sub.status === 'closed') return 'closed';
+    if (sub.appointmentStatus === 'pending') return 'pending';
+    if (sub.appointmentStatus === 'confirmed') return 'confirmed';
+    return 'available';
+}
 
 function computeDuration(startTime, endTime) {
     const [sh, sm] = startTime.split(':').map(Number);
@@ -17,6 +69,31 @@ function computeDurationMinutes(startTime, endTime) {
     const [sh, sm] = startTime.split(':').map(Number);
     const [eh, em] = endTime.split(':').map(Number);
     return (eh * 60 + em) - (sh * 60 + sm);
+}
+
+/** Shape an appointment row for the dashboard and appointments views. */
+function mapAppointmentRow(row) {
+    return {
+        id: row.id,
+        status: row.status,
+        firstName: row.student_first_name,
+        lastName: row.student_last_name,
+        studentName: `${row.student_last_name}, ${row.student_first_name}`,
+        studentId: row.student_number,
+        topic: row.topic,
+        mode: row.mode,
+        date: row.consultation_date,
+        dayOfWeek: row.day_of_the_week,
+        time: `${to12Hour(row.start_time)} – ${to12Hour(row.end_time)}`,
+        duration: computeDuration(row.start_time, row.end_time),
+        roomNumber: row.room_number,
+        buildingName: row.building_name,
+        notes: row.notes,
+        sectionGroupName: row.section_group_name,
+        courseSubject: row.course_subject,
+        email: row.email,
+        createdAt: row.created_at,
+    };
 }
 
 const InstructorController = {
@@ -46,10 +123,13 @@ const InstructorController = {
                 });
             });
 
+            const scheduleSettings = await InstructorSettingsModel.getByPublicId(instructorId);
+
             res.render('pages/instructor/schedule', {
                 title: 'FaciTrack - Consultation Schedule',
                 instructor: instructor,
                 consultationSlots: consultationSlots,
+                scheduleSettings,
             });
         } catch (err) {
             console.error('[InstructorController.renderConsultationPage]', err);
@@ -59,12 +139,17 @@ const InstructorController = {
 
     async saveSlotBlock(req, res) {
         try {
-            const { date, day, timeStart, timeEnd, maxCapacity, repeatWeeks } = req.body;
+            const { date, day, timeStart, timeEnd, maxCapacity, repeat } = req.body;
+
+            // The Add Slot modal no longer asks how many weeks — the instructor's
+            // saved default decides. Editing an existing slot never repeats.
+            const settings = await InstructorSettingsModel.getByPublicId(req.session.userId);
+            const repeatWeeks = (repeat && settings.repeatWeekly) ? settings.repeatWeeks : 1;
 
             const result = await ConsultationModel.saveSlotBlock(req.session.userId, {
                 date, day, timeStart, timeEnd,
                 maxCapacity: parseInt(maxCapacity, 10) || 1,
-                repeatWeeks: Math.max(1, Math.min(52, parseInt(repeatWeeks, 10) || 1)),
+                repeatWeeks,
             });
 
             try {
@@ -74,7 +159,7 @@ const InstructorController = {
                 console.error('[AuditLog] Failed to log consultation slot:', err);
             }
 
-            res.json({ success: true, message: `Saved ${result.count} slot(s) across ${req.body.repeatWeeks || 1} week(s).` });
+            res.json({ success: true, message: `Saved ${result.count} slot(s) across ${repeatWeeks} week(s).` });
         } catch (err) {
             console.error('[InstructorController.saveSlotBlock]', err);
             res.status(500).json({ success: false, error: { message: err.message } });
@@ -123,27 +208,43 @@ const InstructorController = {
         }
     },
 
+    /**
+     * Block a full day or an inclusive date range.
+     * Affected appointments are returned rather than cancelled outright — the
+     * instructor decides per appointment whether to reschedule or cancel.
+     */
     async setUnavailability(req, res) {
         try {
-            const { date, reason } = req.body;
-            if (!date) return res.status(400).json({ success: false, error: 'Date is required.' });
+            const { reason } = req.body;
+            // `date` is the legacy single-day field; startDate/endDate supersede it
+            const startDate = req.body.startDate || req.body.date;
+            const endDate = req.body.endDate || startDate;
+
+            if (!startDate) {
+                return res.status(400).json({ success: false, error: 'A start date is required.' });
+            }
 
             const today = new Date(); today.setHours(0, 0, 0, 0);
-            const chosen = new Date(date + 'T00:00:00');
-            if (chosen <= today) {
+            if (new Date(startDate + 'T00:00:00') <= today) {
                 return res.status(422).json({
                     success: false,
                     error: 'Cannot mark today or a past date as unavailable.'
                 });
             }
+            if (endDate < startDate) {
+                return res.status(422).json({
+                    success: false,
+                    error: 'The end date cannot be earlier than the start date.'
+                });
+            }
 
-            // Cancel appointments on this date
-            const affected = await ConsultationModel.cancelAppointmentsOnDate(req.session.userId, date, reason);
+            const affected = await ConsultationModel.getAffectedAppointments(
+                req.session.userId, startDate, endDate
+            );
 
-            // Mark date as unavailable
-            await ConsultationModel.setUnavailability(req.session.userId, date, reason);
-
-            // TODO: send email notifications to affected students
+            const blockedDates = await ConsultationModel.setUnavailabilityRange(
+                req.session.userId, startDate, endDate, reason
+            );
 
             try {
                 const instructor = await UserModel.getUserByPublicId(req.session.userId);
@@ -154,14 +255,48 @@ const InstructorController = {
 
             res.json({
                 success: true,
-                dateKey: date,
-                reason: reason,
-                cancelledCount: affected.length,
-                cancelledRefs: affected.map(a => a.id),
+                startDate,
+                endDate,
+                blockedDates,
+                reason: reason || null,
+                affected,
+                affectedCount: affected.length,
             });
         } catch (err) {
             console.error('[InstructorController.setUnavailability]', err);
             res.status(500).json({ success: false, error: 'Failed to set unavailability.' });
+        }
+    },
+
+    /**
+     * Cancel every appointment left over in a blocked range, notifying students.
+     * Used by the "Cancel all remaining" action in the unavailability modal.
+     */
+    async cancelAffectedAppointments(req, res) {
+        try {
+            const { startDate, endDate, reason } = req.body;
+            if (!startDate) {
+                return res.status(400).json({ success: false, error: 'A start date is required.' });
+            }
+
+            const cancelled = await ConsultationModel.cancelAppointmentsInRange(
+                req.session.userId,
+                startDate,
+                endDate || startDate,
+                reason || 'Instructor unavailable on this date'
+            );
+
+            try {
+                const instructor = await UserModel.getUserByPublicId(req.session.userId);
+                await AuditLogModel.log(instructor.internal_id, instructor.role, 'Cancelled appointments on blocked date', 'appointment');
+            } catch (err) {
+                console.error('[AuditLog] Failed to log cancellation:', err);
+            }
+
+            res.json({ success: true, cancelledCount: cancelled.length });
+        } catch (err) {
+            console.error('[InstructorController.cancelAffectedAppointments]', err);
+            res.status(500).json({ success: false, error: 'Failed to cancel appointments.' });
         }
     },
 
@@ -172,6 +307,36 @@ const InstructorController = {
             res.json({ success: true, count });
         } catch (err) {
             res.status(500).json({ success: false, error: 'Failed to check.' });
+        }
+    },
+
+    /**
+     * Undo a block that was just made. Blocking only writes rows to
+     * instructor_unavailability, so removing them restores the range exactly.
+     */
+    async removeUnavailabilityRange(req, res) {
+        try {
+            const { startDate, endDate } = req.body;
+            if (!startDate) {
+                return res.status(400).json({ success: false, error: 'A start date is required.' });
+            }
+
+            await ConsultationModel.removeUnavailability(
+                req.session.userId, startDate, endDate || startDate
+            );
+
+            try {
+                const instructor = await UserModel.getUserByPublicId(req.session.userId);
+                await AuditLogModel.log(instructor.internal_id, instructor.role,
+                    'Undid unavailable dates', 'consultation slot');
+            } catch (err) {
+                console.error('[AuditLog] Failed to log unavailability undo:', err);
+            }
+
+            res.json({ success: true });
+        } catch (err) {
+            console.error('[InstructorController.removeUnavailabilityRange]', err);
+            res.status(500).json({ success: false, error: 'Failed to undo the block.' });
         }
     },
 
@@ -192,6 +357,408 @@ const InstructorController = {
         }
     },
 
+    /**
+     * Instructor sets their own availability. Booking is gated on this value
+     * in StudentController, so it must stay within the column's enum.
+     */
+    async updateAvailabilityStatus(req, res) {
+        try {
+            const { status } = req.body;
+
+            if (!AVAILABILITY_STATUSES.includes(status)) {
+                return res.status(422).json({
+                    success: false,
+                    error: `Status must be one of: ${AVAILABILITY_STATUSES.join(', ')}.`,
+                });
+            }
+
+            const updated = await UserModel.updateAvailabilityStatus(req.session.userId, status);
+            if (!updated) {
+                return res.status(404).json({ success: false, error: 'Instructor not found.' });
+            }
+
+            try {
+                const instructor = await UserModel.getUserByPublicId(req.session.userId);
+                await AuditLogModel.log(
+                    instructor.internal_id, instructor.role,
+                    `Set availability to ${status}`, 'status'
+                );
+            } catch (err) {
+                console.error('[AuditLog] Failed to log status change:', err);
+            }
+
+            res.json({ success: true, status });
+        } catch (err) {
+            console.error('[InstructorController.updateAvailabilityStatus]', err);
+            res.status(500).json({ success: false, error: 'Failed to update status.' });
+        }
+    },
+
+    /**
+     * Instructor landing page: today's consultations, pending requests,
+     * and the upcoming slot list — all from the database.
+     */
+    async renderSettingsPage(req, res) {
+        try {
+            const instructor = buildInstructorUser(req.session);
+            const me = await UserModel.getUserByPublicId(req.session.userId);
+
+            // The sidebar badge needs the live pending count
+            const appts = await AppointmentModel.getAppointmentsByInstructor(req.session.userId);
+            const pendingCount = appts.filter(a => a.status === 'pending').length;
+
+            instructor.availabilityStatus = me?.availability_status || 'available';
+            instructor.defaultMeetingLink = me?.default_meeting_link || '';
+            instructor.middleName = me?.middle_name || '';
+
+            const settings = await InstructorSettingsModel.getByPublicId(req.session.userId);
+
+            res.render('pages/instructor/settings', {
+                title: 'FaciTrack - Settings',
+                instructor,
+                pendingCount,
+                settings,
+            });
+        } catch (err) {
+            console.error('[InstructorController.renderSettingsPage]', err);
+            res.status(500).send('Failed to load settings.');
+        }
+    },
+
+    /**
+     * Instructor edits their own name. Email is deliberately not accepted —
+     * it is the sign-in identity Google OAuth matches on, so only an admin
+     * may change it.
+     */
+    async updateOwnProfile(req, res) {
+        try {
+            const firstName  = String(req.body.firstName  || '').trim();
+            const middleName = String(req.body.middleName || '').trim();
+            const lastName   = String(req.body.lastName   || '').trim();
+
+            if (!firstName || !lastName) {
+                return res.status(422).json({
+                    success: false,
+                    error: 'First name and last name are required.',
+                });
+            }
+
+            const updated = await UserModel.updateOwnProfile(req.session.userId, {
+                firstName, middleName, lastName,
+            });
+            if (!updated) {
+                return res.status(404).json({ success: false, error: 'Instructor not found.' });
+            }
+
+            // Keep the session in step so the sidebar updates without a re-login
+            req.session.firstName  = firstName;
+            req.session.middleName = middleName;
+            req.session.lastName   = lastName;
+            req.session.name       = `${firstName} ${lastName}`;
+
+            try {
+                const instructor = await UserModel.getUserByPublicId(req.session.userId);
+                await AuditLogModel.log(instructor.internal_id, instructor.role,
+                    'Updated own profile', 'settings');
+            } catch (err) {
+                console.error('[AuditLog] Failed to log profile update:', err);
+            }
+
+            res.json({ success: true, name: req.session.name });
+        } catch (err) {
+            console.error('[InstructorController.updateOwnProfile]', err);
+            res.status(500).json({ success: false, error: 'Failed to update profile.' });
+        }
+    },
+
+    /**
+     * Which updates reach the instructor by email and on their devices.
+     * The in-app bell is intentionally not gated — an unanswered appointment
+     * still needs a decision even when its alerts are muted.
+     */
+    async updateNotificationPrefs(req, res) {
+        try {
+            const saved = await InstructorSettingsModel.saveNotificationPrefs(req.session.userId, {
+                notifyNewRequests:   Boolean(req.body.notifyNewRequests),
+                notifyCancellations: Boolean(req.body.notifyCancellations),
+                notifyReminders:     Boolean(req.body.notifyReminders),
+                notifyBleAbsence:    Boolean(req.body.notifyBleAbsence),
+                notifyAnnouncements: Boolean(req.body.notifyAnnouncements),
+            });
+            if (!saved) {
+                return res.status(404).json({ success: false, error: 'Instructor not found.' });
+            }
+
+            try {
+                const instructor = await UserModel.getUserByPublicId(req.session.userId);
+                await AuditLogModel.log(instructor.internal_id, instructor.role,
+                    'Updated notification preferences', 'settings');
+            } catch (err) {
+                console.error('[AuditLog] Failed to log notification prefs:', err);
+            }
+
+            res.json({ success: true });
+        } catch (err) {
+            console.error('[InstructorController.updateNotificationPrefs]', err);
+            res.status(500).json({ success: false, error: 'Failed to save preferences.' });
+        }
+    },
+
+    /**
+     * Defaults applied when a new consultation slot is created. Holding them
+     * here is what lets the Add Slot modal drop its own repeat controls.
+     */
+    async updateScheduleSettings(req, res) {
+        try {
+            const repeatWeekly = Boolean(req.body.repeatWeekly);
+            const repeatWeeks  = parseInt(req.body.repeatWeeks, 10);
+
+            if (repeatWeekly && (!Number.isFinite(repeatWeeks) || repeatWeeks < 2 || repeatWeeks > 52)) {
+                return res.status(422).json({
+                    success: false,
+                    error: 'Repeat between 2 and 52 weeks.',
+                });
+            }
+
+            const saved = await InstructorSettingsModel.saveScheduleSettings(req.session.userId, {
+                repeatWeekly, repeatWeeks,
+            });
+            if (!saved) {
+                return res.status(404).json({ success: false, error: 'Instructor not found.' });
+            }
+
+            try {
+                const instructor = await UserModel.getUserByPublicId(req.session.userId);
+                await AuditLogModel.log(instructor.internal_id, instructor.role,
+                    repeatWeekly
+                        ? `Set new slots to repeat for ${repeatWeeks} week(s)`
+                        : 'Turned off weekly repeat for new slots',
+                    'settings');
+            } catch (err) {
+                console.error('[AuditLog] Failed to log schedule settings:', err);
+            }
+
+            res.json({ success: true });
+        } catch (err) {
+            console.error('[InstructorController.updateScheduleSettings]', err);
+            res.status(500).json({ success: false, error: 'Failed to save schedule settings.' });
+        }
+    },
+
+    /** Password change from Settings — requires the current password. */
+    async changePassword(req, res) {
+        try {
+            const { currentPassword, newPassword } = req.body;
+
+            if (!currentPassword || !newPassword) {
+                return res.status(422).json({ success: false, error: 'All password fields are required.' });
+            }
+            if (String(newPassword).length < 8) {
+                return res.status(422).json({ success: false, error: 'New password must be at least 8 characters.' });
+            }
+
+            const hash = await UserModel.getPasswordHash(req.session.userId);
+            if (!hash) {
+                // Google-provisioned accounts have no password to compare against
+                return res.status(409).json({
+                    success: false,
+                    error: 'This account signs in with Google and has no password to change.',
+                });
+            }
+
+            const match = await bcrypt.compare(currentPassword, hash);
+            if (!match) {
+                return res.status(401).json({ success: false, error: 'Your current password is incorrect.' });
+            }
+
+            await UserModel.updatePassword(req.session.userId, newPassword);
+
+            try {
+                const instructor = await UserModel.getUserByPublicId(req.session.userId);
+                await AuditLogModel.log(instructor.internal_id, instructor.role,
+                    'Changed password', 'security');
+            } catch (err) {
+                console.error('[AuditLog] Failed to log password change:', err);
+            }
+
+            res.json({ success: true });
+        } catch (err) {
+            console.error('[InstructorController.changePassword]', err);
+            res.status(500).json({ success: false, error: 'Failed to change password.' });
+        }
+    },
+
+    /** Instructor saves the personal meeting room reused for online consultations. */
+    async updateDefaultMeetingLink(req, res) {
+        try {
+            const link = String(req.body.meetingLink || '').trim();
+
+            if (link && !/^https:\/\/\S+$/i.test(link)) {
+                return res.status(422).json({
+                    success: false,
+                    error: 'Enter a full https:// link, e.g. https://meet.google.com/abc-defg-hij',
+                });
+            }
+
+            await UserModel.updateDefaultMeetingLink(req.session.userId, link);
+
+            // Online consultations already booked have been waiting for this —
+            // attach it now and tell each student it is ready.
+            let backfilled = 0;
+            if (link) {
+                const affected = await AppointmentModel.attachMeetingLinkToPending(req.session.userId, link);
+                backfilled = affected.length;
+                for (const apt of affected) {
+                    await NotificationModel.create(
+                        apt.student_id,
+                        'approved',
+                        `Your instructor added the meeting link for your online consultation.`,
+                        apt.id
+                    );
+                }
+            }
+
+            try {
+                const instructor = await UserModel.getUserByPublicId(req.session.userId);
+                await AuditLogModel.log(instructor.internal_id, instructor.role,
+                    link ? 'Updated meeting link' : 'Cleared meeting link', 'settings');
+            } catch (err) {
+                console.error('[AuditLog] Failed to log meeting link:', err);
+            }
+
+            res.json({ success: true, meetingLink: link || null, backfilled });
+        } catch (err) {
+            console.error('[InstructorController.updateDefaultMeetingLink]', err);
+            res.status(500).json({ success: false, error: 'Failed to save the meeting link.' });
+        }
+    },
+
+    /** Instructor overrides the consultation mode the student chose. */
+    async updateAppointmentMode(req, res) {
+        try {
+            const appointmentId = parseInt(req.params.id, 10);
+            const { mode } = req.body;
+
+            if (!['Face-to-Face', 'Online'].includes(mode)) {
+                return res.status(422).json({ success: false, error: 'Mode must be Face-to-Face or Online.' });
+            }
+
+            let meetingLink = String(req.body.meetingLink || '').trim();
+
+            // Fall back to the instructor's saved room when none was supplied
+            if (mode === 'Online' && !meetingLink) {
+                const me = await UserModel.getUserByPublicId(req.session.userId);
+                meetingLink = me?.default_meeting_link || '';
+            }
+
+            const result = await AppointmentModel.updateMode(
+                appointmentId, req.session.userId, mode, meetingLink
+            );
+
+            if (!result.success) {
+                const messages = {
+                    NOT_FOUND_OR_RESOLVED: 'Appointment not found or already resolved.',
+                    NO_ROOM_AVAILABLE: 'All consultation rooms are full for that time.',
+                    MEETING_LINK_REQUIRED: 'Add a meeting link, or save a default one in Settings.',
+                };
+                return res.status(409).json({ success: false, reason: result.reason, error: messages[result.reason] || 'Failed to update the mode.' });
+            }
+
+            try {
+                const instructor = await UserModel.getUserByPublicId(req.session.userId);
+                await AuditLogModel.log(instructor.internal_id, instructor.role,
+                    `Set consultation mode to ${mode}`, 'appointment');
+            } catch (err) {
+                console.error('[AuditLog] Failed to log mode change:', err);
+            }
+
+            res.json(result);
+        } catch (err) {
+            console.error('[InstructorController.updateAppointmentMode]', err);
+            res.status(500).json({ success: false, error: 'Failed to update the consultation mode.' });
+        }
+    },
+
+    /** Close out a consultation. Refused until the slot has actually ended. */
+    async completeAppointment(req, res) {
+        try {
+            const appointmentId = parseInt(req.params.id, 10);
+            const result = await AppointmentModel.completeAppointment(appointmentId, req.session.userId);
+
+            if (!result.success) {
+                const messages = {
+                    NOT_FOUND: 'Appointment not found.',
+                    ALREADY_COMPLETED: 'This consultation is already marked complete.',
+                    NOT_CONFIRMED: 'Only confirmed consultations can be completed.',
+                    NOT_YET_ENDED: 'You can mark this complete once the consultation has ended.',
+                };
+                const code = result.reason === 'NOT_FOUND' ? 404 : 409;
+                return res.status(code).json({ success: false, reason: result.reason, error: messages[result.reason] || 'Failed to complete.' });
+            }
+
+            try {
+                const instructor = await UserModel.getUserByPublicId(req.session.userId);
+                await AuditLogModel.log(instructor.internal_id, instructor.role, 'Completed consultation', 'appointment');
+            } catch (err) {
+                console.error('[AuditLog] Failed to log completion:', err);
+            }
+
+            res.json({ success: true });
+        } catch (err) {
+            console.error('[InstructorController.completeAppointment]', err);
+            res.status(500).json({ success: false, error: 'Failed to complete the consultation.' });
+        }
+    },
+
+    async renderDashboardPage(req, res) {
+        try {
+            const instructor = buildInstructorUser(req.session);
+            const instructorPublicId = req.session.userId;
+
+            const [rawAppointments, grouped, me] = await Promise.all([
+                AppointmentModel.getAppointmentsByInstructor(instructorPublicId),
+                ConsultationModel.getSlotsByInstructorGrouped(instructorPublicId),
+                UserModel.getUserByPublicId(instructorPublicId),
+            ]);
+
+            // Reflect the stored status so the selector isn't reset on every load
+            instructor.availabilityStatus = me?.availability_status || 'available';
+
+            const appointments = rawAppointments.map(mapAppointmentRow);
+
+            // The dashboard renders one row per sub-slot, flattened out of the day
+            // groups, capped to the current week — next week's slots belong on the
+            // consultation schedule page, not the "what's happening now" dashboard.
+            const { startKey, endKey } = getCurrentWeekRange();
+            const consultationSlots = grouped
+                .filter(g => g.date >= startKey && g.date <= endKey)
+                .flatMap(g =>
+                    g.subSlots.map(s => ({
+                        id: s.id,
+                        day: g.day,
+                        date: g.date,
+                        time: `${s.timeStart} - ${s.timeEnd}`,
+                        timeStart: s.timeStart,
+                        timeEnd: s.timeEnd,
+                        status: s.status,
+                        isBooked: s.isBooked,
+                        displayStatus: computeSlotDisplayStatus(s),
+                    }))
+                );
+
+            res.render('pages/instructor/dashboard', {
+                title: 'FaciTrack - Instructor Dashboard',
+                instructor,
+                appointments,
+                consultationSlots,
+                pendingCount: appointments.filter(a => a.status === 'pending').length,
+            });
+        } catch (err) {
+            console.error('[InstructorController.renderDashboardPage]', err);
+            res.status(500).send('Failed to load dashboard.');
+        }
+    },
+
     async renderAppointmentsPage(req, res) {
         try {
             const instructor = buildInstructorUser(req.session);
@@ -199,27 +766,7 @@ const InstructorController = {
             const instructorPublicId = req.session.userId;
             const rawAppointments = await AppointmentModel.getAppointmentsByInstructor(instructorPublicId);
 
-            const appointments = rawAppointments.map(row => ({
-                id: row.id,
-                status: row.status,
-                firstName: row.student_first_name,
-                lastName: row.student_last_name,
-                studentName: `${row.student_last_name}, ${row.student_first_name}`,
-                studentId: row.student_number,
-                topic: row.topic,
-                mode: row.mode,
-                date: row.consultation_date,
-                dayOfWeek: row.day_of_the_week,
-                time: `${to12Hour(row.start_time)} – ${to12Hour(row.end_time)}`,
-                duration: computeDuration(row.start_time, row.end_time),
-                roomNumber: row.room_number,
-                buildingName: row.building_name,
-                notes: row.notes,
-                sectionGroupName: row.section_group_name,
-                courseSubject: row.course_subject,
-                email: row.email,
-                createdAt: row.created_at,
-            }));
+            const appointments = rawAppointments.map(mapAppointmentRow);
 
             res.render('pages/instructor/appointments', {
                 title: 'FaciTrack - Appointments',
@@ -235,13 +782,18 @@ const InstructorController = {
     async getRescheduleOptions(req, res) {
         try {
             const instructorPublicId = req.session.userId;
+            const { minDate, maxDate } = getRescheduleWindow();
+
             const grouped = await ConsultationModel.getBookableSlotsByInstructor(instructorPublicId);
-            const slots = grouped.map(g => ({
-                day: g.day,
-                date: g.date,
-                subSlots: g.subSlots.map(s => ({ id: s.id, timeStart: s.timeStart, timeEnd: s.timeEnd })),
-            }));
-            res.json({ success: true, slots });
+            const slots = grouped
+                .filter(g => g.date >= minDate && g.date <= maxDate)
+                .map(g => ({
+                    day: g.day,
+                    date: g.date,
+                    subSlots: g.subSlots.map(s => ({ id: s.id, timeStart: s.timeStart, timeEnd: s.timeEnd })),
+                }));
+
+            res.json({ success: true, slots, minDate, maxDate });
         } catch (err) {
             console.error('[InstructorController.getRescheduleOptions]', err);
             res.status(500).json({ success: false, error: 'Failed to load available slots.' });
@@ -251,15 +803,28 @@ const InstructorController = {
     async rescheduleAppointment(req, res) {
         try {
             const appointmentId = parseInt(req.params.id, 10);
-            const { newSlotId, reason } = req.body;
+            const { newSlotId, reason, mode } = req.body;
             const instructorPublicId = req.session.userId;
 
             if (!newSlotId) {
                 return res.status(400).json({ success: false, error: 'Please select a new slot.' });
             }
+            if (mode && !['Face-to-Face', 'Online'].includes(mode)) {
+                return res.status(422).json({ success: false, error: 'Unknown consultation mode.' });
+            }
+
+            // The slot must still be inside the window the picker offered
+            const { minDate, maxDate } = getRescheduleWindow();
+            const slotDate = await ConsultationModel.getSlotDate(parseInt(newSlotId, 10));
+            if (slotDate && (slotDate < minDate || slotDate > maxDate)) {
+                return res.status(422).json({
+                    success: false,
+                    error: 'Pick a slot within the next three weeks.',
+                });
+            }
 
             const result = await AppointmentModel.rescheduleAppointment(
-                appointmentId, parseInt(newSlotId, 10), instructorPublicId, reason
+                appointmentId, parseInt(newSlotId, 10), instructorPublicId, reason, mode
             );
 
             if (!result.success) {
@@ -267,6 +832,7 @@ const InstructorController = {
                     SLOT_UNAVAILABLE: 'That slot is no longer available.',
                     NO_ROOM_AVAILABLE: 'All consultation rooms are full for that time.',
                     NOT_FOUND_OR_RESOLVED: 'Appointment not found or already resolved.',
+                    MEETING_LINK_REQUIRED: 'Add your online consultation link in Settings before switching this to Online.',
                 };
                 return res.status(409).json({ success: false, error: messages[result.reason] || 'Failed to reschedule.' });
             }
@@ -306,6 +872,57 @@ const InstructorController = {
         } catch (err) {
             console.error('[InstructorController.approveAppointment]', err);
             res.status(500).json({ success: false, error: 'Failed to approve appointment.' });
+        }
+    },
+
+    /**
+     * Approve every pending request in one go.
+     *
+     * Each one goes through the same approveAppointment path as a single
+     * approval, so its transaction and its student notification both still
+     * run. They commit one at a time; anything that was cancelled or resolved
+     * in the meantime is skipped and reported rather than aborting the run.
+     */
+    async approveAllAppointments(req, res) {
+        try {
+            const instructorPublicId = req.session.userId;
+            const all = await AppointmentModel.getAppointmentsByInstructor(instructorPublicId);
+            const pending = all.filter(a => a.status === 'pending');
+
+            if (!pending.length) {
+                return res.json({ success: true, total: 0, approved: 0, skipped: [] });
+            }
+
+            const skipped = [];
+            let approved = 0;
+
+            for (const appointment of pending) {
+                const student = `${appointment.student_first_name} ${appointment.student_last_name}`;
+                try {
+                    const result = await AppointmentModel.approveAppointment(
+                        appointment.id, instructorPublicId);
+                    if (result.success) approved++;
+                    else skipped.push({ id: appointment.id, student, reason: 'No longer pending — it was cancelled or already resolved.' });
+                } catch (err) {
+                    console.error('[InstructorController.approveAllAppointments] one failed:', err);
+                    skipped.push({ id: appointment.id, student, reason: 'Could not be approved. Please try it on its own.' });
+                }
+            }
+
+            if (approved) {
+                try {
+                    const instructor = await UserModel.getUserByPublicId(instructorPublicId);
+                    await AuditLogModel.log(instructor.internal_id, instructor.role,
+                        `Approved ${approved} pending appointment${approved === 1 ? '' : 's'}`, 'appointment');
+                } catch (err) {
+                    console.error('[AuditLog] Failed to log bulk approval:', err);
+                }
+            }
+
+            res.json({ success: true, total: pending.length, approved, skipped });
+        } catch (err) {
+            console.error('[InstructorController.approveAllAppointments]', err);
+            res.status(500).json({ success: false, error: 'Failed to approve the pending requests.' });
         }
     },
 

@@ -138,7 +138,7 @@
                 <span class="notif-group-count"><%= _deanUnreadList.length %></span>
             </div>
             <% _deanUnreadList.forEach(notif => { %>
-            <div class="notif-panel-item unread" data-id="<%= notif.id %>" data-type="<%= notif.type %>">
+            <div class="notif-panel-item unread" data-id="<%= notif.id %>" data-type="<%= notif.type %>" data-apt-id="<%= notif.relatedAppointmentId || '' %>">
                 <div class="notif-panel-icon <%= notif.type %>">
                     <% if (notif.type === 'makeup') { %>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="12" y1="14" x2="12" y2="18"/><line x1="10" y1="16" x2="14" y2="16"/></svg>
@@ -165,7 +165,7 @@
                 <span class="notif-group-count"><%= _deanReadList.length %></span>
             </div>
             <% _deanReadList.slice(0, DEAN_BATCH).forEach(notif => { %>
-            <div class="notif-panel-item" data-id="<%= notif.id %>" data-type="<%= notif.type %>">
+            <div class="notif-panel-item" data-id="<%= notif.id %>" data-type="<%= notif.type %>" data-apt-id="<%= notif.relatedAppointmentId || '' %>">
                 <div class="notif-panel-icon <%= notif.type %>">
                     <% if (notif.type === 'makeup') { %>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="12" y1="14" x2="12" y2="18"/><line x1="10" y1="16" x2="14" y2="16"/></svg>
@@ -242,9 +242,34 @@
     });
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
 
+    // Open whatever the notification is about, and mark it read on the way.
+    // Deans have no appointments page, so those just mark read in place.
+    function notifTarget(item) {
+        return item.dataset.type === 'makeup' ? '/dean/makeup/requests' : null;
+    }
+
+    if (body) {
+        body.addEventListener('click', async function(e) {
+            const item = e.target.closest('.notif-panel-item');
+            if (!item) return;
+
+            const target = notifTarget(item);
+            try {
+                if (item.dataset.id) {
+                    await fetch(`/notifications/${item.dataset.id}/mark-read`, { method: 'POST' });
+                }
+            } catch (error) {
+                console.error('Error marking notification as read:', error);
+            }
+            if (target) window.location.href = target;
+        });
+    }
+
     // Mark all read
     if (markAll) {
         markAll.addEventListener('click', function() {
+            fetch('/notifications/mark-all-read', { method: 'POST' })
+                .catch(err => console.error('Error marking all read:', err));
             document.querySelectorAll('.notif-panel-item.unread').forEach(item => {
                 item.classList.remove('unread');
                 const dot = item.querySelector('.notif-panel-dot');
@@ -265,6 +290,8 @@
     if (clearRead) {
         clearRead.addEventListener('click', function() {
             if (!confirm('Remove all read notifications?')) return;
+            fetch('/notifications/read', { method: 'DELETE' })
+                .catch(err => console.error('Error clearing read notifications:', err));
             if (body) {
                 body.querySelectorAll('.notif-panel-item:not(.unread)').forEach(item => item.remove());
                 body.querySelectorAll('.notif-group-label').forEach(lbl => {

@@ -1,6 +1,7 @@
 const pool = require('../configs/db');
 const NotificationModel = require('../models/NotificationModel');
 const AuditLogModel = require('../models/AuditLogModel');
+const { notifyUser } = require('../services/notify');
 const { to12Hour, formatFullDate } = require('../utils/timeFormat');
 
 async function assignConsultationRoom(conn, departmentId, consultationDate, timeStart, timeEnd) {
@@ -142,14 +143,23 @@ const AppointmentModel = {
                 }
             }
 
+            // Online consultations inherit the instructor's personal meeting room
+            let meetingLink = null;
+            if (mode === 'Online') {
+                const [[host]] = await conn.execute(
+                    'SELECT default_meeting_link FROM users WHERE id = ?', [instructorId]
+                );
+                meetingLink = host?.default_meeting_link || null;
+            }
+
             const [result] = await conn.execute(
                 `INSERT INTO appointments
                     (consultation_hour_id, student_id, instructor_id, student_number, section_group_name,
-                     course_subject, email, topic, mode, notes, status, room_id)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
+                     course_subject, email, topic, mode, notes, status, room_id, meeting_link)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
                 [
                     consultationHourId, student.id, instructorId, studentNumber, sectionGroupName,
-                    courseSubject, email, topic, mode, notes || null, roomId,
+                    courseSubject, email, topic, mode, notes || null, roomId, meetingLink,
                 ]
             );
 
@@ -164,11 +174,28 @@ const AppointmentModel = {
             try {
                 const studentName = `${student.first_name} ${student.last_name ?? ''}`;
                 const timeLabel = `${to12Hour(slotCheck.start_time)} – ${to12Hour(slotCheck.end_time)}`;
-                await NotificationModel.create(
+                const dateLabel = formatFullDate(consultationDate);
+
+                await notifyUser(
                     instructorId,
                     'new-request',
-                    `${studentName ?? 'A student'} requested a consultation on ${formatFullDate(consultationDate)} at ${timeLabel}.`,
-                    result.insertId
+                    `${studentName ?? 'A student'} requested a consultation on ${dateLabel} at ${timeLabel}.`,
+                    result.insertId,
+                    {
+                        pushTitle: 'New Consultation Request',
+                        email: {
+                            heading: 'New Consultation Request',
+                            status: 'reminder',
+                            message: `<strong>${studentName}</strong> has requested a consultation and is waiting for your response.`,
+                            details: [
+                                { label: 'Student', value: studentName },
+                                { label: 'Date', value: dateLabel },
+                                { label: 'Time', value: timeLabel },
+                                { label: 'Topic', value: topic },
+                                { label: 'Mode', value: mode },
+                            ],
+                        },
+                    }
                 );
             } catch (notifErr) {
                 console.error('[Notification] Failed to create (createAppointment):', notifErr);
@@ -188,6 +215,7 @@ const AppointmentModel = {
             `SELECT
             ap.id, ap.status, ap.mode, ap.topic, ap.section_group_name, ap.course_subject,
             ap.email, ap.notes, ap.created_at,
+            COALESCE(ap.meeting_link, u.default_meeting_link) AS meeting_link,
             ch.consultation_date, ch.day_of_the_week, ch.start_time, ch.end_time,
             u.first_name, u.last_name, u.middle_name, u.position,
             r.room_number,
@@ -266,11 +294,26 @@ const AppointmentModel = {
                 const dateLabel = formatFullDate(appointment.consultation_date);
                 const timeLabel = to12Hour(appointment.start_time);
 
-                await NotificationModel.create(
+                const studentName = `${student.first_name} ${student.last_name}`;
+
+                await notifyUser(
                     appointment.instructor_id,
                     'cancellation',
-                    `${student.first_name} ${student.last_name} cancelled their upcoming consultation on ${dateLabel} at ${timeLabel}.`,
-                    appointmentId
+                    `${studentName} cancelled their upcoming consultation on ${dateLabel} at ${timeLabel}.`,
+                    appointmentId,
+                    {
+                        pushTitle: 'Appointment Cancelled',
+                        email: {
+                            heading: 'Appointment Cancelled',
+                            status: 'cancelled',
+                            message: `<strong>${studentName}</strong> cancelled their consultation. The slot is now open for other students.`,
+                            details: [
+                                { label: 'Student', value: studentName },
+                                { label: 'Date', value: dateLabel },
+                                { label: 'Time', value: timeLabel },
+                            ],
+                        },
+                    }
                 );
             } catch (notifErr) {
                 console.error('[Notification] Failed to create (cancelAppointment):', notifErr);
@@ -296,9 +339,11 @@ const AppointmentModel = {
             if (!instructor) { await conn.rollback(); return { success: false, reason: 'INSTRUCTOR_NOT_FOUND' }; }
 
             const [[appointment]] = await conn.execute(
-                `SELECT a.student_id, ch.consultation_date, ch.start_time
+                `SELECT a.student_id, a.mode, a.meeting_link, r.room_number,
+                    ch.consultation_date, ch.start_time, ch.end_time
              FROM appointments a
              JOIN consultation_hours ch ON a.consultation_hour_id = ch.id
+             LEFT JOIN rooms r ON a.room_id = r.id
              WHERE a.id = ? AND a.instructor_id = ? AND a.status = 'pending'
              FOR UPDATE`,
                 [appointmentId, instructor.id]
@@ -315,11 +360,29 @@ const AppointmentModel = {
             try {
                 const dateLabel = formatFullDate(appointment.consultation_date);
                 const timeLabel = to12Hour(appointment.start_time);
-                await NotificationModel.create(
+                const instructorName = `${instructor.first_name} ${instructor.last_name}`;
+
+                await notifyUser(
                     appointment.student_id,
                     'approved',
-                    `${instructor.first_name} ${instructor.last_name} confirmed your consultation request on ${dateLabel} at ${timeLabel}.`,
-                    appointmentId
+                    `${instructorName} confirmed your consultation request on ${dateLabel} at ${timeLabel}.`,
+                    appointmentId,
+                    {
+                        pushTitle: 'Appointment Confirmed',
+                        email: {
+                            heading: 'Appointment Confirmed',
+                            status: 'approved',
+                            message: `${instructorName} has <strong>confirmed</strong> your consultation request.`,
+                            details: [
+                                { label: 'Instructor', value: instructorName },
+                                { label: 'Date', value: dateLabel },
+                                { label: 'Time', value: `${timeLabel} – ${to12Hour(appointment.end_time)}` },
+                                { label: 'Mode', value: appointment.mode },
+                                { label: 'Room', value: appointment.mode === 'Face-to-Face' ? appointment.room_number : null },
+                                { label: 'Meeting link', value: appointment.mode === 'Online' ? appointment.meeting_link : null },
+                            ],
+                        },
+                    }
                 );
             } catch (notifErr) {
                 console.error('[Notification] Failed to create (approveAppointment):', notifErr);
@@ -367,11 +430,27 @@ const AppointmentModel = {
             try {
                 const dateLabel = formatFullDate(appointment.consultation_date);
                 const timeLabel = to12Hour(appointment.start_time);
-                await NotificationModel.create(
+                const instructorName = `${instructor.first_name} ${instructor.last_name}`;
+
+                await notifyUser(
                     appointment.student_id,
                     'declined',
-                    `${instructor.first_name} ${instructor.last_name} declined your consultation request on ${dateLabel} at ${timeLabel}.`,
-                    appointmentId
+                    `${instructorName} declined your consultation request on ${dateLabel} at ${timeLabel}.`,
+                    appointmentId,
+                    {
+                        pushTitle: 'Appointment Declined',
+                        email: {
+                            heading: 'Appointment Declined',
+                            status: 'declined',
+                            message: `${instructorName} was unable to accept your consultation request. You can book another slot at any time.`,
+                            details: [
+                                { label: 'Instructor', value: instructorName },
+                                { label: 'Date', value: dateLabel },
+                                { label: 'Time', value: timeLabel },
+                                { label: 'Reason', value: reason },
+                            ],
+                        },
+                    }
                 );
             } catch (notifErr) {
                 console.error('[Notification] Failed to create (declineAppointment):', notifErr);
@@ -386,7 +465,12 @@ const AppointmentModel = {
         }
     },
 
-    async rescheduleAppointment(appointmentId, newSlotId, instructorPublicId, reason) {
+    /**
+     * Move an appointment to a new slot. The instructor may also switch the
+     * consultation mode at the same time — a venue that worked at the old time
+     * often does not at the new one.
+     */
+    async rescheduleAppointment(appointmentId, newSlotId, instructorPublicId, reason, newMode) {
         const conn = await pool.getConnection();
         try {
             await conn.beginTransaction();
@@ -419,8 +503,12 @@ const AppointmentModel = {
                 return { success: false, reason: 'SLOT_UNAVAILABLE' };
             }
 
-            let roomId = oldApt.room_id;
-            if (oldApt.mode === 'Face-to-Face') {
+            const mode = newMode || oldApt.mode;
+            let roomId = null;
+            let meetingLink = null;
+
+            if (mode === 'Face-to-Face') {
+                // The old room does not carry over — the new time may already be taken
                 roomId = await assignConsultationRoom(
                     conn, oldApt.department_id_snapshot ?? instructor.department_id,
                     newSlot.consultation_date, newSlot.start_time, newSlot.end_time
@@ -429,17 +517,26 @@ const AppointmentModel = {
                     await conn.rollback();
                     return { success: false, reason: 'NO_ROOM_AVAILABLE' };
                 }
+            } else {
+                const [[host]] = await conn.execute(
+                    'SELECT default_meeting_link FROM users WHERE id = ?', [instructor.id]
+                );
+                meetingLink = oldApt.meeting_link || host?.default_meeting_link || null;
+                if (!meetingLink) {
+                    await conn.rollback();
+                    return { success: false, reason: 'MEETING_LINK_REQUIRED' };
+                }
             }
 
             const [insertResult] = await conn.execute(
                 `INSERT INTO appointments
-                (consultation_hour_id, student_id, instructor_id, section_group_name,
-                 course_subject, email, topic, mode, notes, status, room_id, rescheduled_from_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                (consultation_hour_id, student_id, instructor_id, student_number, section_group_name,
+                 course_subject, email, topic, mode, notes, status, room_id, meeting_link, rescheduled_from_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
-                    newSlotId, oldApt.student_id, instructor.id, oldApt.section_group_name,
-                    oldApt.course_subject, oldApt.email, oldApt.topic, oldApt.mode, oldApt.notes,
-                    'confirmed', roomId, appointmentId,
+                    newSlotId, oldApt.student_id, instructor.id, oldApt.student_number, oldApt.section_group_name,
+                    oldApt.course_subject, oldApt.email, oldApt.topic, mode, oldApt.notes,
+                    'confirmed', roomId, meetingLink, appointmentId,
                 ]
             );
             const newAppointmentId = insertResult.insertId;
@@ -464,11 +561,26 @@ const AppointmentModel = {
                 const newDateLabel = formatFullDate(newSlot.consultation_date);
                 const newTimeLabel = `${to12Hour(newSlot.start_time)} – ${to12Hour(newSlot.end_time)}`;
 
-                await NotificationModel.create(
+                const instructorName = `${instructor.first_name} ${instructor.last_name}`;
+
+                await notifyUser(
                     oldApt.student_id,
                     'rescheduled',
-                    `${instructor.first_name} ${instructor.last_name} rescheduled your consultation of ${previousDateLabel} at ${previousTimeLabel} to ${newDateLabel}, ${newTimeLabel}.`,
-                    newAppointmentId
+                    `${instructorName} rescheduled your consultation of ${previousDateLabel} at ${previousTimeLabel} to ${newDateLabel}, ${newTimeLabel}.`,
+                    newAppointmentId,
+                    {
+                        pushTitle: 'Appointment Rescheduled',
+                        email: {
+                            heading: 'Appointment Rescheduled',
+                            status: 'rescheduled',
+                            message: `${instructorName} has moved your consultation to a new date and time.`,
+                            details: [
+                                { label: 'Instructor', value: instructorName },
+                                { label: 'Was', value: `${previousDateLabel} at ${previousTimeLabel}` },
+                                { label: 'Now', value: `${newDateLabel}, ${newTimeLabel}` },
+                            ],
+                        },
+                    }
                 );
             } catch (notifErr) {
                 console.error('[Notification] Failed to create (rescheduleAppointment):', notifErr);
@@ -498,6 +610,201 @@ const AppointmentModel = {
                BETWEEN NOW() AND DATE_ADD(NOW(), INTERVAL 30 MINUTE)`
         );
         return rows;
+    },
+
+    /**
+     * Instructor overrides the consultation mode the student picked.
+     * Online consultations carry a meeting link; face-to-face get a room instead.
+     */
+    async updateMode(appointmentId, instructorPublicId, mode, meetingLink) {
+        const conn = await pool.getConnection();
+        try {
+            await conn.beginTransaction();
+
+            const [[apt]] = await conn.execute(
+                `SELECT a.id, a.mode, a.room_id, a.status, ch.consultation_date,
+                        ch.start_time, ch.end_time, u.department_id
+                 FROM appointments a
+                 JOIN consultation_hours ch ON a.consultation_hour_id = ch.id
+                 JOIN users u ON a.instructor_id = u.id
+                 WHERE a.id = ? AND u.public_id = ?
+                   AND a.status IN ('pending','confirmed')
+                 FOR UPDATE`,
+                [appointmentId, instructorPublicId]
+            );
+            if (!apt) { await conn.rollback(); return { success: false, reason: 'NOT_FOUND_OR_RESOLVED' }; }
+
+            let roomId = apt.room_id;
+            let link = meetingLink || null;
+
+            if (mode === 'Face-to-Face') {
+                // Needs a room; keep the existing one if it already has it
+                if (!roomId) {
+                    roomId = await assignConsultationRoom(
+                        conn, apt.department_id, apt.consultation_date, apt.start_time, apt.end_time
+                    );
+                    if (roomId === null) { await conn.rollback(); return { success: false, reason: 'NO_ROOM_AVAILABLE' }; }
+                }
+                link = null;   // a physical consultation has no meeting link
+            } else {
+                if (!link) { await conn.rollback(); return { success: false, reason: 'MEETING_LINK_REQUIRED' }; }
+                roomId = null; // free the room for someone else
+            }
+
+            await conn.execute(
+                'UPDATE appointments SET mode = ?, room_id = ?, meeting_link = ? WHERE id = ?',
+                [mode, roomId, link, appointmentId]
+            );
+
+            await conn.commit();
+            return { success: true, mode, roomId, meetingLink: link };
+        } catch (err) {
+            await conn.rollback();
+            throw err;
+        } finally {
+            conn.release();
+        }
+    },
+
+    /**
+     * Mark a consultation as completed. Only allowed once the slot has ended —
+     * an instructor cannot close out a consultation that has not happened yet.
+     */
+    async completeAppointment(appointmentId, instructorPublicId) {
+        const [[apt]] = await pool.execute(
+            `SELECT a.id, a.status,
+                    TIMESTAMP(ch.consultation_date, ch.end_time) AS ends_at,
+                    TIMESTAMP(ch.consultation_date, ch.end_time) > NOW() AS not_yet
+             FROM appointments a
+             JOIN consultation_hours ch ON a.consultation_hour_id = ch.id
+             JOIN users u ON a.instructor_id = u.id
+             WHERE a.id = ? AND u.public_id = ?`,
+            [appointmentId, instructorPublicId]
+        );
+
+        if (!apt) return { success: false, reason: 'NOT_FOUND' };
+        if (apt.status === 'completed') return { success: false, reason: 'ALREADY_COMPLETED' };
+        if (apt.status !== 'confirmed') return { success: false, reason: 'NOT_CONFIRMED' };
+        if (apt.not_yet) return { success: false, reason: 'NOT_YET_ENDED', endsAt: apt.ends_at };
+
+        await pool.execute(
+            "UPDATE appointments SET status = 'completed', completed_at = NOW() WHERE id = ?",
+            [appointmentId]
+        );
+        return { success: true };
+    },
+
+    /**
+     * Confirmed consultations whose slot has ended but were never marked complete.
+     * `nudgeEveryHours` throttles how often the same appointment is chased.
+     */
+    async getAppointmentsAwaitingCompletion(nudgeEveryHours = 24) {
+        const [rows] = await pool.execute(
+            `SELECT a.id, a.instructor_id, a.student_id,
+                    ch.consultation_date, ch.start_time, ch.end_time,
+                    s.first_name AS student_first_name, s.last_name AS student_last_name
+             FROM appointments a
+             JOIN consultation_hours ch ON a.consultation_hour_id = ch.id
+             JOIN users s ON a.student_id = s.id
+             WHERE a.status = 'confirmed'
+               AND TIMESTAMP(ch.consultation_date, ch.end_time) < NOW()
+               AND (a.completion_nudged_at IS NULL
+                    OR a.completion_nudged_at < DATE_SUB(NOW(), INTERVAL ? HOUR))
+             ORDER BY ch.consultation_date, ch.start_time`,
+            [nudgeEveryHours]
+        );
+        return rows;
+    },
+
+    /**
+     * Attach a newly saved meeting link to the instructor's online consultations
+     * that do not have one yet. Returns the rows so students can be notified.
+     */
+    async attachMeetingLinkToPending(instructorPublicId, link) {
+        const [rows] = await pool.execute(
+            `SELECT a.id, a.student_id
+             FROM appointments a
+             JOIN users u ON a.instructor_id = u.id
+             WHERE u.public_id = ?
+               AND a.mode = 'Online'
+               AND a.status IN ('pending','confirmed')
+               AND (a.meeting_link IS NULL OR a.meeting_link = '')`,
+            [instructorPublicId]
+        );
+        if (!rows.length) return [];
+
+        await pool.execute(
+            `UPDATE appointments a
+             JOIN users u ON a.instructor_id = u.id
+             SET a.meeting_link = ?
+             WHERE u.public_id = ?
+               AND a.mode = 'Online'
+               AND a.status IN ('pending','confirmed')
+               AND (a.meeting_link IS NULL OR a.meeting_link = '')`,
+            [link, instructorPublicId]
+        );
+        return rows;
+    },
+
+    /**
+     * Upcoming online consultations with no meeting link, so the instructor
+     * can be chased before the student is left without a way to join.
+     */
+    async getOnlineAppointmentsMissingLink(nudgeEveryHours = 24) {
+        const [rows] = await pool.execute(
+            `SELECT a.id, a.instructor_id, ch.consultation_date, ch.start_time,
+                    s.first_name AS student_first_name, s.last_name AS student_last_name
+             FROM appointments a
+             JOIN consultation_hours ch ON a.consultation_hour_id = ch.id
+             JOIN users s ON a.student_id = s.id
+             WHERE a.mode = 'Online'
+               AND a.status IN ('pending','confirmed')
+               AND (a.meeting_link IS NULL OR a.meeting_link = '')
+               AND TIMESTAMP(ch.consultation_date, ch.start_time) > NOW()
+               AND (a.completion_nudged_at IS NULL
+                    OR a.completion_nudged_at < DATE_SUB(NOW(), INTERVAL ? HOUR))
+             ORDER BY ch.consultation_date, ch.start_time`,
+            [nudgeEveryHours]
+        );
+        return rows;
+    },
+
+    async markCompletionNudged(appointmentId) {
+        await pool.execute(
+            'UPDATE appointments SET completion_nudged_at = NOW() WHERE id = ?',
+            [appointmentId]
+        );
+    },
+
+    /**
+     * Requests still sitting at 'pending' while the consultation date is still
+     * ahead — the student is waiting on an answer. Uses its own throttle column
+     * so it cannot collide with the completion / missing-link nudges, which a
+     * pending online appointment can also qualify for.
+     */
+    async getPendingAppointmentsAwaitingAction(nudgeEveryHours = 24) {
+        const [rows] = await pool.execute(
+            `SELECT a.id, a.instructor_id, a.student_id, a.created_at,
+                    ch.consultation_date, ch.start_time,
+                    s.first_name AS student_first_name, s.last_name AS student_last_name
+             FROM appointments a
+             JOIN consultation_hours ch ON a.consultation_hour_id = ch.id
+             JOIN users s ON a.student_id = s.id
+             WHERE a.status = 'pending'
+               AND TIMESTAMP(ch.consultation_date, ch.start_time) > NOW()
+               AND (a.pending_nudged_at IS NULL
+                    OR a.pending_nudged_at < DATE_SUB(NOW(), INTERVAL ? HOUR))
+             ORDER BY ch.consultation_date, ch.start_time`,
+            [nudgeEveryHours]
+        );
+        return rows;
+    },
+
+    async markPendingNudged(appointmentId) {
+        await pool.execute(
+            'UPDATE appointments SET pending_nudged_at = NOW() WHERE id = ?',
+            [appointmentId]
+        );
     },
 
     async markReminderSent(appointmentId) {

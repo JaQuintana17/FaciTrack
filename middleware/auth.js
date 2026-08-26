@@ -61,7 +61,11 @@ const requireRole = (...roles) => (req, res, next) => {
         return res.redirect('/login');
     }
     if (!roles.includes(req.session.role)) {
-        return res.status(403).render('pages/403', { title: 'Access Denied' });
+        // Pass the role so the 403 page can link back to the user's own dashboard
+        return res.status(403).render('pages/403', {
+            title: 'FaciTrack - Access Denied',
+            role: req.session.role,
+        });
     }
     next();
 };

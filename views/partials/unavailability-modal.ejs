@@ -1,0 +1,172 @@
+<%#
+  Shared "Mark Date Unavailable" modal.
+  Used by the instructor dashboard, consultation schedule, and appointments pages.
+  Behaviour lives in /js/instructor-unavailability.js — include that too.
+
+  Unavailability is always FULL-DAY: one date, or an inclusive date range.
+%>
+<div class="modal-overlay" id="unavailModal" data-backdrop-close="manual"
+     onclick="if(event.target===this)UnavailModal.requestClose()">
+  <div class="modal-content" style="max-width:600px;">
+
+    <div class="modal-header">
+      <h3 class="modal-title" id="unavailModalTitle">Mark Date Unavailable</h3>
+      <button class="modal-close" type="button" onclick="UnavailModal.requestClose()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- ─── Step 1: choose the date(s) ─── -->
+    <div class="modal-body" id="unavailStepForm">
+      <%# Filled in when the modal is opened from a status change %>
+      <div id="unavailPrompt" class="unav-prompt" style="display:none;"></div>
+      <p class="unav-intro">
+        Blocking is full-day. Pick a single date, or add an end date to block a range.
+        Students cannot book these days, and you will be shown any appointments already on them.
+      </p>
+
+      <div class="unav-grid">
+        <div>
+          <label class="modal-label" for="unavailStartDate">Start date <span style="color:#dc2626;">*</span></label>
+          <input type="date" id="unavailStartDate" class="unav-input">
+        </div>
+        <div>
+          <label class="modal-label" for="unavailEndDate">
+            End date <span style="font-weight:400;color:var(--gray-400)">(optional)</span>
+          </label>
+          <input type="date" id="unavailEndDate" class="unav-input">
+        </div>
+      </div>
+
+      <div style="margin-top:1rem;">
+        <label class="modal-label">Quick reasons</label>
+        <div class="unav-presets" id="unavailPresets">
+          <button type="button" class="unav-preset" data-reason="Faculty meeting">Faculty meeting</button>
+          <button type="button" class="unav-preset" data-reason="Seminar or training">Seminar or training</button>
+          <button type="button" class="unav-preset" data-reason="Official travel">Official travel</button>
+          <button type="button" class="unav-preset" data-reason="Personal leave">Personal leave</button>
+          <button type="button" class="unav-preset" data-reason="Emergency">Emergency</button>
+        </div>
+      </div>
+
+      <div>
+        <label class="modal-label" for="unavailReason">
+          Reason <span style="font-weight:400;color:var(--gray-400)">(shown to students)</span>
+        </label>
+        <input type="text" id="unavailReason" class="unav-input" maxlength="300"
+               placeholder="Describe why you are unavailable">
+      </div>
+
+      <div id="unavailSummary" class="unav-summary" style="display:none;"></div>
+      <p id="unavailFormError" class="unav-error" style="display:none;"></p>
+    </div>
+
+    <div class="modal-footer" id="unavailFooterForm">
+      <button class="btn-modal btn-cancel" type="button" onclick="UnavailModal.close()">Cancel</button>
+      <button class="btn-modal btn-confirm" id="unavailConfirmBtn" type="button"
+              style="background:#dc2626;" onclick="UnavailModal.submit()">Block Date</button>
+    </div>
+
+    <!-- ─── Step 2: deal with appointments already on those days ─── -->
+    <div class="modal-body" id="unavailStepAffected" style="display:none;">
+      <div class="unav-blocked-note" id="unavailBlockedNote"></div>
+
+      <p class="unav-intro" style="margin-bottom:.75rem;">
+        These appointments fall on the blocked date(s). Reschedule each one, or decline it and
+        let the student book again. No appointment changes until you choose — but the dates
+        above are already blocked, so use <strong>Undo block</strong> if you did not mean to.
+      </p>
+
+      <div id="unavailAffectedList" class="unav-affected-list"></div>
+      <p id="unavailAffectedError" class="unav-error" style="display:none;"></p>
+    </div>
+
+    <div class="modal-footer unav-footer-affected" id="unavailFooterAffected" style="display:none;">
+      <button class="btn-modal btn-cancel unav-undo" type="button" id="unavailUndoBtn"
+              onclick="UnavailModal.undoBlock()">Undo block</button>
+      <span class="unav-footer-spacer"></span>
+      <button class="btn-modal btn-cancel" type="button" id="unavailCancelAllBtn"
+              onclick="UnavailModal.declineAll()">Decline all remaining</button>
+      <button class="btn-modal btn-confirm" type="button" onclick="UnavailModal.requestClose()">Done</button>
+    </div>
+
+  </div>
+</div>
+
+<style>
+  .unav-prompt {
+    display: flex; align-items: flex-start; gap: .55rem;
+    padding: .75rem .9rem; margin-bottom: 1rem;
+    background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px;
+    color: #92400e; font-size: .82rem; line-height: 1.55; font-weight: 600;
+  }
+  .unav-badge {
+    display: inline-block; padding: .12rem .5rem; border-radius: 20px;
+    font-size: .65rem; font-weight: 800; text-transform: uppercase;
+    letter-spacing: .03em; margin-left: .4rem; vertical-align: middle;
+  }
+  .unav-badge.pending   { background: #fef3c7; color: #92400e; }
+  .unav-badge.confirmed { background: #dcfce7; color: #166534; }
+  .unav-intro { font-size:.85rem; color:var(--gray-600); margin:0 0 1rem; line-height:1.6; }
+  .unav-grid { display:grid; grid-template-columns:1fr 1fr; gap:.75rem; }
+  .unav-input {
+    width:100%; padding:.625rem .875rem; border:1.5px solid var(--gray-300);
+    border-radius:var(--radius-md); font-size:.875rem; font-family:var(--font-body);
+  }
+  .unav-presets { display:flex; flex-wrap:wrap; gap:.4rem; margin:.5rem 0 .75rem; }
+  .unav-preset {
+    padding:.3rem .7rem; border:1.5px solid var(--gray-200); border-radius:20px;
+    font-size:.75rem; font-weight:600; color:var(--gray-600); cursor:pointer;
+    transition:all .15s; background:#fff; font-family:var(--font-body);
+  }
+  .unav-preset:hover, .unav-preset.selected {
+    border-color:#dc2626; color:#dc2626; background:rgba(220,38,38,.05);
+  }
+  .unav-summary {
+    margin-top:.9rem; padding:.8rem .95rem; border:1px solid #dbeafe; border-radius:10px;
+    background:#f8fbff; color:#1d4ed8; font-size:.8rem; line-height:1.55;
+  }
+  .unav-error { font-size:.78rem; color:#dc2626; margin:.75rem 0 0; }
+  .unav-footer-affected { flex-wrap:wrap; gap:.5rem; }
+  .unav-footer-spacer { flex:1; }
+  .unav-undo { color:#b45309; border-color:#fcd34d; }
+  .unav-undo:hover { background:#fffbeb; border-color:#f59e0b; }
+  @media (max-width:560px) {
+    .unav-footer-affected { flex-direction:column; align-items:stretch; }
+    .unav-footer-affected .btn-modal { width:100%; }
+    .unav-footer-spacer { display:none; }
+  }
+  .unav-blocked-note {
+    padding:.7rem .9rem; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px;
+    font-size:.82rem; color:#166534; margin-bottom:1rem;
+  }
+  .unav-affected-list { display:flex; flex-direction:column; gap:.6rem; max-height:340px; overflow-y:auto; }
+  .unav-apt {
+    border:1.5px solid var(--gray-200); border-radius:10px; padding:.75rem .85rem;
+    transition:opacity .2s;
+  }
+  .unav-apt.resolved { opacity:.55; border-color:#bbf7d0; background:#f8fef9; }
+  .unav-apt-head { display:flex; justify-content:space-between; align-items:flex-start; gap:.75rem; }
+  .unav-apt-who { font-weight:700; font-size:.85rem; color:var(--gray-900); }
+  .unav-apt-meta { font-size:.75rem; color:var(--gray-500); margin-top:.15rem; line-height:1.5; }
+  .unav-apt-actions { display:flex; gap:.4rem; flex-shrink:0; }
+  .unav-btn {
+    padding:.35rem .7rem; border-radius:7px; font-size:.72rem; font-weight:700;
+    cursor:pointer; border:1.5px solid transparent; font-family:var(--font-body);
+  }
+  .unav-btn-resched { background:#e8f2ff; color:#0a3d62; border-color:#bfdbfe; }
+  .unav-btn-cancel  { background:#fef2f2; color:#dc2626; border-color:#fecaca; }
+  .unav-btn:disabled { opacity:.5; cursor:not-allowed; }
+  .unav-apt-status { font-size:.75rem; font-weight:700; color:#166534; white-space:nowrap; }
+  .unav-slotpick { margin-top:.7rem; padding-top:.7rem; border-top:1px dashed var(--gray-200); }
+  .unav-slotpick select {
+    width:100%; padding:.5rem .7rem; border:1.5px solid var(--gray-300);
+    border-radius:8px; font-size:.8rem; font-family:var(--font-body); margin-bottom:.5rem;
+  }
+  @media (max-width:520px) {
+    .unav-grid { grid-template-columns:1fr; }
+    .unav-apt-head { flex-direction:column; }
+  }
+</style>
