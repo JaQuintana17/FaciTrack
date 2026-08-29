@@ -9,6 +9,7 @@ const attachNotifications = require('./middleware/attachNotifications');
 const auditNavigation = require('./middleware/auditNavigation');
 const passport = require('./configs/passport');
 const startReminderJob = require('./jobs/reminder');
+const startCalendarSyncJob = require('./jobs/calendar-sync');
 
 // Initialize Express app
 const app = express();
@@ -64,11 +65,18 @@ app.use(attachNotifications);
 app.use(auditNavigation);
 
 startReminderJob();
+startCalendarSyncJob();
 
 // Routes 
 // app.use('/', require('./routes/index'));
 app.use('/', require('./routes/auth'));
 app.use('/notifications', require('./routes/notification'));
+// Token-authenticated, so it sits above the role guards — calendar clients
+// subscribe with no session. See routes/calendar-feed.js.
+app.use('/calendar', require('./routes/calendar-feed'));
+// Shared-secret authenticated: the BLE room scanners are devices with no
+// session, so this also sits above the role guards. See routes/presence.js.
+app.use('/api/presence', require('./routes/presence'));
 app.use('/student', requireRole('Student'), require('./routes/student'));
 app.use('/instructor', requireRole('Instructor'), require('./routes/instructor'));
 app.use('/export', require('./routes/export'));
