@@ -40,4 +40,29 @@ function formatFullDate(dateStr) {
     return d.toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
-module.exports = { to12Hour, to24Hour, toMins, fromMins, formatFullDate };
+/**
+ * "5m ago" for a Date or DATETIME string. Returns null rather than a
+ * placeholder so the caller decides what an absent timestamp should read as —
+ * "never detected" and "no data yet" are not the same sentence.
+ */
+function timeAgo(value) {
+    if (!value) return null;
+    const then = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(then.getTime())) return null;
+
+    const secs = Math.floor((Date.now() - then.getTime()) / 1000);
+    if (secs < 60) return 'just now';
+
+    const mins = Math.floor(secs / 60);
+    if (mins < 60) return `${mins}m ago`;
+
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+
+    const days = Math.floor(hrs / 24);
+    if (days < 7) return `${days}d ago`;
+
+    return then.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+}
+
+module.exports = { to12Hour, to24Hour, toMins, fromMins, formatFullDate, timeAgo };

@@ -6,9 +6,13 @@ const path = require('path');
 const crypto = require('crypto');
 const { createWorker } = require('tesseract.js');
 const WorkloadController = require('../controllers/WorkloadController');
+const WorkloadImportController = require('../controllers/WorkloadImportController');
 const InstructorController = require('../controllers/InstructorController');
 const NotificationController = require('../controllers/NotificationController');
 const MakeupController = require('../controllers/MakeupController');
+const CalendarController = require('../controllers/CalendarController');
+const CalendarFeedController = require('../controllers/CalendarFeedController');
+const InstructorEventController = require('../controllers/InstructorEventController');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // ── Document uploads for make-up class requests ──
@@ -403,7 +407,9 @@ function getSharedData() {
 
 // Appointments
 router.get('/appointments', InstructorController.renderAppointmentsPage);
+// Both bulk routes stay above ':id' so the literal path is not read as an id
 router.post('/appointments/approve-all', InstructorController.approveAllAppointments);
+router.post('/appointments/complete-all', InstructorController.completeAllAppointments);
 router.post('/appointments/:id/approve', InstructorController.approveAppointment);
 router.post('/appointments/:id/decline', InstructorController.declineAppointment);
 router.post('/appointments/:id/complete', InstructorController.completeAppointment);
@@ -440,6 +446,10 @@ router.delete('/unavailability/:date',     InstructorController.removeUnavailabi
 // workload
 router.get('/workload', WorkloadController.renderPage);
 router.post('/workload/save', WorkloadController.save);
+
+// Read a CSPC workload form (.docx) and return a preview. The instructor
+// confirms it in the browser; the page's existing save path does the writing.
+router.post('/workload/import', upload.single('workload'), WorkloadImportController.preview);
 // Workload — Load timetable
 // router.get('/workload/load', (req, res) => {
 //     const data = getTimetable(1); // instructor ID 1 for prototype
@@ -566,6 +576,31 @@ router.post('/consultations/:id/decline', (req, res) => {
 // ── Make-Up Class Request routes ──
 // Persistence, conflict checking and notifications live in MakeupController.
 // Specific paths are declared before the /:id ones so they are not swallowed.
+// ── External calendar subscriptions (Google / Apple / any ICS feed) ──
+router.get('/calendar/connections',        CalendarController.listConnections);
+router.post('/calendar/connections',       CalendarController.addConnection);
+router.patch('/calendar/connections/:id',  CalendarController.updateConnection);
+router.delete('/calendar/connections/:id', CalendarController.removeConnection);
+router.post('/calendar/sync',              CalendarController.sync);
+router.post('/calendar/sync/:id',          CalendarController.sync);
+router.get('/calendar/events',             CalendarController.listEvents);
+router.get('/calendar/pending',            CalendarController.listPending);
+router.post('/calendar/decide',            CalendarController.decide);
+
+// Outbound: the URL Google/Apple subscribe to. The feed itself is public and
+// token-authenticated; these two are the logged-in half.
+// ── The instructor's own events and tasks on the calendar ──
+// 'conflicts' sits above ':id' so the literal path is not read as an id.
+router.get('/events',                InstructorEventController.list);
+router.post('/events/conflicts',     InstructorEventController.conflicts);
+router.post('/events',               InstructorEventController.create);
+router.patch('/events/:id',          InstructorEventController.update);
+router.patch('/events/:id/done',     InstructorEventController.toggleDone);
+router.delete('/events/:id',         InstructorEventController.remove);
+
+router.get('/calendar/feed-link',    CalendarFeedController.getMine);
+router.post('/calendar/feed-link',   CalendarFeedController.rotate);
+
 router.get('/makeup/requests',            MakeupController.renderRequestList);
 router.get('/makeup/request',             MakeupController.renderRequestForm);
 router.post('/makeup/request',            acceptDocuments, MakeupController.submitRequest);

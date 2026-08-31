@@ -1,0 +1,341 @@
+/* Consultation Room — the administrator's week view of every consultation.
+   Builds on instructor/dashboard.css for the shell, cards and toasts. */
+
+/* ── Stats ── */
+.cr-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+}
+
+.cr-stat-card {
+    background: #fff;
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius-lg);
+    padding: 1.1rem 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: .9rem;
+}
+
+.cr-stat-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.cr-stat-icon.primary { background: #eff6ff; color: #2563eb; }
+.cr-stat-icon.success { background: #ecfdf5; color: #059669; }
+.cr-stat-icon.warning { background: #fffbeb; color: #d97706; }
+.cr-stat-icon.info    { background: #eef2ff; color: #4f46e5; }
+
+.cr-stat-content { min-width: 0; }
+.cr-stat-label { font-size: .72rem; font-weight: 700; color: var(--gray-500); text-transform: uppercase; letter-spacing: .04em; margin: 0; }
+.cr-stat-value { font-size: 1.5rem; font-weight: 800; color: var(--gray-900); margin: .1rem 0; line-height: 1.1; }
+.cr-stat-sub   { font-size: .72rem; color: var(--gray-400); margin: 0; }
+
+/* ── Layout ── */
+.cr-calendar-section {
+    display: grid;
+    grid-template-columns: 260px minmax(0, 1fr);
+    gap: 1.25rem;
+    align-items: start;
+}
+
+.cr-sidebar { display: flex; flex-direction: column; gap: 1rem; }
+
+/* ── Mini month calendar ── */
+.cr-mini-cal-card { padding: .9rem 1rem 1rem; }
+
+.cr-mini-cal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: .6rem;
+}
+
+.cr-mini-month-label { font-size: .82rem; font-weight: 800; color: var(--gray-900); }
+
+.cr-mini-nav {
+    width: 26px; height: 26px;
+    border: 1px solid var(--gray-200);
+    background: #fff;
+    border-radius: var(--radius-sm);
+    color: var(--gray-500);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+}
+.cr-mini-nav:hover { background: var(--gray-100); color: var(--gray-900); }
+
+.cr-mini-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+}
+
+.cr-mini-dow {
+    font-size: .62rem;
+    font-weight: 800;
+    color: var(--gray-400);
+    text-align: center;
+    text-transform: uppercase;
+    padding-bottom: .2rem;
+}
+
+.cr-mini-day {
+    aspect-ratio: 1;
+    border: none;
+    background: none;
+    border-radius: var(--radius-sm);
+    font-size: .72rem;
+    font-family: inherit;
+    color: var(--gray-700);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    position: relative;
+}
+.cr-mini-day:hover { background: var(--gray-100); }
+.cr-mini-day.muted { color: var(--gray-300); }
+.cr-mini-day.today { font-weight: 800; color: #2563eb; }
+.cr-mini-day.in-week { background: #eff6ff; }
+.cr-mini-day.selected { background: #2563eb; color: #fff; font-weight: 800; }
+
+/* A dot marks a day that has slots, so the month reads at a glance */
+.cr-mini-dot { width: 4px; height: 4px; border-radius: 50%; background: #2563eb; }
+.cr-mini-day.selected .cr-mini-dot { background: #fff; }
+
+/* ── Filters ── */
+.cr-filter-body { display: flex; flex-direction: column; gap: .75rem; }
+.cr-filter-group { display: flex; flex-direction: column; gap: .3rem; }
+.cr-filter-label { font-size: .68rem; font-weight: 800; color: var(--gray-500); text-transform: uppercase; letter-spacing: .04em; }
+
+.cr-select {
+    width: 100%;
+    padding: .45rem .6rem;
+    border: 1.5px solid var(--gray-200);
+    border-radius: var(--radius-md);
+    font-size: .8rem;
+    font-family: inherit;
+    color: var(--gray-900);
+    background: #fff;
+    outline: none;
+}
+.cr-select:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, .1); }
+
+
+/* Clear sits in the card header, so it reads as a quiet action rather than
+   inheriting the browser's default button chrome. */
+.cr-clear-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+    padding: .25rem .6rem;
+    border: 1px solid var(--gray-200);
+    background: #fff;
+    border-radius: 999px;
+    font-family: inherit;
+    font-size: .7rem;
+    font-weight: 700;
+    color: var(--gray-500);
+    cursor: pointer;
+    transition: all var(--transition-base);
+}
+.cr-clear-btn:hover { background: var(--gray-100); border-color: var(--gray-300); color: var(--gray-900); }
+.cr-clear-btn:active { transform: scale(.96); }
+.cr-clear-btn:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+
+.cr-mini-hint { font-size: .68rem; color: var(--gray-400); margin: .6rem 0 0; text-align: center; line-height: 1.4; }
+
+/* ── Legend ── */
+.cr-legend-card { padding: .85rem 1rem; }
+.cr-legend-inner { display: flex; gap: .8rem; align-items: stretch; }
+.cr-legend-title-col { display: flex; align-items: center; }
+.cr-legend-heading { font-size: .68rem; font-weight: 800; color: var(--gray-500); text-transform: uppercase; letter-spacing: .04em; }
+.cr-legend-sep { width: 1px; background: var(--gray-200); flex-shrink: 0; }
+.cr-legend-items-col { display: flex; flex-direction: column; gap: .3rem; }
+.cr-legend-row { display: flex; align-items: center; gap: .4rem; font-size: .72rem; color: var(--gray-600); }
+
+.cr-block-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.cr-block-dot.booking   { background: #fef3c7; border: 1px solid #f59e0b; }
+.cr-block-dot.pending   { background: #f1f5f9; border: 1px solid #94a3b8; }
+.cr-block-dot.confirmed { background: #dbeafe; border: 1px solid #3b82f6; }
+.cr-block-dot.completed { background: #d1fae5; border: 1px solid #10b981; }
+
+/* ── Week panel ── */
+.cr-week-panel { display: flex; flex-direction: column; min-width: 0; }
+
+.cr-week-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    flex-wrap: wrap;
+    padding: .85rem 1.1rem;
+    border-bottom: 1px solid var(--gray-200);
+}
+
+.cr-week-nav-left { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
+
+.cr-week-btn {
+    width: 30px; height: 30px;
+    border: 1px solid var(--gray-200);
+    background: #fff;
+    border-radius: var(--radius-md);
+    color: var(--gray-600);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+}
+.cr-week-btn:hover { background: var(--gray-100); color: var(--gray-900); }
+
+.cr-today-btn {
+    padding: .35rem .75rem;
+    border: 1px solid var(--gray-200);
+    background: #fff;
+    border-radius: var(--radius-md);
+    font-size: .76rem;
+    font-weight: 700;
+    font-family: inherit;
+    color: var(--gray-700);
+    cursor: pointer;
+}
+.cr-today-btn:hover { background: var(--gray-100); }
+
+.cr-week-label { font-size: .95rem; font-weight: 800; color: var(--gray-900); margin: 0 0 0 .3rem; }
+.cr-week-badge { font-size: .68rem; font-weight: 800; color: var(--gray-500); background: var(--gray-100); padding: .2rem .5rem; border-radius: 999px; }
+
+/* ── Week grid ──
+   One column per day plus a time gutter. The whole grid scrolls sideways on
+   narrow screens rather than squeezing seven columns into a phone. */
+.cr-week-grid-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+.cr-week-grid {
+    display: grid;
+    grid-template-columns: 62px repeat(7, minmax(104px, 1fr));
+    min-width: 100%;
+    position: relative;
+}
+
+.cr-corner { border-bottom: 1px solid var(--gray-200); border-right: 1px solid var(--gray-200); position: sticky; top: 0; background: #fff; z-index: 3; }
+
+.cr-day-head {
+    padding: .55rem .4rem;
+    text-align: center;
+    border-bottom: 1px solid var(--gray-200);
+    border-right: 1px solid var(--gray-100);
+    position: sticky;
+    top: 0;
+    background: #fff;
+    z-index: 2;
+}
+.cr-day-head.is-today { background: #eff6ff; }
+.cr-day-name { display: block; font-size: .64rem; font-weight: 800; color: var(--gray-400); text-transform: uppercase; letter-spacing: .05em; }
+.cr-day-date { display: block; font-size: 1rem; font-weight: 800; color: var(--gray-900); line-height: 1.3; }
+.cr-day-head.is-today .cr-day-date { color: #2563eb; }
+.cr-day-count { display: block; font-size: .62rem; color: var(--gray-400); }
+
+.cr-hour {
+    font-size: .64rem;
+    color: var(--gray-400);
+    text-align: right;
+    padding: .2rem .45rem 0 0;
+    border-right: 1px solid var(--gray-200);
+    border-bottom: 1px solid var(--gray-100);
+    height: 52px;
+}
+
+.cr-cell {
+    border-right: 1px solid var(--gray-100);
+    border-bottom: 1px solid var(--gray-100);
+    height: 52px;
+    padding: 2px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow: hidden;
+}
+.cr-cell.is-today { background: rgba(239, 246, 255, .5); }
+
+/* ── Slot blocks ── */
+.cr-block {
+    border-radius: 5px;
+    padding: 2px 5px;
+    font-size: .66rem;
+    line-height: 1.25;
+    text-align: left;
+    border: 1px solid;
+    font-family: inherit;
+    cursor: pointer;
+    overflow: hidden;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+.cr-block strong { display: block; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cr-block span { display: block; opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.cr-block.booking   { background: #fef3c7; border-color: #f59e0b; color: #92400e; }
+.cr-block.pending   { background: #f1f5f9; border-color: #94a3b8; color: #475569; }
+.cr-block.confirmed { background: #dbeafe; border-color: #3b82f6; color: #1e40af; }
+.cr-block.completed { background: #d1fae5; border-color: #10b981; color: #065f46; }
+
+.cr-block.is-selected { outline: 2px solid #0f172a; outline-offset: 1px; }
+
+.cr-empty { text-align: center; color: var(--gray-400); font-size: .82rem; padding: 2rem 1rem; margin: 0; }
+
+/* ── Slot popover ── */
+.cr-popover {
+    position: absolute;
+    z-index: 900;
+    display: none;
+    max-width: 280px;
+}
+.cr-popover.open { display: block; }
+
+.cr-popover-inner {
+    background: #fff;
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 12px 32px rgba(15, 23, 42, .18);
+    padding: .85rem 1rem;
+    font-size: .78rem;
+    /* A consultation with every field filled in must still fit on a short
+       window; the detail list scrolls rather than the popover growing. */
+    max-height: calc(100vh - 2rem);
+    max-height: calc(100dvh - 2rem);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+.cr-pop-title { font-size: .88rem; font-weight: 800; color: var(--gray-900); margin: 0 0 .1rem; }
+.cr-pop-time { font-size: .72rem; color: var(--gray-500); margin: 0 0 .6rem; }
+.cr-pop-row { display: flex; gap: .5rem; padding: .2rem 0; border-top: 1px solid var(--gray-100); }
+.cr-pop-row dt { flex: 0 0 5.5rem; color: var(--gray-500); font-size: .72rem; }
+.cr-pop-row dd { flex: 1; margin: 0; color: var(--gray-900); font-size: .72rem; word-break: break-word; }
+.cr-pop-badge { display: inline-block; font-size: .62rem; font-weight: 800; text-transform: uppercase; padding: .12rem .45rem; border-radius: 5px; }
+
+/* ── Responsive ── */
+@media (max-width: 1100px) {
+    .cr-calendar-section { grid-template-columns: 1fr; }
+    .cr-sidebar { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); align-items: start; }
+}
+
+@media (max-width: 768px) {
+    .cr-stats-grid { grid-template-columns: repeat(2, 1fr); }
+    .cr-week-nav { padding: .7rem .85rem; }
+    .cr-week-label { font-size: .85rem; }
+    .cr-popover { max-width: calc(100vw - 2rem); }
+}
+
+@media (max-width: 480px) {
+    .cr-stats-grid { grid-template-columns: 1fr; gap: .6rem; }
+    .cr-stat-card { padding: .8rem .9rem; }
+    .cr-sidebar { grid-template-columns: 1fr; }
+    .cr-week-grid { grid-template-columns: 52px repeat(7, minmax(104px, 1fr)); }
+}

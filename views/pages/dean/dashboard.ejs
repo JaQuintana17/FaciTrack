@@ -1,23 +1,54 @@
 <%- include('../../partials/header') %>
 <link rel="stylesheet" href="/css/instructor/dashboard.css?v=<%= Date.now() %>">
+<style>
+/* Shown wherever a card has nothing to list yet */
+.dean-empty { display:flex; flex-direction:column; align-items:center; gap:.5rem; padding:2rem 1rem; text-align:center; }
+.dean-empty svg { color:var(--gray-300); }
+.dean-empty p { font-size:.8125rem; color:var(--gray-500); margin:0; max-width:32ch; line-height:1.5; }
+/* The banner that explains why every presence figure reads "—" */
+.presence-notice { display:flex; align-items:flex-start; gap:.75rem; padding:.875rem 1.125rem; background:#eff6ff; border:1px solid #bfdbfe; border-radius:var(--radius-md); margin-bottom:1.25rem; }
+.presence-notice svg { color:#2563eb; flex-shrink:0; margin-top:1px; }
+.presence-notice p { font-size:.8125rem; color:#1e40af; margin:0; line-height:1.5; }
+.stat-card-value.muted { color:var(--gray-300); }
+@media (max-width:580px){
+    .presence-notice { padding:.75rem .875rem; }
+    .presence-notice p { font-size:.75rem; }
+}
+</style>
 <div class="instructor-layout">
     <%- include('../../partials/dean-sidebar', { activePage: 'dashboard' }) %>
 
     <main class="instructor-main">
         <div class="main-container">
 
+            <%
+                const inRoom  = faculty.filter(f => f.bleStatus === 'in-room');
+                const outRoom = faculty.filter(f => f.bleStatus === 'out-of-room');
+                const pendingMakeup  = makeupRequests.filter(r => r.status === 'pending');
+                const decidedMakeup  = makeupRequests.filter(r => r.status !== 'pending');
+                const awayFaculty    = faculty.filter(f => f.availability === 'travel' || f.availability === 'leave');
+                const maxHours = Math.max(1, ...faculty.map(f => f.hoursThisMonth));
+            %>
+
             <div class="page-header">
                 <div>
                     <h1 class="page-title">Dashboard</h1>
-                    <p class="page-subtitle">Welcome, <%= dean.name.split(' ')[0] %>! Here's the faculty overview for today.</p>
+                    <p class="page-subtitle">Welcome, <%= dean.name.split(' ')[0] %>! Here's the <%= dean.department %> overview for today.</p>
                 </div>
                 <div class="header-actions">
-                    <button class="btn-header-action primary" id="btnDownloadReport">
+                    <a href="/dean/reports" class="btn-header-action primary">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                        Download Report
-                    </button>
+                        Reports
+                    </a>
                 </div>
             </div>
+
+            <% if (presenceUnavailable) { %>
+            <div class="presence-notice">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                <p><strong>Presence monitoring is not active yet.</strong> The BLE scanners have not reported on any faculty member, so room presence reads as no data rather than as absent. Everything else on this page is live.</p>
+            </div>
+            <% } %>
 
             <!-- Stats Overview -->
             <div class="stats-overview">
@@ -27,28 +58,28 @@
                     </div>
                     <div class="stat-card-content">
                         <p class="stat-card-label">Faculty In Room</p>
-                        <h2 class="stat-card-value"><%= faculty.filter(f => f.bleStatus === 'in-room').length %></h2>
-                        <p class="stat-card-sublabel">of <%= faculty.length %> total faculty</p>
+                        <h2 class="stat-card-value <%= presenceUnavailable ? 'muted' : '' %>"><%= presenceUnavailable ? '—' : inRoom.length %></h2>
+                        <p class="stat-card-sublabel"><%= presenceUnavailable ? 'Awaiting BLE data' : `of ${faculty.length} total faculty` %></p>
                     </div>
                 </div>
                 <div class="stat-card-large pending">
                     <div class="stat-card-icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="12" y1="14" x2="12" y2="18"/><line x1="10" y1="16" x2="14" y2="16"/></svg>
                     </div>
                     <div class="stat-card-content">
-                        <p class="stat-card-label">Pending Appointments</p>
-                        <h2 class="stat-card-value"><%= allAppointments.filter(a => a.status === 'pending').length %></h2>
-                        <p class="stat-card-sublabel">Across all faculty</p>
+                        <p class="stat-card-label">Pending Make-Up Requests</p>
+                        <h2 class="stat-card-value"><%= pendingMakeup.length %></h2>
+                        <p class="stat-card-sublabel"><%= pendingMakeup.length ? 'Waiting on your decision' : 'Nothing waiting' %></p>
                     </div>
                 </div>
                 <div class="stat-card-large workload">
                     <div class="stat-card-icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
                     </div>
                     <div class="stat-card-content">
-                        <p class="stat-card-label">Today's Consultations</p>
-                        <h2 class="stat-card-value"><%= allAppointments.filter(a => a.isToday && a.status === 'confirmed').length %></h2>
-                        <p class="stat-card-sublabel">Confirmed for today</p>
+                        <p class="stat-card-label">Available Now</p>
+                        <h2 class="stat-card-value"><%= faculty.filter(f => f.availability === 'available').length %></h2>
+                        <p class="stat-card-sublabel"><%= awayFaculty.length ? `${awayFaculty.length} away on leave or travel` : 'Self-reported status' %></p>
                     </div>
                 </div>
                 <div class="stat-card-large presence">
@@ -56,9 +87,9 @@
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
                     </div>
                     <div class="stat-card-content">
-                        <p class="stat-card-label">Out of Room</p>
-                        <h2 class="stat-card-value"><%= faculty.filter(f => f.bleStatus === 'out-of-room').length %></h2>
-                        <p class="stat-card-sublabel">Currently undetected</p>
+                        <p class="stat-card-label"><%= presenceUnavailable ? 'Total Faculty' : 'Out of Room' %></p>
+                        <h2 class="stat-card-value"><%= presenceUnavailable ? faculty.length : outRoom.length %></h2>
+                        <p class="stat-card-sublabel"><%= presenceUnavailable ? `In ${dean.department}` : 'Currently undetected' %></p>
                     </div>
                 </div>
             </div>
@@ -69,10 +100,16 @@
                 <!-- Real-time Faculty Presence -->
                 <div class="content-card">
                     <div class="card-header">
-                        <h3 class="card-title">Real-Time Faculty Presence</h3>
+                        <h3 class="card-title">Faculty Presence</h3>
                         <a href="/dean/faculty" class="card-link">View All →</a>
                     </div>
                     <div class="card-body">
+                        <% if (!faculty.length) { %>
+                        <div class="dean-empty">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+                            <p>No instructors are assigned to <%= dean.department %> yet. An administrator adds them under Users.</p>
+                        </div>
+                        <% } else { %>
                         <div class="appointments-list-dashboard">
                             <% faculty.slice(0, 4).forEach(f => { %>
                             <div class="appointment-row">
@@ -87,13 +124,18 @@
                                     </div>
                                 </div>
                                 <div>
+                                    <% if (f.bleStatus === 'unknown') { %>
+                                    <span class="table-badge" title="No BLE scanner has reported on this faculty member">No data</span>
+                                    <% } else { %>
                                     <span class="table-badge <%= f.bleStatus === 'in-room' ? 'confirmed' : 'declined' %>">
                                         <%= f.bleStatus === 'in-room' ? 'In Room' : 'Out' %>
                                     </span>
+                                    <% } %>
                                 </div>
                             </div>
                             <% }); %>
                         </div>
+                        <% } %>
                     </div>
                 </div>
 
@@ -104,6 +146,12 @@
                         <a href="/dean/presence" class="card-link">View All →</a>
                     </div>
                     <div class="card-body">
+                        <% if (!recentActivity.length) { %>
+                        <div class="dean-empty">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+                            <p>No presence activity recorded. Entry and exit events will appear here once the BLE scanners are installed.</p>
+                        </div>
+                        <% } else { %>
                         <div class="presence-list-dashboard">
                             <% recentActivity.slice(0, 5).forEach(log => { %>
                             <div class="presence-row">
@@ -116,58 +164,83 @@
                                 </div>
                                 <div class="presence-row-info">
                                     <p class="presence-row-action"><%= log.facultyName %> — <%= log.status === 'entered' ? 'Entered' : 'Exited' %> <%= log.location %></p>
-                                    <p class="presence-row-time"><%= log.timestamp %></p>
+                                    <p class="presence-row-time"><%= log.relative || '' %></p>
                                 </div>
                             </div>
                             <% }); %>
                         </div>
+                        <% } %>
                     </div>
                 </div>
 
-                <!-- Upcoming Appointments -->
+                <!-- Make-Up Requests awaiting the dean -->
                 <div class="content-card">
                     <div class="card-header">
-                        <h3 class="card-title">Upcoming Appointments</h3>
-                        <a href="/dean/reports" class="card-link">View Reports →</a>
+                        <h3 class="card-title">
+                            Make-Up Requests
+                            <% if (pendingMakeup.length) { %><span class="card-count-badge"><%= pendingMakeup.length %></span><% } %>
+                        </h3>
+                        <a href="/dean/makeup/requests" class="card-link">Review →</a>
                     </div>
                     <div class="card-body">
+                        <%# Pending first — they are the ones needing a decision — then the
+                            most recent decisions, so the card is never empty after a busy week %>
+                        <% const makeupPreview = [...pendingMakeup, ...decidedMakeup].slice(0, 3); %>
+                        <% if (!makeupPreview.length) { %>
+                        <div class="dean-empty">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                            <p>No make-up class requests from <%= dean.department %> yet.</p>
+                        </div>
+                        <% } else { %>
                         <div class="appointments-list-dashboard">
-                            <% allAppointments.filter(a => a.status === 'confirmed').slice(0, 3).forEach(apt => { %>
+                            <% makeupPreview.forEach(req => { %>
                             <div class="appointment-row">
                                 <div class="apt-row-left">
+                                    <div class="apt-avatar-xs"><%= req.instructorName.split(' ').map(n => n[0]).join('') %></div>
                                     <div class="apt-row-info">
-                                        <h4 class="apt-row-name"><%= apt.studentName %></h4>
+                                        <h4 class="apt-row-name"><%= req.instructorName %></h4>
                                         <p class="apt-row-details">
                                             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                                            <%= apt.date %> • <%= apt.time %> — with <%= apt.instructorName %>
+                                            <%= req.subject %> · <%= req.sessionCount %> session<%= req.sessionCount === 1 ? '' : 's' %><%= req.firstDate ? ` from ${req.firstDate}` : '' %>
                                         </p>
                                     </div>
                                 </div>
-                                <span class="table-badge confirmed">Confirmed</span>
+                                <span class="table-badge <%= req.status === 'approved' ? 'confirmed' : (req.status === 'declined' ? 'declined' : 'pending') %>">
+                                    <%= req.status.charAt(0).toUpperCase() + req.status.slice(1) %>
+                                </span>
                             </div>
                             <% }); %>
                         </div>
+                        <% } %>
                     </div>
                 </div>
 
                 <!-- Faculty Workload Summary -->
                 <div class="content-card">
                     <div class="card-header">
-                        <h3 class="card-title">Faculty Workload (This Month)</h3>
+                        <h3 class="card-title">Consultation Hours (This Month)</h3>
                         <a href="/dean/reports" class="card-link">Full Report →</a>
                     </div>
                     <div class="card-body">
+                        <% if (!faculty.length) { %>
+                        <div class="dean-empty">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                            <p>No faculty to report on yet.</p>
+                        </div>
+                        <% } else { %>
                         <div class="workload-breakdown">
+                            <%# Bars are scaled to the busiest instructor, so the shape stays readable whatever the absolute hours are %>
                             <% faculty.forEach(f => { %>
                             <div class="breakdown-row">
                                 <span class="breakdown-label"><%= f.name.split(' ').slice(-1)[0] %></span>
                                 <div class="breakdown-bar-wrap">
-                                    <div class="breakdown-bar" style="width:<%= (f.hoursThisMonth / 60) * 100 %>%"></div>
+                                    <div class="breakdown-bar" style="width:<%= Math.round((f.hoursThisMonth / maxHours) * 100) %>%"></div>
                                 </div>
                                 <span class="breakdown-value"><%= f.hoursThisMonth %>h</span>
                             </div>
                             <% }); %>
                         </div>
+                        <% } %>
                     </div>
                 </div>
 
@@ -179,14 +252,3 @@
 <div class="toast-container" id="toastContainer"></div>
 <%- include('../../partials/footer') %>
 <%- include('../../partials/script') %>
-<script>
-function showToast(type, title, message) {
-    const c = document.getElementById('toastContainer');
-    const t = document.createElement('div');
-    t.className = `toast ${type}`;
-    t.innerHTML = `<div class="toast-content"><p class="toast-title">${title}</p><p class="toast-message">${message}</p></div>`;
-    c.appendChild(t);
-    setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 4000);
-}
-document.getElementById('btnDownloadReport').addEventListener('click', () => showToast('success', 'Downloading', 'Faculty overview report is being prepared...'));
-</script>

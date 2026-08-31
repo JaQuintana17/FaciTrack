@@ -1,0 +1,79 @@
+/**
+ * Shared look for the report tables: the search/filter toolbar, the table
+ * shell, the result counter and the empty state.
+ *
+ * Dean and Instructor reports both link this, so the two pages cannot drift
+ * into looking like different products. Page-specific columns and badges stay
+ * in the page. Pair with /js/report-table.js, which owns the behaviour.
+ */
+
+/* ── Toolbar: search + filters, above each table ── */
+.table-toolbar {
+  display: flex; flex-wrap: wrap; gap: .625rem; align-items: flex-end;
+  padding: 0 1.25rem 1rem;
+  border-bottom: 1px solid var(--gray-100);
+}
+.toolbar-group { display: flex; flex-direction: column; gap: .25rem; }
+.toolbar-label {
+  font-size: .65rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--gray-400);
+}
+.table-search {
+  padding: .45rem .875rem; border: 1.5px solid var(--gray-200);
+  border-radius: var(--radius-md); font-size: .8125rem; font-family: var(--font-body);
+  background: #fff; color: var(--gray-800); outline: none;
+  transition: border-color .15s; min-width: 220px;
+}
+.table-search:focus { border-color: var(--primary-blue); }
+.table-select, .table-date {
+  padding: .45rem .875rem; border: 1.5px solid var(--gray-200);
+  border-radius: var(--radius-md); font-size: .8125rem; font-family: var(--font-body);
+  background: #fff; color: var(--gray-800); outline: none;
+  transition: border-color .15s; min-width: 150px;
+}
+.table-select { cursor: pointer; }
+.table-select:focus, .table-date:focus { border-color: var(--primary-blue); }
+.toolbar-spacer { flex: 1; }
+
+/* ── Table shell ── */
+.report-table + .report-table { margin-top: 1.5rem; }
+.table-scroll { overflow-x: auto; }
+.result-count { font-size: .78rem; color: var(--gray-500); font-weight: 600; }
+.no-results { text-align: center; padding: 3rem 1rem; color: var(--gray-400); }
+.no-results svg { margin-bottom: .75rem; color: var(--gray-300); }
+.no-results p {
+  font-size: .875rem; margin: 0 auto; max-width: 40ch; line-height: 1.55;
+}
+
+/* Self-reported availability pill, shared with the Faculty page */
+.avail-pill {
+  display: inline-flex; align-items: center; gap: .3rem;
+  padding: .2rem .6rem; border-radius: 999px;
+  font-size: .68rem; font-weight: 700; white-space: nowrap;
+}
+.avail-pill.available { background: rgba(34, 197, 94, .12); color: #15803d; }
+.avail-pill.dnd       { background: rgba(220, 38, 38, .12); color: #b91c1c; }
+.avail-pill.travel    { background: rgba(234, 88, 12, .12); color: #c2410c; }
+.avail-pill.leave     { background: rgba(220, 38, 38, .10); color: #dc2626; }
+.avail-pill.meeting   { background: rgba(124, 58, 237, .12); color: #6d28d9; }
+.avail-pill.none      { background: var(--gray-100); color: var(--gray-500); }
+
+/* Explains why a table backed by an unbuilt module reads zero */
+.report-notice {
+  display: flex; align-items: flex-start; gap: .75rem;
+  padding: .875rem 1.125rem; background: #eff6ff;
+  border: 1px solid #bfdbfe; border-radius: var(--radius-md);
+  margin-bottom: 1.25rem;
+}
+.report-notice svg { color: #2563eb; flex-shrink: 0; margin-top: 1px; }
+.report-notice p { font-size: .8125rem; color: #1e40af; margin: 0; line-height: 1.5; }
+
+@media (max-width: 768px) {
+  .table-toolbar { padding: 0 1rem 1rem; }
+  .toolbar-group, .table-search, .table-select, .table-date { width: 100%; min-width: 0; }
+  .toolbar-spacer { display: none; }
+}
+@media (max-width: 580px) {
+  .report-notice { padding: .75rem .875rem; }
+  .report-notice p { font-size: .75rem; }
+}

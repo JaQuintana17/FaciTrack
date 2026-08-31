@@ -1,107 +1,7 @@
 <%- include('../../partials/header') %>
 <link rel="stylesheet" href="/css/instructor/dashboard.css?v=<%= Date.now() %>">
-<style>
-    /* View Toggle Buttons */
-    .view-toggle-group { display:flex; gap:.5rem; background:var(--gray-100); padding:.375rem; border-radius:var(--radius-md); }
-    .view-toggle-btn { flex:1; padding:.5rem 1rem; border:none; background:transparent; border-radius:var(--radius-sm); font-size:.8125rem; font-weight:600; color:var(--gray-600); cursor:pointer; transition:all .2s; display:flex; align-items:center; justify-content:center; gap:.5rem; font-family:var(--font-body); }
-    .view-toggle-btn:hover { background:rgba(255,255,255,.5); }
-    .view-toggle-btn.active { background:#fff; color:var(--primary-blue); box-shadow:0 1px 3px rgba(0,0,0,.1); }
-    
-    /* List View Styles */
-    .calendar-day.has-appointments {
-        border-color: var(--primary-blue);
-        border-width: 1.5px;
-    }
-    .apt-list-card { background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);margin-bottom:1rem;overflow:hidden; }
-    .apt-list-header { padding:1rem 1.25rem;border-bottom:1px solid var(--gray-100);display:flex;align-items:center;justify-content:space-between;background:rgba(10,61,98,.02); }
-    .apt-list-faculty { font-weight:700;font-size:.9375rem;color:var(--gray-900);margin:0 0 .125rem; }
-    .apt-list-position { font-size:.8125rem;color:var(--gray-500);margin:0; }
-    .apt-status-pill { padding:5px 14px;border-radius:var(--radius-full);font-size:.75rem;font-weight:700;letter-spacing:.3px; }
-    .apt-status-pending   { background:#fffbeb;color:#b45309;border:1px solid #fde68a; }
-    .apt-status-confirmed { background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0; }
-    .apt-status-completed { background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe; }
-    .apt-status-cancelled { background:#fef2f2;color:#dc2626;border:1px solid #fecaca; }
-    .apt-status-declined  { background:#fdf4ff;color:#a21caf;border:1px solid #f5d0fe; }
-    .apt-status-rescheduled { background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd; }
-
-    .apt-list-body { padding:1rem 1.25rem; }
-    .apt-list-row { display:flex;gap:.75rem;margin-bottom:.75rem; }
-    .apt-list-row:last-child { margin-bottom:0; }
-    .apt-list-icon { width:32px;height:32px;border-radius:var(--radius-md);background:rgba(10,61,98,.06);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--primary-blue); }
-    .apt-list-label { font-size:.75rem;font-weight:600;color:var(--gray-500);text-transform:uppercase;letter-spacing:.5px;margin:0 0 .2rem; }
-    .apt-list-value { font-size:.875rem;font-weight:600;color:var(--gray-900);margin:0; }
-    .apt-list-actions { padding:0 1.25rem 1rem;border-top:1px solid var(--gray-100);padding-top:1rem; }
-    .btn-decline-apt { display:inline-flex;align-items:center;gap:.5rem;padding:.625rem 1.25rem;background:#fff;color:#dc2626;border:1.5px solid #fecaca;border-radius:var(--radius-md);font-size:.875rem;font-weight:600;cursor:pointer;transition:all .2s;font-family:var(--font-body); }
-    .btn-decline-apt:hover { border-color:#dc2626;background:#fef2f2; }
-    .btn-decline-apt:disabled { opacity:.5;cursor:not-allowed; }
-    
-    /* Calendar View Styles */
-    .calendar-container { display:none; }
-    .calendar-container.active { display:block; }
-    .calendar-wrapper { background:#fff; border:1px solid var(--gray-200); border-radius:var(--radius-lg); overflow:hidden; box-shadow:var(--shadow-sm); }
-    .calendar-header { display:flex; align-items:center; justify-content:space-between; padding:1.25rem 1.5rem; border-bottom:1px solid var(--gray-100); background:linear-gradient(135deg,rgba(10,61,98,.04),rgba(30,136,229,.06)); }
-    .calendar-title { font-size:1.125rem; font-weight:700; color:var(--gray-900); }
-    .calendar-nav { display:flex; gap:.5rem; }
-    .calendar-nav-btn { width:36px; height:36px; border:1.5px solid var(--gray-200); border-radius:var(--radius-md); background:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center; color:var(--gray-600); transition:all .2s; }
-    .calendar-nav-btn:hover { border-color:var(--primary-blue); color:var(--primary-blue); background:rgba(10,61,98,.04); }
-    .calendar-grid { display:grid; grid-template-columns:repeat(7,1fr); padding:1rem; gap:.5rem; }
-    .calendar-day-header { text-align:center; font-size:.75rem; font-weight:700; color:var(--gray-500); text-transform:uppercase; padding:.5rem; }
-    .calendar-day { aspect-ratio:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding:.5rem; border:1px solid var(--gray-100); border-radius:var(--radius-md); cursor:pointer; transition:all .2s; position:relative; }
-    .calendar-day:hover { background:var(--gray-50); border-color:var(--gray-300); }
-    .calendar-day.other-month { opacity:.3; }
-    .calendar-day.today { border:2px solid var(--primary-blue); background:rgba(10,61,98,.05); font-weight:700; }
-    .calendar-day-number { font-size:.875rem; font-weight:600; color:var(--gray-900); margin-bottom:.25rem; }
-    .calendar-day-dots { display:flex; gap:2px; flex-wrap:wrap; justify-content:center; }
-    .calendar-day-dot { width:6px; height:6px; border-radius:50%; }
-    .calendar-day-dot.pending     { background:#f59e0b; }
-    .calendar-day-dot.confirmed   { background:#16a34a; }
-    .calendar-day-dot.completed   { background:#1d4ed8; }
-    .calendar-day-dot.cancelled   { background:#dc2626; }
-    .calendar-day-dot.declined    { background:#a21caf; }
-    .calendar-day-dot.rescheduled { background:#0369a1; }
-
-    .calendar-legend { display:flex; gap:1.5rem; padding:1rem 1.5rem; border-top:1px solid var(--gray-100); flex-wrap:wrap; }
-    .calendar-legend-item { display:flex; align-items:center; gap:.5rem; font-size:.8125rem; color:var(--gray-600); }
-    .calendar-legend-dot { width:10px; height:10px; border-radius:50%; }
-    .calendar-legend-dot.pending     { background:#f59e0b; }
-    .calendar-legend-dot.confirmed   { background:#16a34a; }
-    .calendar-legend-dot.completed   { background:#1d4ed8; }
-    .calendar-legend-dot.cancelled   { background:#dc2626; }
-    .calendar-legend-dot.declined    { background:#a21caf; }
-    .calendar-legend-dot.rescheduled { background:#0369a1; }
-    .list-container { display:none; }
-    .list-container.active { display:block; }
-    
-    .empty-state { text-align:center;padding:3rem 2rem; }
-    .empty-icon { width:64px;height:64px;background:rgba(10,61,98,.06);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;color:var(--primary-blue); }
-    .empty-title { font-size:1.125rem;font-weight:700;color:var(--gray-900);margin:0 0 .5rem; }
-    .empty-desc { font-size:.875rem;color:var(--gray-600);margin:0 0 1.5rem; }
-    /* Decline Confirmation Modal */
-    .decline-modal-overlay { display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:1000;align-items:center;justify-content:center;padding:1rem; }
-    .decline-modal-overlay.show { display:flex; }
-    .decline-modal { background:#fff;border-radius:var(--radius-xl);padding:2rem;max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25); }
-    .decline-modal-icon { width:56px;height:56px;background:#fef2f2;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem; }
-    .decline-modal-title { font-size:1.125rem;font-weight:700;color:#dc2626;margin:0 0 .625rem;text-align:center; }
-    .decline-modal-text { font-size:.875rem;color:var(--gray-600);margin:0 0 1.5rem;line-height:1.6;text-align:center; }
-    .decline-modal-actions { display:flex;gap:.75rem;flex-wrap:wrap; }
-    .decline-modal-btn { flex:1;min-width:120px;padding:.75rem 1.5rem;border:none;border-radius:var(--radius-md);font-size:.9375rem;font-weight:600;cursor:pointer;font-family:var(--font-body);transition:all .2s; }
-    .decline-modal-confirm { background:#dc2626;color:#fff; }
-    .decline-modal-confirm:hover { background:#b91c1c; }
-    .decline-modal-cancel { background:var(--gray-100);color:var(--gray-700); }
-    .decline-modal-cancel:hover { background:var(--gray-200); }
-    @media (max-width:768px) {
-        .calendar-grid { gap:.25rem; padding:.75rem; }
-        .calendar-day { padding:.25rem; }
-        .calendar-day-number { font-size:.75rem; }
-    }
-    @media (max-width:480px) {
-        .apt-list-header { flex-wrap:wrap; }
-        .apt-status-pill { margin-top:.5rem; }
-        .decline-modal-actions { flex-direction:column; }
-        .decline-modal-btn { width:100%; }
-        .view-toggle-group { flex-direction:column; }
-    }
-</style>
+<link rel="stylesheet" href="/css/report-table.css?v=<%= Date.now() %>">
+<link rel="stylesheet" href="/css/student/appointments.css?v=<%= Date.now() %>">
 
 <div class="instructor-layout">
     <%- include('../../partials/student-sidebar', { activePage: 'appointments', appointmentCount: appointments.length }) %>
@@ -109,16 +9,24 @@
     <main class="instructor-main">
         <div class="main-container">
 
+            <% const initials = name => name.split(/[\s,]+/).filter(Boolean).slice(0, 2).map(n => n[0]).join('').toUpperCase(); %>
+
             <div class="page-header">
                 <div>
                     <h1 class="page-title">My Appointments</h1>
-                    <p class="page-subtitle">View and manage your consultation bookings</p>
+                    <p class="page-subtitle">
+                        <% if (instructors.length) { %>
+                            Your consultations with <%= instructors.length %> instructor<%= instructors.length === 1 ? '' : 's' %>
+                        <% } else { %>
+                            View and manage your consultation bookings
+                        <% } %>
+                    </p>
                 </div>
                 <div class="header-actions">
                     <div class="view-toggle-group">
                         <button type="button" class="view-toggle-btn active" id="btnListView">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-                            List
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                            Instructors
                         </button>
                         <button type="button" class="view-toggle-btn" id="btnCalendarView">
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
@@ -128,10 +36,10 @@
                 </div>
             </div>
 
-            <!-- List View Container -->
+            <!-- Instructor grid -->
             <div id="listViewContainer" class="list-container active">
 
-            <% if (appointments.length === 0) { %>
+            <% if (!instructors.length) { %>
                 <div class="empty-state">
                     <div class="empty-icon">
                         <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
@@ -147,115 +55,126 @@
                     </a>
                 </div>
             <% } else { %>
-                <% appointments.forEach(apt => { %>
-                    <div class="apt-list-card" data-apt-id="<%= apt.id %>">
-                        <div class="apt-list-header">
-                            <div>
-                                <p class="apt-list-faculty"><%= apt.facultyName %></p>
-                                <p class="apt-list-position"><%= apt.departmentName %></p>
+                <div class="card-toolbar">
+                    <div class="toolbar-group">
+                        <span class="toolbar-label">Search</span>
+                        <input type="search" class="table-search" id="instSearch" placeholder="Instructor name or position…">
+                    </div>
+                    <span class="result-count" id="instCount">—</span>
+                </div>
+
+                <div class="no-results" id="instEmpty" hidden>
+                    <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <p>No instructor matches your search.</p>
+                </div>
+
+                <div class="instructor-grid">
+                    <%# One card per instructor. The whole card is the link, so the
+                        tap target on a phone is the card rather than a small chevron.
+                        data-search is what the toolbar matches against. %>
+                    <% instructors.forEach(inst => { %>
+                    <a class="inst-card" href="/student/appointments/<%= inst.instructorId %>"
+                       data-search="<%= [inst.facultyDisplayName, inst.facultyName, inst.position, inst.departmentName].filter(Boolean).join(' ').toLowerCase() %>">
+                        <div class="inst-card-top">
+                            <div class="inst-avatar">
+                                <% if (inst.facultyPhoto) { %>
+                                    <img src="<%= inst.facultyPhoto %>" alt="<%= inst.facultyDisplayName %>">
+                                <% } else { %>
+                                    <%= initials(inst.facultyDisplayName) %>
+                                <% } %>
                             </div>
-                            <span class="apt-status-pill apt-status-<%= apt.status %>">
-                                <%= apt.status.charAt(0).toUpperCase() + apt.status.slice(1) %>
+                            <div class="inst-id">
+                                <p class="inst-name"><%= inst.facultyDisplayName %></p>
+                                <p class="inst-sub"><%= inst.position || inst.departmentName || 'Faculty' %></p>
+                            </div>
+                        </div>
+
+                        <div class="inst-counts">
+                            <% if (inst.pending) { %>
+                            <span class="inst-chip pending"><%= inst.pending %> pending</span>
+                            <% } %>
+                            <% if (inst.upcoming) { %>
+                            <span class="inst-chip upcoming"><%= inst.upcoming %> upcoming</span>
+                            <% } %>
+                            <% if (inst.completed) { %>
+                            <span class="inst-chip"><%= inst.completed %> completed</span>
+                            <% } %>
+                        </div>
+
+                        <% if (inst.nextDate) { %>
+                        <div class="inst-next">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                            <span>Next: <%= new Date(inst.nextDate + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', timeZone: 'Asia/Manila' }) %> · <%= inst.nextSlot %></span>
+                        </div>
+                        <% } else { %>
+                        <div class="inst-next quiet">
+                            <span>Last seen <%= new Date(inst.lastDate + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'Asia/Manila' }) %></span>
+                        </div>
+                        <% } %>
+
+                        <div class="inst-foot">
+                            <span class="inst-total"><%= inst.total %> appointment<%= inst.total === 1 ? '' : 's' %></span>
+                            <span class="inst-open">
+                                View
+                                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
                             </span>
                         </div>
-                        <% if (apt.status === 'rescheduled' && apt.rescheduledInfo) { %>
-                        <div class="apt-list-row">
-                            <div class="apt-list-icon">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
-                            </div>
-                            <div>
-                                <p class="apt-list-label">Rescheduled To</p>
-                                <p class="apt-list-value"><%= apt.rescheduledInfo.date %> · <%= apt.rescheduledInfo.slot %></p>
-                            </div>
-                        </div>
-                        <% } %>
-                        <div class="apt-list-body">
-                            <% if (apt.rescheduledFromId && apt.rescheduledFromInfo) { %>
-                            <div class="apt-list-row">
-                                <div class="apt-list-icon" style="background:rgba(3,105,161,.08);color:#0369a1;">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
-                                </div>
-                                <div>
-                                    <p class="apt-list-label">Rescheduled From</p>
-                                    <p class="apt-list-value" style="font-weight:400;">Originally <%= new Date(apt.rescheduledFromInfo.date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'Asia/Manila' }) %> · <%= apt.rescheduledFromInfo.slot %></p>
-                                </div>
-                            </div>
-                            <% } %>
-                            <div class="apt-list-row">
-                                <div class="apt-list-icon">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                                </div>
-                                <div>
-                                    <p class="apt-list-label">Topic</p>
-                                    <p class="apt-list-value"><%= apt.topic %></p>
-                                </div>
-                            </div>
-                            <div class="apt-list-row">
-                                <div class="apt-list-icon">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                                </div>
-                                <div>
-                                    <p class="apt-list-label">Schedule</p>
-                                    <p class="apt-list-value"><%= new Date(apt.date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'Asia/Manila' }) %> · <%= apt.slot %></p>
-                                </div>
-                            </div>
-                            <% if (apt.status !== 'declined') { %>
-                            <div class="apt-list-row">
-                                <div class="apt-list-icon">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-                                </div>
-                                <div>
-                                    <p class="apt-list-label">Mode</p>
-                                    <p class="apt-list-value">
-                                        <%= apt.mode %>
-                                        <% if (apt.mode === 'Face-to-Face' && apt.roomNumber) { %>
-                                            — <%= apt.roomNumber %><% if (apt.buildingName) { %>, <%= apt.buildingName %><% } %>
-                                        <% } %>
-                                    </p>
-                                </div>
-                            </div>
-                            <% } %>
-                            <% if (apt.notes && apt.notes.trim() && apt.status !== 'declined') { %>
-                            <div class="apt-list-row">
-                                <div class="apt-list-icon">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-                                </div>
-                                <div>
-                                    <p class="apt-list-label">Notes</p>
-                                    <p class="apt-list-value" style="font-weight:400;"><%= apt.notes %></p>
-                                </div>
-                            </div>
-                            <% } else if (apt.status === 'declined') { %>
-                                <div class="apt-list-row">
-                                <div class="apt-list-icon">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-                                </div>
-                                <div>
-                                    <p class="apt-list-label">Reason for declining</p>
-                                    <p class="apt-list-value" style="font-weight:400;"><%= apt.declineReason %></p>
-                                </div>
-                            </div>
-                            <% } %>
-                        </div>
-                        <% if (apt.status === 'pending' || apt.status === 'confirmed') { %>
-                        <div class="apt-list-actions">
-                            <button type="button" class="btn-decline-apt" onclick="showDeclineModal(<%= apt.id %>, '<%= apt.facultyName %>', '<%= apt.date %>', '<%= apt.slot %>')">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-                                Cancel Appointment
-                            </button>
-                        </div>
-                        <% } %>
-                    </div>
-                <% }); %>
+                    </a>
+                    <% }); %>
+                </div>
             <% } %>
             </div>
-            <!-- End List View Container -->
 
-            <!-- Calendar View Container -->
+            <%# Students have no settings page, so the subscribe link lives with
+                the appointments it publishes. Only worth showing once there is
+                something to subscribe to. %>
+            <% if (instructors.length) { %>
+            <div class="content-card feed-card" data-feed-card="/student">
+                <div class="card-header">
+                    <h3 class="card-title">Add to My Calendar</h3>
+                </div>
+                <div class="card-body">
+                    <p class="feed-desc">
+                        Subscribe Google Calendar or Apple Calendar to this link and your
+                        consultations appear there automatically, with the instructor, topic,
+                        room or meeting link and the full duration.
+                    </p>
+                    <div class="feed-row">
+                        <input type="text" class="feed-url" id="feedUrl" readonly
+                               value="Generating…" aria-label="Calendar subscription link">
+                        <button type="button" class="feed-copy" id="feedCopy">Copy</button>
+                    </div>
+                    <p class="feed-status" id="feedStatus" hidden></p>
+                    <div class="feed-actions">
+                        <a class="feed-btn" id="feedGoogle" href="#" target="_blank" rel="noopener">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                            Add to Google Calendar
+                        </a>
+                        <a class="feed-btn" id="feedApple" href="#">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                            Add to Apple Calendar
+                        </a>
+                    </div>
+                    <details class="feed-help">
+                        <summary>How often does it update?</summary>
+                        <div>
+                            <p>Your calendar app decides. Apple can check every 5 minutes; Google
+                            is often several hours behind. Booking confirmations still reach you
+                            by email straight away.</p>
+                            <p class="feed-warn">Keep this link private — anyone who has it can
+                            read your appointment schedule.
+                            <button type="button" class="feed-rotate" id="feedRotate">Regenerate link</button></p>
+                        </div>
+                    </details>
+                </div>
+            </div>
+            <% } %>
+
+            <!-- Calendar View Container — every instructor, so it stays here -->
             <div id="calendarViewContainer" class="calendar-container">
                 <div class="calendar-wrapper">
                     <div class="calendar-header">
-                        <h3 class="calendar-title" id="calendarMonthYear">December 2024</h3>
+                        <h3 class="calendar-title" id="calendarMonthYear">—</h3>
                         <div class="calendar-nav">
                             <button type="button" class="calendar-nav-btn" id="btnPrevMonth">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -266,7 +185,6 @@
                         </div>
                     </div>
                     <div class="calendar-grid" id="calendarGrid">
-                        <!-- Day headers -->
                         <div class="calendar-day-header">Sun</div>
                         <div class="calendar-day-header">Mon</div>
                         <div class="calendar-day-header">Tue</div>
@@ -274,37 +192,17 @@
                         <div class="calendar-day-header">Thu</div>
                         <div class="calendar-day-header">Fri</div>
                         <div class="calendar-day-header">Sat</div>
-                        <!-- Calendar days will be generated by JavaScript -->
                     </div>
                     <div class="calendar-legend">
-                        <div class="calendar-legend-item">
-                            <div class="calendar-legend-dot pending"></div>
-                            <span>Pending</span>
-                        </div>
-                        <div class="calendar-legend-item">
-                            <div class="calendar-legend-dot confirmed"></div>
-                            <span>Confirmed</span>
-                        </div>
-                        <div class="calendar-legend-item">
-                            <div class="calendar-legend-dot completed"></div>
-                            <span>Completed</span>
-                        </div>
-                        <div class="calendar-legend-item">
-                            <div class="calendar-legend-dot cancelled"></div>
-                            <span>Cancelled</span>
-                        </div>
-                        <div class="calendar-legend-item">
-                            <div class="calendar-legend-dot declined"></div>
-                            <span>Declined</span>
-                        </div>
-                        <div class="calendar-legend-item">
-                            <div class="calendar-legend-dot rescheduled"></div>
-                            <span>Rescheduled</span>
-                        </div>
+                        <div class="calendar-legend-item"><div class="calendar-legend-dot pending"></div> Pending</div>
+                        <div class="calendar-legend-item"><div class="calendar-legend-dot confirmed"></div> Confirmed</div>
+                        <div class="calendar-legend-item"><div class="calendar-legend-dot completed"></div> Completed</div>
+                        <div class="calendar-legend-item"><div class="calendar-legend-dot rescheduled"></div> Rescheduled</div>
+                        <div class="calendar-legend-item"><div class="calendar-legend-dot declined"></div> Declined</div>
+                        <div class="calendar-legend-item"><div class="calendar-legend-dot cancelled"></div> Cancelled</div>
                     </div>
                 </div>
             </div>
-            <!-- End Calendar View Container -->
 
         </div>
     </main>
@@ -312,267 +210,11 @@
 
 <div class="toast-container" id="toastContainer"></div>
 
-<!-- Decline Confirmation Modal -->
-<div class="decline-modal-overlay" id="declineModal">
-    <div class="decline-modal">
-        <div class="decline-modal-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-        </div>
-        <h3 class="decline-modal-title">Cancel Appointment?</h3>
-        <p class="decline-modal-text" id="declineModalText">Are you sure you want to cancel this appointment?</p>
-        <div class="decline-modal-actions">
-            <button type="button" class="decline-modal-btn decline-modal-cancel" onclick="hideDeclineModal()">No, Keep It</button>
-            <button type="button" class="decline-modal-btn decline-modal-confirm" onclick="confirmDecline()">Yes, Cancel</button>
-        </div>
-    </div>
-</div>
-
 <%- include('../../partials/footer') %>
 <%- include('../../partials/script') %>
 <script>
-let currentDeclineRef = null;
-
-function formatFullDate(dateStr) {
-    const d = new Date(dateStr + (dateStr.includes('T') ? '' : 'T00:00:00'));
-    return d.toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' });
-}
-
-function showDeclineModal(appointmentId, facultyName, date, slot) {
-    currentDeclineRef = appointmentId;
-    const text = `You are about to cancel your appointment with ${facultyName} scheduled for ${formatFullDate(date)} at ${slot}. This action cannot be undone.`;
-    document.getElementById('declineModalText').textContent = text;
-    document.getElementById('declineModal').classList.add('show');
-}
-
-function hideDeclineModal() {
-    document.getElementById('declineModal').classList.remove('show');
-    currentDeclineRef = null;
-}
-
-async function confirmDecline() {
-    if (!currentDeclineRef) return;
-
-    const btn = document.querySelector('.decline-modal-confirm');
-    btn.disabled = true;
-    btn.textContent = 'Canceling...';
-
-    try {
-        const response = await fetch(`/student/appointments/${currentDeclineRef}/cancel`, { method: 'POST' });
-        const data = await response.json();
-
-        if (!data.success) {
-            throw new Error(data.error || 'Failed to cancel appointment.');
-        }
-
-        hideDeclineModal();
-        showToast('success', 'Appointment Canceled', 'Your appointment has been canceled successfully. The instructor will be notified.');
-        setTimeout(() => window.location.reload(), 2000);
-    } catch (error) {
-        showToast('error', 'Error', error.message || 'Failed to cancel appointment. Please try again.');
-        btn.disabled = false;
-        btn.textContent = 'Yes, Cancel';
-    }
-}
-
-function showToast(type, title, message) {
-    const container = document.getElementById('toastContainer');
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    toast.innerHTML = `
-        <div class="toast-content">
-            <p class="toast-title">${title}</p>
-            <p class="toast-message">${message}</p>
-        </div>`;
-    container.appendChild(toast);
-    setTimeout(() => {
-        toast.style.opacity = '0';
-        setTimeout(() => toast.remove(), 300);
-    }, 4000);
-}
-
-// Close modal on backdrop click
-document.getElementById('declineModal').addEventListener('click', function(e) {
-    if (e.target === this) hideDeclineModal();
-});
-
-// Close modal on Escape key
-document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape' && document.getElementById('declineModal').classList.contains('show')) {
-        hideDeclineModal();
-    }
-});
-
-// ── View Toggle Functionality ──
-const btnListView = document.getElementById('btnListView');
-const btnCalendarView = document.getElementById('btnCalendarView');
-const listContainer = document.getElementById('listViewContainer');
-const calendarContainer = document.getElementById('calendarViewContainer');
-
-if (btnListView && btnCalendarView) {
-    btnListView.addEventListener('click', function() {
-        btnListView.classList.add('active');
-        btnCalendarView.classList.remove('active');
-        listContainer.classList.add('active');
-        calendarContainer.classList.remove('active');
-    });
-
-    btnCalendarView.addEventListener('click', function() {
-        btnCalendarView.classList.add('active');
-        btnListView.classList.remove('active');
-        calendarContainer.classList.add('active');
-        listContainer.classList.remove('active');
-        renderCalendar();
-    });
-}
-
-// ── Calendar View Functionality ──
-const appointments = <%- JSON.stringify(appointments) %>;
-const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-let currentMonth = new Date().getMonth();
-let currentYear = new Date().getFullYear();
-
-function renderCalendar() {
-    const calendarGrid = document.getElementById('calendarGrid');
-    const monthYearEl = document.getElementById('calendarMonthYear');
-    
-    // Update header
-    monthYearEl.textContent = `${monthNames[currentMonth]} ${currentYear}`;
-    
-    // Clear existing days (keep headers)
-    const headers = calendarGrid.querySelectorAll('.calendar-day-header');
-    calendarGrid.innerHTML = '';
-    headers.forEach(h => calendarGrid.appendChild(h));
-    
-    // Get first day of month and total days
-    const firstDay = new Date(currentYear, currentMonth, 1).getDay();
-    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-    const daysInPrevMonth = new Date(currentYear, currentMonth, 0).getDate();
-    
-    // Map appointments by date
-    const appointmentsByDate = {};
-    appointments.forEach(apt => {
-        const aptDate = new Date(apt.date);
-        const key = `${aptDate.getFullYear()}-${aptDate.getMonth()}-${aptDate.getDate()}`;
-        if (!appointmentsByDate[key]) appointmentsByDate[key] = [];
-        appointmentsByDate[key].push(apt);
-    });
-    
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    // Previous month days
-    for (let i = firstDay - 1; i >= 0; i--) {
-        const day = daysInPrevMonth - i;
-        const dayEl = document.createElement('div');
-        dayEl.className = 'calendar-day other-month';
-        dayEl.innerHTML = `<div class="calendar-day-number">${day}</div>`;
-        calendarGrid.appendChild(dayEl);
-    }
-    
-    // Current month days
-    for (let day = 1; day <= daysInMonth; day++) {
-        const date = new Date(currentYear, currentMonth, day);
-        date.setHours(0, 0, 0, 0);
-        const key = `${currentYear}-${currentMonth}-${day}`;
-        const dayApts = appointmentsByDate[key] || [];
-        
-        const dayEl = document.createElement('div');
-        dayEl.className = 'calendar-day';
-        if (date.getTime() === today.getTime()) dayEl.classList.add('today');
-        
-        const dayNumber = document.createElement('div');
-        dayNumber.className = 'calendar-day-number';
-        dayNumber.textContent = day;
-        dayEl.appendChild(dayNumber);
-        
-        if (dayApts.length > 0) {
-            dayEl.classList.add('has-appointments');
-            const dotsContainer = document.createElement('div');
-            dotsContainer.className = 'calendar-day-dots';
-            dayApts.forEach(apt => {
-                const dot = document.createElement('div');
-                dot.className = `calendar-day-dot ${apt.status}`;
-                dot.title = `${apt.facultyName} - ${apt.status}`;
-                dotsContainer.appendChild(dot);
-            });
-            dayEl.appendChild(dotsContainer);
-            
-            // Make clickable - scroll to appointment in list view
-            dayEl.style.cursor = 'pointer';
-            dayEl.addEventListener('click', () => {
-                // Switch to list view
-                btnListView.click();
-                // Scroll to first appointment of that day
-                setTimeout(() => {
-                    const firstApt = dayApts[0];
-                    const cards = document.querySelectorAll('.apt-list-card');
-                    cards.forEach(card => {
-                        const cardFaculty = card.querySelector('.apt-list-faculty').textContent;
-                        if (cardFaculty === firstApt.facultyName) {
-                            card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            card.style.boxShadow = '0 0 0 3px rgba(10,61,98,0.2)';
-                            setTimeout(() => { card.style.boxShadow = ''; }, 2000);
-                        }
-                    });
-                }, 100);
-            });
-        }
-        
-        calendarGrid.appendChild(dayEl);
-    }
-    
-    // Next month days
-    const totalCells = firstDay + daysInMonth;
-    const remainingCells = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
-    for (let day = 1; day <= remainingCells; day++) {
-        const dayEl = document.createElement('div');
-        dayEl.className = 'calendar-day other-month';
-        dayEl.innerHTML = `<div class="calendar-day-number">${day}</div>`;
-        calendarGrid.appendChild(dayEl);
-    }
-}
-
-// Calendar navigation
-document.getElementById('btnPrevMonth')?.addEventListener('click', () => {
-    currentMonth--;
-    if (currentMonth < 0) {
-        currentMonth = 11;
-        currentYear--;
-    }
-    renderCalendar();
-});
-
-document.getElementById('btnNextMonth')?.addEventListener('click', () => {
-    currentMonth++;
-    if (currentMonth > 11) {
-        currentMonth = 0;
-        currentYear++;
-    }
-    renderCalendar();
-});
-
-// Initial calendar render
-(function() {
-    const params = new URLSearchParams(window.location.search);
-    const openAptId = params.get('openApt');
-    if (openAptId) {
-        // Ensure list view is active (matches your existing "cardFaculty" pattern)
-        if (typeof btnListView !== 'undefined' && btnListView) btnListView.click();
-
-        setTimeout(() => {
-            const card = document.querySelector(`.apt-list-card[data-apt-id="${openAptId}"]`);
-            if (card) {
-                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                card.style.boxShadow = '0 0 0 3px rgba(10,61,98,0.2)';
-                setTimeout(() => { card.style.boxShadow = ''; }, 2000);
-            }
-        }, 150);
-
-        window.history.replaceState({}, '', window.location.pathname);
-    }
-})();
-
-if (calendarContainer) {
-    renderCalendar();
-}
+  window.STUDENT_APPOINTMENTS = <%- JSON.stringify(appointments) %>;
 </script>
+<script src="/js/card-filter.js?v=<%= Date.now() %>"></script>
+<script src="/js/student-appointments.js?v=<%= Date.now() %>"></script>
+<script src="/js/calendar-feed-link.js?v=<%= Date.now() %>"></script>

@@ -57,8 +57,10 @@ function refreshStats() {
     $('aptStatPending').textContent   = appointments.filter(a=>a.status==='pending').length;
     $('aptStatConfirmed').textContent = appointments.filter(a=>a.status==='confirmed').length;
     $('aptStatDeclined').textContent  = appointments.filter(a=>a.status==='declined').length;
-    // Approving or declining the last pending request retires the bulk button
+    // Approving or declining the last pending request retires the bulk button,
+    // and an approval may have just created something completable
     if (window.syncApproveAllButton) window.syncApproveAllButton();
+    if (window.syncCompleteAllButton) window.syncCompleteAllButton();
 }
 
 /* ── Calendar ── */
@@ -125,6 +127,14 @@ function renderCalendar() {
                 count.textContent = visible.length;
                 eventsEl.appendChild(count);
             }
+            // A cell this narrow cannot hold the chips, so an own entry gets a
+            // marker; tapping the day lists it in the panel.
+            if (ownEventsOn(dateStr).length) {
+                cell.classList.add('has-own');
+                const dot = document.createElement('span');
+                dot.className = 'apt-cal-own-dot';
+                eventsEl.appendChild(dot);
+            }
         } else {
             visible.slice(0, 3).forEach(apt => {
                 const b = document.createElement('span');
@@ -146,6 +156,38 @@ function renderCalendar() {
                 });
                 eventsEl.appendChild(more);
             }
+
+            // Imported calendar events sit below the bookings, styled apart so
+            // they are never mistaken for something a student can be seen about
+            calendarEventsOn(dateStr).slice(0, 2).forEach(ev => {
+                const chip = document.createElement('span');
+                chip.className = 'apt-cal-ext' +
+                    (ev.blocks ? ' blocks' : '') +
+                    (ev.decision === 'pending' ? ' pending' : '');
+                chip.textContent = (ev.all_day ? '' : slotLabel(ev.start_slot) + ' ') +
+                    (ev.summary || 'Busy');
+                chip.title = `${ev.calendar_name}${ev.blocks ? ' · blocks appointments' : ''}`;
+                eventsEl.appendChild(chip);
+            });
+
+            // The instructor's own entries. Same row as imported events because
+            // to a student they mean the same thing, but marked as editable —
+            // these are the only ones clicking can change.
+            //
+            // Not capped the way imported events are: hiding one the instructor
+            // has just added makes it look as though the save failed, and there
+            // is no "+N more" affordance to recover it from.
+            ownEventsOn(dateStr).forEach(ev => {
+                const chip = document.createElement('span');
+                chip.className = 'apt-cal-own' + (ev.blocks ? ' blocks' : '') +
+                    (ev.kind === 'task' ? ' task' : '') + (ev.done ? ' done' : '');
+                chip.textContent = (ev.allDay ? '' : shortTime(ev.startTime) + ' ') + ev.title;
+                chip.title = `${ev.kind === 'task' ? 'Task' : 'Event'}` +
+                    (ev.blocks ? ' · blocks appointments' : ' · does not block') +
+                    ' · click to edit';
+                chip.addEventListener('click', e => { e.stopPropagation(); openEventModal(ev); });
+                eventsEl.appendChild(chip);
+            });
         }
         cell.appendChild(eventsEl);
         cell.addEventListener('click', handleCellClick.bind(null, dateStr, cell));
@@ -162,8 +204,9 @@ function handleCellClick(dateStr, cellEl, e) {
     if (isMobileCal()) {
         if (popoverOpen || dayPanelEl) { closePopover(); closeDayPanel(); return; }
         const visible = visibleAptsOn(dateStr);
-        if (visible.length) openDayPanel(dateStr, visible, cellEl);
-        else showCellHint(cellEl, 'No appointments scheduled');
+        // A day with only an event and no bookings still has something to show
+        if (visible.length || ownEventsOn(dateStr).length) openDayPanel(dateStr, visible, cellEl);
+        else showCellHint(cellEl, 'Nothing scheduled');
         return;
     }
 
@@ -645,6 +688,39 @@ function openDayPanel(dateStr, apts, anchor) {
         list.appendChild(wrap);
     });
 
+    // The instructor's own entries for this day. On a phone the calendar cell
+    // is too narrow for the chips desktop shows, so this panel is the only
+    // place they are reachable — without them they would be invisible on mobile.
+    const dayOwn = ownEventsOn(dateStr);
+    if (dayOwn.length) {
+        const head = document.createElement('div');
+        head.className = 'day-panel-subhead';
+        head.textContent = 'My calendar';
+        list.appendChild(head);
+
+        dayOwn.forEach(ev => {
+            const row = document.createElement('div');
+            row.className = 'day-panel-own' + (ev.done ? ' done' : '');
+            row.innerHTML =
+                `<span class="day-panel-own-dot ${ev.blocks ? 'blocks' : ''}"></span>
+                 <div class="day-panel-info">
+                   <div class="day-panel-name">${escapeHtml(ev.title)}</div>
+                   <div class="day-panel-meta">
+                     ${ev.allDay ? 'All day' : escapeHtml(shortTime(ev.startTime) + ' – ' + shortTime(ev.endTime))}
+                     · ${ev.kind === 'task' ? 'Task' : 'Event'}${ev.blocks ? ' · blocks booking' : ''}
+                   </div>
+                 </div>`;
+
+            const edit = document.createElement('button');
+            edit.className = 'day-panel-btn';
+            edit.textContent = 'Edit';
+            edit.addEventListener('click', () => { closeDayPanel(); openEventModal(ev); });
+            row.appendChild(edit);
+
+            list.appendChild(row);
+        });
+    }
+
     if (window.innerWidth > 600) positionNear(panel, anchor);
     $('aptBackdrop').classList.add('open');
 }
@@ -1044,6 +1120,330 @@ function doReschedule(aptId, newSlotId, reason, mode, onSuccess, onError) {
     .catch(() => { showToast('error', 'Error', 'Network error. Please try again.'); if (onError) onError(); });
 }
 
+/* ── Imported calendar events ── */
+
+// Filled by loadCalendarEvents(); the calendar renders whatever is here.
+/* ── The instructor's own events and tasks ───────────────────────────────── */
+
+let ownEvents = [];
+
+function ownEventsOn(dateStr) {
+    return ownEvents.filter(e => e.date === dateStr);
+}
+
+/** '14:30' -> '2:30 PM', for the compact chip on a day cell. */
+function shortTime(value) {
+    if (!value) return '';
+    const [h, m] = value.split(':').map(Number);
+    const period = h < 12 ? 'AM' : 'PM';
+    const h12 = h % 12 || 12;
+    return `${h12}:${String(m).padStart(2, '0')} ${period}`;
+}
+
+function loadOwnEvents() {
+    // A generous window either side of the month on screen, so paging back and
+    // forth does not refetch on every click
+    const start = fmtDate(new Date(calYear, calMonth - 1, 1));
+    const end = fmtDate(new Date(calYear, calMonth + 2, 0));
+
+    return fetch(`/instructor/events?start=${start}&end=${end}`, {
+        headers: { Accept: 'application/json' },
+    })
+        .then(r => r.json())
+        .then(d => { ownEvents = d.success ? d.events : []; })
+        .catch(() => { ownEvents = []; });
+}
+
+let editingEventId = null;
+
+function openEventModal(existing, presetDate) {
+    const modal = $('eventModal');
+    if (!modal) return;
+
+    editingEventId = existing ? existing.id : null;
+
+    $('eventModalTitle').textContent = existing
+        ? (existing.kind === 'task' ? 'Edit task' : 'Edit event')
+        : 'Add to my calendar';
+    $('eventDelete').hidden = !existing;
+    $('eventConflicts').hidden = true;
+    $('eventError').hidden = true;
+
+    $('eventKind').value = existing ? existing.kind : 'event';
+    $('eventTitle').value = existing ? existing.title : '';
+    $('eventNotes').value = existing ? existing.notes : '';
+    $('eventDate').value = existing ? existing.date : (presetDate || fmtDate(new Date()));
+    $('eventAllDay').checked = existing ? existing.allDay : false;
+    $('eventStart').value = existing && existing.startTime ? existing.startTime : '09:00';
+    $('eventEnd').value = existing && existing.endTime ? existing.endTime : '10:00';
+    $('eventBlocks').checked = existing ? existing.blocks : true;
+    $('eventDone').checked = existing ? existing.done : false;
+
+    syncEventForm();
+    modal.classList.add('show');
+    $('eventTitle').focus();
+}
+
+function closeEventModal() {
+    const modal = $('eventModal');
+    if (modal) modal.classList.remove('show');
+    editingEventId = null;
+}
+
+/** Show only the controls that apply to the current kind and all-day choice. */
+function syncEventForm() {
+    const allDay = $('eventAllDay').checked;
+    const isTask = $('eventKind').value === 'task';
+    $('eventTimeRow').hidden = allDay;
+    $('eventDoneRow').hidden = !isTask;
+    $('eventBlocksHint').textContent = $('eventBlocks').checked
+        ? 'Students cannot book consultations during this time.'
+        : 'Shown on your calendar only. Students can still book.';
+}
+
+function eventPayload() {
+    return {
+        kind: $('eventKind').value,
+        title: $('eventTitle').value.trim(),
+        notes: $('eventNotes').value.trim(),
+        eventDate: $('eventDate').value,
+        allDay: $('eventAllDay').checked,
+        startTime: $('eventStart').value,
+        endTime: $('eventEnd').value,
+        blocks: $('eventBlocks').checked,
+        done: $('eventDone').checked,
+    };
+}
+
+/** Warn about consultations already inside the hours this would block. */
+function checkEventConflicts() {
+    const box = $('eventConflicts');
+    if (!$('eventBlocks').checked) { box.hidden = true; return; }
+
+    fetch('/instructor/events/conflicts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(eventPayload()),
+    })
+        .then(r => r.json())
+        .then(d => {
+            if (!d.success || !d.conflicts.length) { box.hidden = true; return; }
+            box.hidden = false;
+            box.innerHTML =
+                `<strong>${d.conflicts.length} consultation${d.conflicts.length === 1 ? '' : 's'} already booked in this time.</strong>` +
+                '<ul>' + d.conflicts.map(c =>
+                    `<li>${escapeHtml(c.time)} — ${escapeHtml(c.student)}</li>`).join('') + '</ul>' +
+                '<span>Blocking the hours will not cancel them; handle those from the appointment itself.</span>';
+        })
+        .catch(() => { box.hidden = true; });
+}
+
+function saveEvent() {
+    const btn = $('eventSave');
+    const err = $('eventError');
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+
+    const url = editingEventId ? `/instructor/events/${editingEventId}` : '/instructor/events';
+
+    fetch(url, {
+        method: editingEventId ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(eventPayload()),
+    })
+        .then(r => r.json())
+        .then(d => {
+            if (!d.success) {
+                err.textContent = d.error || 'Could not save.';
+                err.hidden = false;
+                return;
+            }
+            closeEventModal();
+            // A blocking event changes what students can book, so the slot
+            // counts on the page are stale until this reloads.
+            loadOwnEvents().then(renderCalendar);
+        })
+        .catch(() => { err.textContent = 'Network error. Please try again.'; err.hidden = false; })
+        .finally(() => { btn.disabled = false; btn.textContent = 'Save'; });
+}
+
+function deleteEvent() {
+    if (!editingEventId) return;
+    if (!window.confirm('Delete this entry?')) return;
+
+    fetch(`/instructor/events/${editingEventId}`, { method: 'DELETE' })
+        .then(r => r.json())
+        .then(d => {
+            if (!d.success) return;
+            closeEventModal();
+            loadOwnEvents().then(renderCalendar);
+        })
+        .catch(() => {});
+}
+
+function initOwnEvents() {
+    const modal = $('eventModal');
+    if (!modal) return;
+
+    // Opens on today; the date field is editable, and clicking a chip on a day
+    // opens that entry instead.
+    $('btnAddEvent').addEventListener('click', () => openEventModal(null, null));
+    $('eventClose').addEventListener('click', closeEventModal);
+    $('eventCancel').addEventListener('click', closeEventModal);
+    $('eventSave').addEventListener('click', saveEvent);
+    $('eventDelete').addEventListener('click', deleteEvent);
+
+    modal.addEventListener('click', e => { if (e.target === modal) closeEventModal(); });
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && modal.classList.contains('show')) closeEventModal();
+    });
+
+    ['eventAllDay', 'eventKind', 'eventBlocks'].forEach(id =>
+        $(id).addEventListener('change', syncEventForm));
+
+    // Re-check whenever the window being blocked changes
+    ['eventDate', 'eventStart', 'eventEnd', 'eventAllDay', 'eventBlocks'].forEach(id =>
+        $(id).addEventListener('change', checkEventConflicts));
+
+    loadOwnEvents().then(renderCalendar);
+}
+
+let externalEvents = [];
+
+function calendarEventsOn(dateStr) {
+    return externalEvents.filter(e => String(e.event_date).slice(0, 10) === dateStr);
+}
+
+function slotLabel(slot) {
+    if (slot == null) return '';
+    const total = slot * 30;
+    const h = Math.floor(total / 60), m = total % 60;
+    const period = h < 12 ? 'AM' : 'PM';
+    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    return `${h12}${m ? ':' + String(m).padStart(2, '0') : ''}${period}`;
+}
+
+function loadCalendarEvents() {
+    return fetch('/instructor/calendar/events')
+        .then(r => r.json())
+        .then(d => {
+            if (!d.success) return;
+            externalEvents = d.events || [];
+            renderCalendar();
+            renderPendingBanner();
+        })
+        .catch(() => { /* the calendar still works without imported events */ });
+}
+
+/**
+ * The blocking prompt. It is a banner rather than a modal on purpose: syncs
+ * run on a schedule, so there may be nobody at the screen when one lands, and
+ * an unanswered event stays non-blocking until the instructor says otherwise.
+ */
+function renderPendingBanner() {
+    const banner = $('calPendingBanner');
+    if (!banner) return;
+
+    const pending = externalEvents.filter(e => e.decision === 'pending');
+    banner.hidden = pending.length === 0;
+    if (!pending.length) return;
+
+    $('calPendingCount').textContent = pending.length;
+    $('calPendingWord').textContent = pending.length === 1 ? 'event needs' : 'events need';
+
+    const list = $('calPendingList');
+    list.innerHTML = pending.map(e => `
+        <li data-event-id="${e.id}">
+            <div class="cal-pending-what">
+                <strong>${escapeHtml(e.summary || 'Busy')}</strong>
+                <span>${escapeHtml(String(e.event_date).slice(0, 10))}${
+                    e.all_day ? ' · all day' : ' · ' + slotLabel(e.start_slot) + '–' + slotLabel(e.end_slot)
+                } · ${escapeHtml(e.calendar_name || '')}</span>
+            </div>
+            <div class="cal-pending-actions">
+                <button type="button" class="cal-decide block" data-blocks="1">Block</button>
+                <button type="button" class="cal-decide allow" data-blocks="0">Allow</button>
+            </div>
+        </li>`).join('');
+}
+
+function initCalendarSync() {
+    const banner = $('calPendingBanner');
+    if (banner) {
+        banner.addEventListener('click', e => {
+            const button = e.target.closest('.cal-decide');
+            if (button) {
+                const row = button.closest('li');
+                decideEvents([Number(row.dataset.eventId)], button.dataset.blocks === '1', button);
+                return;
+            }
+            if (e.target.closest('#calPendingAllowAll')) {
+                const ids = externalEvents.filter(x => x.decision === 'pending').map(x => x.id);
+                decideEvents(ids, false, e.target);
+            }
+            if (e.target.closest('#calPendingBlockAll')) {
+                const ids = externalEvents.filter(x => x.decision === 'pending').map(x => x.id);
+                decideEvents(ids, true, e.target);
+            }
+        });
+    }
+
+    const syncBtn = $('calSyncBtn');
+    if (syncBtn) {
+        syncBtn.addEventListener('click', () => {
+            syncBtn.disabled = true;
+            const label = syncBtn.textContent;
+            syncBtn.textContent = 'Syncing…';
+            fetch('/instructor/calendar/sync', { method: 'POST' })
+                .then(r => r.json())
+                .then(d => {
+                    syncBtn.disabled = false;
+                    syncBtn.textContent = label;
+                    if (!d.success) { showToast('error', 'Sync failed', d.error || 'Please try again.'); return; }
+                    if (d.failures && d.failures.length) {
+                        showToast('error', d.failures[0].name, d.failures[0].error);
+                    } else {
+                        showToast('success', 'Calendars synced',
+                            `${d.imported} event${d.imported === 1 ? '' : 's'} imported.`);
+                    }
+                    loadCalendarEvents();
+                })
+                .catch(() => {
+                    syncBtn.disabled = false;
+                    syncBtn.textContent = label;
+                    showToast('error', 'Sync failed', 'Network error.');
+                });
+        });
+    }
+
+    loadCalendarEvents();
+}
+
+function decideEvents(ids, blocks, button) {
+    if (!ids.length) return;
+    if (button) button.disabled = true;
+
+    fetch('/instructor/calendar/decide', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventIds: ids, blocks: blocks }),
+    })
+        .then(r => r.json())
+        .then(d => {
+            if (button) button.disabled = false;
+            if (!d.success) { showToast('error', 'Error', d.error || 'Could not save that.'); return; }
+            // Reload rather than patch in place: blocking changes what the
+            // calendar should show, and the server is the authority on it
+            loadCalendarEvents();
+            showToast('success', blocks ? 'Time blocked' : 'Time left open',
+                blocks ? 'Students can no longer book over it.' : 'Students can still book that time.');
+        })
+        .catch(() => {
+            if (button) button.disabled = false;
+            showToast('error', 'Error', 'Network error.');
+        });
+}
+
 /* ── Approve all pending ── */
 function initApproveAll() {
     const btn = $('approveAllBtn');
@@ -1150,6 +1550,125 @@ function initApproveAll() {
 
     // Approving or declining one request can empty the queue
     window.syncApproveAllButton = syncButton;
+    syncButton();
+}
+
+/* ── Complete all finished consultations ── */
+function initCompleteAll() {
+    const btn = $('completeAllBtn');
+    if (!btn) return;
+
+    const modal   = $('completeAllModal');
+    const prompt  = $('completeAllPrompt');
+    const result  = $('completeAllResult');
+    const list    = $('completeAllList');
+    const confirm = $('completeAllConfirm');
+    const cancel  = $('completeAllCancel');
+    let ran = false;
+
+    /**
+     * Confirmed consultations whose slot has already ended. The server checks
+     * this again per appointment — this is only so the button can show an
+     * honest count instead of offering to complete something still to come.
+     */
+    function finished() {
+        const now = Date.now();
+        return appointments.filter(a => {
+            if (a.status !== 'confirmed' || !a.endsAt) return false;
+            const ends = new Date(a.endsAt).getTime();
+            return Number.isFinite(ends) && ends <= now;
+        });
+    }
+
+    function syncButton() {
+        const done = finished();
+        btn.hidden = done.length === 0;
+        $('completeAllCount').textContent = done.length;
+        return done;
+    }
+
+    function close() {
+        modal.classList.remove('show');
+        if (ran) window.location.reload();
+    }
+
+    function open() {
+        const done = syncButton();
+        if (!done.length) return;
+
+        ran = false;
+        prompt.hidden = false;
+        result.hidden = true;
+        result.innerHTML = '';
+        confirm.hidden = false;
+        confirm.disabled = false;
+        confirm.textContent = 'Complete all';
+        cancel.textContent = 'Cancel';
+
+        $('completeAllTotal').textContent = done.length;
+        $('completeAllPlural').textContent = done.length === 1 ? '' : 's';
+
+        list.innerHTML = done.map(a =>
+            `<li><strong>${escapeHtml(a.studentName)}</strong>` +
+            `<span>${escapeHtml(a.date)} · ${escapeHtml(a.time)}</span></li>`).join('');
+
+        modal.classList.add('show');
+    }
+
+    btn.addEventListener('click', open);
+    $('completeAllClose').addEventListener('click', close);
+    cancel.addEventListener('click', close);
+    modal.addEventListener('click', e => { if (e.target === modal) close(); });
+
+    confirm.addEventListener('click', () => {
+        confirm.disabled = true;
+        confirm.textContent = 'Completing…';
+
+        fetch('/instructor/appointments/complete-all', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        })
+        .then(r => r.json())
+        .then(d => {
+            if (!d.success) {
+                confirm.disabled = false;
+                confirm.textContent = 'Complete all';
+                showResult(`<p class="apt-approve-note bad">${escapeHtml(d.error || 'Could not complete the consultations.')}</p>`);
+                return;
+            }
+            ran = d.completed > 0;
+            showResult(summarise(d));
+            confirm.hidden = true;
+            cancel.textContent = 'Close';
+        })
+        .catch(() => {
+            confirm.disabled = false;
+            confirm.textContent = 'Complete all';
+            showResult('<p class="apt-approve-note bad">Network error. Please try again.</p>');
+        });
+    });
+
+    function showResult(html) {
+        prompt.hidden = true;
+        result.hidden = false;
+        result.innerHTML = html;
+    }
+
+    function summarise(d) {
+        let html = `<p class="apt-approve-note ok"><strong>${d.completed} of ${d.total}</strong> ` +
+                   `consultation${d.total === 1 ? '' : 's'} completed.</p>`;
+        if (d.skipped.length) {
+            html += '<p class="apt-approve-heading">Left as they were:</p><ul class="apt-approve-list">';
+            d.skipped.forEach(s => {
+                html += `<li><strong>${escapeHtml(s.student)}</strong><span>${escapeHtml(s.reason)}</span></li>`;
+            });
+            html += '</ul>';
+        }
+        return html;
+    }
+
+    // Approving a request creates a confirmed one, which may become completable
+    window.syncCompleteAllButton = syncButton;
     syncButton();
 }
 
@@ -1321,7 +1840,13 @@ function showToast(type, title, msg) {
 
 document.addEventListener('DOMContentLoaded', () => {
     initApproveAll();
+    initCompleteAll();
     refreshStats(); initCalendar(); initPopover(); initSearchFilter(); initViewToggle();
+    // After initCalendar(), which is what sets calYear/calMonth — the fetch
+    // window is derived from them, so running earlier asked for an
+    // Invalid Date range and quietly came back empty.
+    initOwnEvents();
+    initCalendarSync();
 
     const params = new URLSearchParams(window.location.search);
     const openAptId = params.get('openApt');

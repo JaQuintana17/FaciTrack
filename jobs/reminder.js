@@ -8,7 +8,8 @@ const COMPLETION_NUDGE_EVERY_HOURS = Number(process.env.COMPLETION_NUDGE_EVERY_H
 
 // Unanswered booking requests are chased more often — a student is waiting,
 // and an unanswered request goes stale once the consultation date passes.
-const PENDING_NUDGE_EVERY_HOURS = Number(process.env.PENDING_NUDGE_EVERY_HOURS) || 6;
+// The interval is an administrator setting; .env supplies the default.
+const appSettings = require('../services/app-settings');
 
 /** Remind both parties shortly before a consultation starts. */
 async function sendUpcomingReminders() {
@@ -60,11 +61,12 @@ async function sendCompletionNudges() {
 
 /**
  * Chase instructors sitting on unanswered booking requests. Repeats every
- * PENDING_NUDGE_EVERY_HOURS until they approve or decline, so a student is
+ * the configured interval until they approve or decline, so a student is
  * never left waiting indefinitely on a request that was simply missed.
  */
 async function sendPendingRequestNudges() {
-    const waiting = await AppointmentModel.getPendingAppointmentsAwaitingAction(PENDING_NUDGE_EVERY_HOURS);
+    const everyHours = await appSettings.get('pending_nudge_every_hours');
+    const waiting = await AppointmentModel.getPendingAppointmentsAwaitingAction(everyHours);
 
     for (const apt of waiting) {
         const dateLabel = formatFullDate(apt.consultation_date);

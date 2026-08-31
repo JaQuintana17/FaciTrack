@@ -562,6 +562,17 @@
 .cal-cell.available:hover { background:rgba(34,197,94,.28); transform:scale(1.1); box-shadow:0 2px 8px rgba(22,163,74,.25); }
 .cal-cell.available.today { background:rgba(34,197,94,.2); border:2px solid #16a34a; color:#15803d; }
 .cal-cell.available.selected { background:#16a34a; color:#fff; box-shadow:0 2px 8px rgba(22,163,74,.35); border:none; }
+/* Instructor blocked the whole day off. This was previously only styled inside
+   the 580px media query, so on desktop the day looked completely ordinary. */
+.cal-cell.blocked { background:#fef2f2; color:#dc2626; font-weight:700; cursor:not-allowed; border-radius:var(--radius-md); }
+.cal-cell.blocked.today { background:#fee2e2; border:2px solid #dc2626; color:#b91c1c; }
+
+/* Scheduled but nothing bookable — amber, so it reads as "there is something
+   here, just not for you" rather than looking like an empty day. */
+.cal-cell.full { background:rgba(245,158,11,.14); color:#b45309; font-weight:700; cursor:pointer; border-radius:var(--radius-md); transition:all .18s; }
+.cal-cell.full:hover { background:rgba(245,158,11,.3); transform:scale(1.1); box-shadow:0 2px 8px rgba(180,83,9,.22); }
+.cal-cell.full.today { background:rgba(245,158,11,.24); border:2px solid #f59e0b; color:#b45309; }
+.cal-cell.full.selected { background:#d97706; color:#fff; box-shadow:0 2px 8px rgba(180,83,9,.35); border:none; }
 .cal-cell.past { opacity:0.35; cursor:not-allowed; pointer-events:none; }
 /* JS tooltip — single floating div, no pseudo-elements */
 #calTooltip {
@@ -595,6 +606,8 @@
 .cal-legend-item { display:flex; align-items:center; gap:.375rem; }
 .cal-legend-dot { width:10px; height:10px; border-radius:3px; }
 .cal-legend-dot.available { background:rgba(34,197,94,.5); }
+.cal-legend-dot.full { background:rgba(245,158,11,.6); }
+.cal-legend-dot.blocked { background:#fecaca; border:1px solid #dc2626; }
 .cal-legend-dot.today { background:var(--primary-blue); border-radius:3px; border:2px solid var(--primary-blue); }
 /* Slot detail panel */
 .slot-detail-panel { margin-top:.75rem; padding:1rem 1.25rem; background:rgba(34,197,94,.06); border:1.5px solid rgba(34,197,94,.25); border-radius:var(--radius-md); display:none; }

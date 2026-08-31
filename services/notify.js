@@ -68,7 +68,16 @@ async function notifyUser(internalUserId, type, message, appointmentId = null, o
     if (!allowed) return;
 
     // ── 2. Push (device notification, works with the app closed) ──
-    if (opts.push !== false) {
+    // The administrator can switch the whole channel off in System Settings;
+    // the in-app bell above is unaffected either way.
+    let pushEnabled = true;
+    try {
+        pushEnabled = await require('./app-settings').get('push_enabled');
+    } catch (err) {
+        console.error('[Notify] Could not read the push setting:', err.message);
+    }
+
+    if (opts.push !== false && pushEnabled) {
         try {
             await push.sendToUser(internalUserId, {
                 title: opts.pushTitle || opts.email?.heading || 'FaciTrack',

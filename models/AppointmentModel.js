@@ -1,4 +1,5 @@
 const pool = require('../configs/db');
+const { SLOT_HOLDING_SQL } = require('../services/scheduling');
 const NotificationModel = require('../models/NotificationModel');
 const AuditLogModel = require('../models/AuditLogModel');
 const { notifyUser } = require('../services/notify');
@@ -73,12 +74,53 @@ const AppointmentModel = {
     },
 
     // userId could be studentId or instructorId
+    /**
+     * Appointments for the outbound ICS feed.
+     *
+     * One query for both audiences — the caller says which side of the booking
+     * it is publishing for, and both names come back either way so the event
+     * can be titled from the other party. Windowed rather than unbounded: a
+     * calendar subscription only needs the recent past and the near future,
+     * and a feed that grows forever eventually times out on fetch.
+     *
+     * @param {number} internalUserId  users.id
+     * @param {'instructor'|'student'} audience
+     */
+    async getAppointmentsForFeed(internalUserId, audience, { pastDays = 90, futureDays = 180 } = {}) {
+        const column = audience === 'instructor' ? 'ap.instructor_id' : 'ap.student_id';
+
+        const [rows] = await pool.execute(
+            `SELECT ap.id, ap.status, ap.mode, ap.topic, ap.notes, ap.created_at,
+                    ap.section_group_name, ap.course_subject, ap.student_number,
+                    ap.meeting_link,
+                    ch.consultation_date, ch.start_time, ch.end_time,
+                    s.first_name AS student_first_name, s.last_name AS student_last_name,
+                    i.first_name AS instructor_first_name, i.last_name AS instructor_last_name,
+                    r.room_number,
+                    d.building AS building_name
+               FROM appointments ap
+               JOIN consultation_hours ch ON ap.consultation_hour_id = ch.id
+               JOIN users s ON ap.student_id    = s.id
+               JOIN users i ON ap.instructor_id = i.id
+               LEFT JOIN rooms r       ON ap.room_id = r.id
+               LEFT JOIN departments d ON r.department_id = d.id
+              WHERE ${column} = ?
+                AND ch.consultation_date BETWEEN (CURDATE() - INTERVAL ? DAY)
+                                             AND (CURDATE() + INTERVAL ? DAY)
+              ORDER BY ch.consultation_date ASC, ch.start_time ASC`,
+            [internalUserId, pastDays, futureDays]
+        );
+        return rows;
+    },
+
     async getAppointmentsByUser(userId) {
         const query = `SELECT
                 ap.id, ap.status, ap.mode, ap.topic, ap.section_group_name, ap.course_subject,
                 ap.email, ap.notes, ap.created_at, ap.rescheduled_to_id, ap.rescheduled_from_id, ap.decline_reason,
                 ch.consultation_date, ch.day_of_the_week, ch.start_time, ch.end_time,
+                u.public_id AS instructor_public_id,
                 u.first_name, u.last_name, u.middle_name, u.position,
+                u.profile_picture AS instructor_photo,
                 r.room_number,
                 d.building AS building_name, d.full_name AS department_name,
                 rch.consultation_date AS rescheduled_date,
@@ -121,11 +163,14 @@ const AppointmentModel = {
             );
             if (!student) throw new Error('Student not found');
 
-            // Re-check the slot hasn't already been booked by someone else
+            // Re-check the slot hasn't already been booked by someone else.
+            // Must use the same definition of "taken" as the booking calendar,
+            // or a slot can be offered and then refused on submit.
             const [[slotCheck]] = await conn.execute(
                 `SELECT a.id AS appointment_id, ch.start_time, ch.end_time
                  FROM consultation_hours ch
-                 LEFT JOIN appointments a ON ch.id = a.consultation_hour_id AND a.status != 'cancelled'
+                 LEFT JOIN appointments a ON ch.id = a.consultation_hour_id
+                                         AND a.status IN (${SLOT_HOLDING_SQL})
                  WHERE ch.id = ? FOR UPDATE`,
                 [consultationHourId]
             );
@@ -493,7 +538,8 @@ const AppointmentModel = {
             const [[newSlot]] = await conn.execute(
                 `SELECT ch.*,
                 (SELECT id FROM appointments a
-                 WHERE a.consultation_hour_id = ch.id AND a.status IN ('pending','confirmed')) AS active_appointment_id
+                 WHERE a.consultation_hour_id = ch.id
+                   AND a.status IN (${SLOT_HOLDING_SQL})) AS active_appointment_id
              FROM consultation_hours ch
              WHERE ch.id = ? AND ch.instructor_id = ? FOR UPDATE`,
                 [newSlotId, instructor.id]

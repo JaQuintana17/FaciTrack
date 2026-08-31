@@ -256,15 +256,43 @@
     margin: 0;
 }
 
+.room-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 2.5rem 1rem;
+    text-align: center;
+}
+.room-empty svg { color: var(--gray-300); }
+.room-empty p {
+    font-size: 0.8125rem;
+    color: var(--gray-500);
+    margin: 0;
+    max-width: 40ch;
+    line-height: 1.5;
+}
+
 @media (max-width: 768px) {
     #building3d-container {
         height: 400px;
     }
-    
+
     .section-header {
         flex-direction: column;
         align-items: flex-start;
     }
+
+    .building-3d-page { padding: 1rem; }
+    .building-3d-section { padding: 1rem; }
+    /* Keep the register scrollable rather than letting it widen the page */
+    #roomTable { min-width: 560px; }
+}
+
+@media (max-width: 520px) {
+    #building3d-container { height: 300px; }
+    .floor-selector { width: 100%; }
+    .btn-floor { flex: 1; }
 }
 </style>
 
@@ -322,8 +350,57 @@
                 <div class="info-box">
                     <p>
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                        <strong>How to use:</strong> Hover over rooms to highlight them. Click on a room to view details. Use floor buttons to navigate between floors. Drag to rotate, scroll to zoom.
+                        <strong>Placeholder model:</strong> the layout above is generated, not a survey of the real building, so its room labels are illustrative. The list below is your department's actual room register.
                     </p>
+                </div>
+            </div>
+
+            <!-- Real room register for the department -->
+            <div class="content-card" style="margin-top:1.5rem">
+                <div class="card-header">
+                    <h3 class="card-title">Rooms in <%= dean.department %></h3>
+                    <span style="font-size:.78rem;color:var(--gray-500);font-weight:600"><%= rooms.length %> room<%= rooms.length === 1 ? '' : 's' %></span>
+                </div>
+                <div class="card-body" style="padding:0">
+                    <% if (!rooms.length) { %>
+                    <div class="room-empty">
+                        <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                        <p>No rooms are registered for this department yet. An administrator adds them under Admin &rsaquo; Rooms.</p>
+                    </div>
+                    <% } else { %>
+                    <div style="overflow-x:auto">
+                        <table class="data-table" id="roomTable">
+                            <thead>
+                                <tr>
+                                    <th>Room</th>
+                                    <th>Type</th>
+                                    <th>Capacity</th>
+                                    <th>Assigned Faculty</th>
+                                    <th>BLE Scanner</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% rooms.forEach(r => { %>
+                                <tr>
+                                    <td style="font-weight:600;font-size:.875rem;color:var(--gray-900)"><%= r.room_number %></td>
+                                    <td style="font-size:.8125rem;color:var(--gray-600)"><%= r.room_type %></td>
+                                    <td style="font-size:.8125rem"><%= r.capacity || '—' %></td>
+                                    <td style="font-size:.8125rem"><%= r.assigned_faculty_name || '—' %></td>
+                                    <td>
+                                        <span class="table-badge <%= r.is_ble_scanner_installed ? 'confirmed' : '' %>">
+                                            <%= r.is_ble_scanner_installed ? 'Installed' : 'Not installed' %>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span class="table-badge <%= r.status === 'Active' ? 'confirmed' : 'declined' %>"><%= r.status %></span>
+                                    </td>
+                                </tr>
+                                <% }); %>
+                            </tbody>
+                        </table>
+                    </div>
+                    <% } %>
                 </div>
             </div>
 
@@ -445,17 +522,10 @@ document.getElementById('roomModal').addEventListener('click', (e) => {
     }
 });
 
-// Simulate real-time updates
-function updateRoomOccupancy() {
-    // Example: Update based on your actual data
-    viewer.updateRoomStatus('CCS 201', 'occupied', 'Dr. Maria Santos');
-    viewer.updateRoomStatus('CCS 202', 'available');
-    viewer.updateRoomStatus('CCS 203', 'scheduled');
-    viewer.updateRoomStatus('CCS 301', 'occupied', 'Prof. Jose Dela Cruz');
-    viewer.updateRoomStatus('CCS 302', 'available');
-}
-
-// Update every 30 seconds
-setInterval(updateRoomOccupancy, 30000);
-updateRoomOccupancy();
+// Room occupancy is intentionally not pushed into the scene yet: the geometry
+// below is a generated placeholder whose room names do not correspond to the
+// department's real rooms, so colouring it would be inventing information.
+// The room list beneath the viewer is the real data. Once the building model
+// is replaced with one whose meshes carry real room numbers, feed it from
+// DEPARTMENT_ROOMS via viewer.updateRoomStatus().
 </script>

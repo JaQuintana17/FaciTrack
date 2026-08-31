@@ -34,14 +34,41 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
+    // ── Mobile: the header hamburger drives the sidebar's own toggle ──
+    // Forwarding rather than duplicating keeps the icon swap, the footer
+    // reveal and aria-expanded in the one place that already handles them.
+    (function () {
+        const headerToggle = document.getElementById('headerMenuToggle');
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        // Error pages render the header without a sidebar; leave it hidden there
+        if (!headerToggle || !sidebarToggle) return;
+        headerToggle.hidden = false;
+
+        headerToggle.addEventListener('click', function (e) {
+            // Without this the document handler below sees the same click and
+            // closes the nav that was just opened
+            e.stopPropagation();
+            sidebarToggle.click();
+
+            const isOpen = sidebarToggle.getAttribute('aria-expanded') === 'true';
+            headerToggle.setAttribute('aria-expanded', String(isOpen));
+            const menu = headerToggle.querySelector('.icon-menu');
+            const close = headerToggle.querySelector('.icon-close');
+            if (menu) menu.style.display = isOpen ? 'none' : '';
+            if (close) close.style.display = isOpen ? '' : 'none';
+        });
+    }());
+
     // ── Mobile: close sidebar when tapping outside ──
     document.addEventListener('click', function (e) {
         const sidebar = document.querySelector('.instructor-sidebar, .student-sidebar');
         const toggle = document.getElementById('sidebarToggle');
+        const headerToggle = document.getElementById('headerMenuToggle');
         const nav = document.querySelector('.sidebar-nav');
         if (
             sidebar && nav && nav.classList.contains('mobile-open') &&
-            !sidebar.contains(e.target) && toggle && !toggle.contains(e.target)
+            !sidebar.contains(e.target) && toggle && !toggle.contains(e.target) &&
+            !(headerToggle && headerToggle.contains(e.target))
         ) {
             nav.classList.remove('mobile-open');
             if (toggle) {
@@ -50,6 +77,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 const iconClose = toggle.querySelector('.icon-close');
                 if (iconMenu) iconMenu.style.display = '';
                 if (iconClose) iconClose.style.display = 'none';
+            }
+            // The header hamburger mirrors it, so put its icon back too
+            if (headerToggle) {
+                headerToggle.setAttribute('aria-expanded', 'false');
+                const hMenu = headerToggle.querySelector('.icon-menu');
+                const hClose = headerToggle.querySelector('.icon-close');
+                if (hMenu) hMenu.style.display = '';
+                if (hClose) hClose.style.display = 'none';
             }
             const footer = document.querySelector('.sidebar-footer');
             if (footer && window.innerWidth <= 1024) footer.style.display = 'none';

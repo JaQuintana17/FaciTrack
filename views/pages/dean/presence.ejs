@@ -37,6 +37,20 @@
 .no-results { text-align:center; padding:3rem 1rem; color:var(--gray-400); }
 .no-results svg { margin-bottom:.75rem; }
 .no-results p { font-size:.875rem; margin:0; }
+
+/* ── Explains why every figure on this page is zero ── */
+.live-banner { position:fixed; bottom:1.25rem; left:50%; transform:translateX(-50%) translateY(160%); z-index:900;
+  background:#0f172a; color:#fff; font-size:.8125rem; font-weight:600; padding:.6rem 1.1rem; border-radius:999px;
+  box-shadow:0 8px 24px rgba(15,23,42,.28); transition:transform .25s ease; pointer-events:none; }
+.live-banner.show { transform:translateX(-50%) translateY(0); }
+.presence-notice { display:flex; align-items:flex-start; gap:.75rem; padding:.875rem 1.125rem; background:#eff6ff; border:1px solid #bfdbfe; border-radius:var(--radius-md); margin-bottom:1.25rem; }
+.presence-notice svg { color:#2563eb; flex-shrink:0; margin-top:1px; }
+.presence-notice p { font-size:.8125rem; color:#1e40af; margin:0; line-height:1.5; }
+.btn-header-action[disabled] { opacity:.5; cursor:not-allowed; }
+@media (max-width:580px){
+  .presence-notice { padding:.75rem .875rem; }
+  .presence-notice p { font-size:.75rem; }
+}
 </style>
 
 <div class="instructor-layout">
@@ -48,15 +62,22 @@
       <div class="page-header">
         <div>
           <h1 class="page-title">Presence Logs</h1>
-          <p class="page-subtitle">BLE detection history — faculty room entry and exit events</p>
+          <p class="page-subtitle">BLE detection history — <%= dean.department %></p>
         </div>
         <div class="header-actions">
-          <button class="btn-header-action" id="btnExport">
+          <button class="btn-header-action" id="btnExport" <%= presenceLogs.length ? '' : 'disabled' %>>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             Export Logs
           </button>
         </div>
       </div>
+
+      <% if (!presenceLogs.length) { %>
+      <div class="presence-notice">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <p><strong>No presence data has been recorded yet.</strong> This page reads from the BLE scanners, which are part of the presence-monitoring module and are not installed yet. The filters and the table below are live and will populate the moment the first detection arrives.</p>
+      </div>
+      <% } %>
 
       <!-- Stats -->
       <div class="stats-overview">
@@ -180,44 +201,7 @@
                 </tr>
               </thead>
               <tbody id="presenceBody">
-                <% presenceLogs.forEach(log => { %>
-                <tr data-event="<%= log.status %>"
-                    data-faculty="<%= log.facultyName %>"
-                    data-room="<%= log.location %>"
-                    data-ts="<%= log.timestamp %>">
-                  <td>
-                    <div class="event-cell">
-                      <span class="event-icon <%= log.status %>">
-                        <% if(log.status==='entered'){ %>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-                        <% } else { %>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-                        <% } %>
-                      </span>
-                      <span style="font-weight:600;font-size:.8125rem;color:<%= log.status==='entered'?'#15803d':'#374151' %>">
-                        <%= log.status==='entered'?'Entered':'Exited' %>
-                      </span>
-                    </div>
-                  </td>
-                  <td>
-                    <div style="display:flex;align-items:center;gap:.5rem">
-                      <div class="apt-avatar-xs" style="font-size:.65rem;width:30px;height:30px"><%= log.facultyName.split(' ').map(n=>n[0]).join('').slice(0,2) %></div>
-                      <span style="font-size:.8125rem;font-weight:600;color:var(--gray-900)"><%= log.facultyName %></span>
-                    </div>
-                  </td>
-                  <td style="font-size:.8125rem"><%= log.location %></td>
-                  <td style="font-size:.8125rem;white-space:nowrap">
-                    <%
-                      var _ts = new Date(log.timestamp);
-                      var _date = isNaN(_ts) ? log.timestamp : _ts.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-                      var _time = isNaN(_ts) ? '' : _ts.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-                    %>
-                    <%= _date %>
-                  </td>
-                  <td style="font-size:.8125rem;white-space:nowrap"><%= _time %></td>
-                  <td><%= log.duration||'—' %></td>
-                </tr>
-                <% }); %>
+                <%- include('../../partials/presence-rows', { presenceLogs: presenceLogs }) %>
               </tbody>
             </table>
           </div>
@@ -225,7 +209,8 @@
           <!-- No results state -->
           <div class="no-results" id="noResults" style="display:none">
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <p>No logs match the selected filters.</p>
+            <%# Nothing to filter and nothing matching a filter are different problems %>
+            <p><%= presenceLogs.length ? 'No logs match the selected filters.' : 'No detections recorded yet.' %></p>
           </div>
 
           <!-- Pagination -->
@@ -243,6 +228,8 @@
 <div class="toast-container" id="toastContainer"></div>
 <%- include('../../partials/footer') %>
 <%- include('../../partials/script') %>
+<script src="/js/realtime.js?v=<%= Date.now() %>"></script>
+<div class="live-banner" id="liveBanner"></div>
 <script>
 (function(){
   'use strict';
@@ -422,5 +409,47 @@
   // Init
   updateChips();
   renderPage();
+
+  /* ── Live updates ──
+     Entries and exits arrive over SSE. The server re-renders the rows from the
+     same partial this page was built with, so a live row and a page-load row
+     are identical; the filtering and pagination above then run over them
+     unchanged. Nothing reloads. */
+  var reloading = false;
+
+  function refreshRows() {
+    if (reloading || document.hidden) return;
+    reloading = true;
+
+    fetch('/dean/presence/rows')
+      .then(function (res) { return res.text(); })
+      .then(function (html) {
+        var before = allRows().length;
+        tbody.innerHTML = html;
+        updateChips();
+        renderPage();
+
+        var added = allRows().length - before;
+        if (added > 0) flashBanner(added);
+      })
+      .catch(function () { /* the next event or the backstop will retry */ })
+      .finally(function () { reloading = false; });
+  }
+
+  /** Say what just happened, so a change is noticed rather than just appearing. */
+  function flashBanner(added) {
+    var banner = document.getElementById('liveBanner');
+    if (!banner) return;
+    banner.textContent = added + (added === 1 ? ' new detection' : ' new detections');
+    banner.classList.add('show');
+    clearTimeout(banner._t);
+    banner._t = setTimeout(function () { banner.classList.remove('show'); }, 4000);
+  }
+
+  if (window.Realtime) {
+    window.Realtime.on('presence:changed', refreshRows);
+  }
+  // A scanner that stops reporting sends nothing, so time has to notice it
+  setInterval(refreshRows, 60000);
 }());
 </script>

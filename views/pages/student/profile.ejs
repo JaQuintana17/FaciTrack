@@ -111,6 +111,8 @@
                             </div>
                             <div class="cal-grid" id="calGrid"></div>                            <div class="cal-legend">
                                 <div class="cal-legend-item"><div class="cal-legend-dot available"></div> Available consultation day</div>
+                                <div class="cal-legend-item"><div class="cal-legend-dot full"></div> Scheduled, none free</div>
+                                <div class="cal-legend-item"><div class="cal-legend-dot blocked"></div> Instructor unavailable this day</div>
                                 <div class="cal-legend-item"><div class="cal-legend-dot today" style="width:14px;height:14px;border-radius:4px;background:rgba(10,61,98,.1);border:2px solid var(--primary-blue);"></div> Today</div>
                             </div>
                         </div>
@@ -119,7 +121,8 @@
                         <div id="calTooltip"></div>
 
                         <% const hasAnySlots = consultationSlots.some(g => g.subSlots.length > 0); %>
-                        <% const hasOpen = consultationSlots.some(g => g.subSlots.some(s => !s.isBooked && !s.isReservedByOther)); %>
+                        <% /* One source of truth: the server already worked out why each slot is closed */ %>
+                        <% const hasOpen = consultationSlots.some(g => g.subSlots.some(s => !s.unavailableReason)); %>
 
                         <% if (!hasAnySlots) { %>
                         <div class="no-schedule-panel">
@@ -177,16 +180,25 @@ const LEAD_TIME_HOURS = <%- leadTimeHours %>;   // slots starting sooner than th
 const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-const availableByDate = {};
+// Plain-English help behind each reason the server can give
+const SLOT_REASON_HELP = {
+    'Instructor away': 'The instructor has marked this whole day unavailable.',
+    'Instructor unavailable today': 'The instructor has set their status to unavailable for today.',
+    'Already booked': 'Another student has this slot.',
+    'Being booked': 'Another student is completing a booking for this slot right now.',
+    'Instructor busy': 'The instructor has something else on their calendar at this time.',
+    'Too soon to book': 'Slots must be booked at least ' + LEAD_TIME_HOURS + ' hours ahead.',
+    'No room or link': 'Every consultation room is full for this time and the instructor has no online meeting link.',
+};
+
+// A day is green only if something on it can actually be booked. Every group
+// is still kept in `slots`, so the day panel can list the closed ones too.
+const availableByDate = {};   // days with at least one bookable slot
+const slotsByDate = {};       // every day that has a schedule at all
 slots.forEach(group => {
     if (unavailableDates.has(group.date)) return;
-    // Green means genuinely bookable: free, and at least one mode is possible.
-    // A slot whose rooms are all full and whose instructor has no meeting link
-    // is a dead end, so it must not colour the day as available.
-    const hasOpenSub = group.subSlots.some(s =>
-        !s.isBooked && !s.isReservedByOther && (s.roomAvailable || s.onlineAvailable));
-    if (!hasOpenSub) return;
-    availableByDate[group.date] = group;
+    slotsByDate[group.date] = group;
+    if (group.subSlots.some(s => !s.unavailableReason)) availableByDate[group.date] = group;
 });
 
 // Parse "2:00 PM" → minutes
@@ -232,8 +244,23 @@ function chopSlot(slotObj) {
 
 let viewYear, viewMonth;
 const today = new Date();
-viewYear = today.getFullYear();
-viewMonth = today.getMonth();
+
+// Open on the month that actually holds the next bookable slot. Defaulting to
+// the current month meant the sidebar could advertise "Next available:
+// September 3" while the grid showed August, with no hint that the date was a
+// click away.
+(function openOnNextAvailable() {
+    viewYear = today.getFullYear();
+    viewMonth = today.getMonth();
+
+    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const nextKey = Object.keys(availableByDate).filter(d => d >= todayKey).sort()[0];
+    if (!nextKey) return;
+
+    const [y, m] = nextKey.split('-').map(Number);
+    viewYear = y;
+    viewMonth = m - 1;
+}());
 
 let selectedSlotId = null;
 let selectedSlotText = null;
@@ -309,10 +336,16 @@ function renderCalendar() {
             continue;
         }
 
-        const dayGroup = availableByDate[dateKey]; 
+        // A day with a schedule is always shown and always openable. When
+        // nothing on it is bookable it is marked "full" rather than looking
+        // identical to a day the instructor never scheduled.
+        const dayGroup = slotsByDate[dateKey];
         if (dayGroup) {
-            cell.classList.add('available');
-            const tooltipText = 'Available for consultation';
+            const dayIsOpen = Boolean(availableByDate[dateKey]);
+            cell.classList.add(dayIsOpen ? 'available' : 'full');
+            const tooltipText = dayIsOpen
+                ? 'Available for consultation'
+                : 'Scheduled, but nothing is bookable — tap to see why';
 
             cell.addEventListener('mouseenter', function() { showTooltip(this, tooltipText); });
             cell.addEventListener('mouseleave', hideTooltip);
@@ -331,7 +364,7 @@ function renderCalendar() {
 
             cell.addEventListener('click', function() {
                 hideTooltip();
-                document.querySelectorAll('.cal-cell.available').forEach(c => c.classList.remove('selected'));
+                document.querySelectorAll('.cal-cell.available, .cal-cell.full').forEach(c => c.classList.remove('selected'));
                 this.classList.add('selected');
                 selectedDate = `${dayName}, ${monthNames[viewMonth]} ${d}, ${viewYear}`;
                 selectedSlotId = null;
@@ -344,6 +377,17 @@ function renderCalendar() {
                 }, 80);
             });
         }
+        grid.appendChild(cell);
+    }
+
+    // Fill the last row out with the start of the following month. Without
+    // these the grid ended mid-row and read as though the month were cut short.
+    const used = firstDay + daysInMonth;
+    const trailing = used % 7 === 0 ? 0 : 7 - (used % 7);
+    for (let d = 1; d <= trailing; d++) {
+        const cell = document.createElement('div');
+        cell.className = 'cal-cell other-month';
+        cell.textContent = d;
         grid.appendChild(cell);
     }
 }
@@ -378,23 +422,20 @@ function showSlotDetail(dayName, dayNum, dayGroups) {
         group.subSlots.forEach(sub => {
             slotIndex++;
             const timeStr = `${sub.timeStart} – ${sub.timeEnd}`;
-            const isTaken = sub.isBooked || sub.status === 'Booked' || sub.isReservedByOther;
-            // Neither a room nor an online link means there is no way to hold this
-            // consultation, so the slot cannot be booked even though it is free.
-            const noMode = sub.roomAvailable === false && sub.onlineAvailable === false;
-            const blocked = isTaken || noMode;
+            // The server decided this: one reason per slot, so the list can
+            // never disagree with itself the way it did when some slots were
+            // filtered away and others greyed out.
+            const reason = sub.unavailableReason || null;
+            const blocked = Boolean(reason);
 
             const btn = document.createElement('button');
             btn.className = 'slot-select-btn' + (blocked ? ' full' : '');
             btn.disabled = blocked;
-            const tagText = isTaken ? 'Not Available' : (noMode ? 'No room or link' : 'Available');
             btn.innerHTML = `
                 <span class="slot-num-badge">${slotIndex}</span>
                 <span style="flex:1;">${timeStr}</span>
-                <span class="slot-avail-tag${blocked ? ' full' : ''}">${tagText}</span>`;
-            if (noMode && !isTaken) {
-                btn.title = 'All consultation rooms are full for this time and the instructor has no online meeting link.';
-            }
+                <span class="slot-avail-tag${blocked ? ' full' : ''}">${reason || 'Available'}</span>`;
+            if (reason) btn.title = SLOT_REASON_HELP[reason] || reason;
 
             if (!blocked) {
                 btn.addEventListener('click', function() {
@@ -526,6 +567,7 @@ function hideTooltip() {
             noRoomAvailable: 'There is no room available for your consultation',
             dateUnavailable: 'The instructor has marked this date as unavailable. Please choose another slot.',
             instructorUnavailable: 'This instructor is currently unavailable for consultations. Please check back later.',
+            instructorBusy: 'The instructor has something else scheduled at that time. Please choose another slot.',
             noMeetingLink: 'This instructor has not set up an online meeting link yet. Please choose face-to-face.',
             noModeAvailable: 'That slot cannot be booked: every consultation room is full for that time and the instructor has no online meeting link.',
             tooSoon: 'Slots starting within ' + LEAD_TIME_HOURS + ' hours can no longer be booked. Please choose a later time.',

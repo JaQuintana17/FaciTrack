@@ -3,7 +3,8 @@ const crypto = require('crypto');
 const { to12Hour, to24Hour, toMins, fromMins, formatFullDate } = require('../utils/timeFormat');
 const SlotReservation = require('./SlotReservationModel');
 const NotificationModel = require('./NotificationModel');
-const { BOOKING_LEAD_TIME_HOURS } = require('../services/scheduling');
+const { bookingLeadTimeHours, SLOT_HOLDING_SQL, LIVE_APPOINTMENT_SQL } = require('../services/scheduling');
+const { notBlockedByCalendarSql, blockedByCalendarSql } = require('../services/availability');
 
 function generateSubSlots(timeStart, timeEnd, maxCapacity) {
     const start = toMins(timeStart);
@@ -62,6 +63,12 @@ function groupConsultationRows(rows) {
             appointmentStatus: row.appointment_status,
             // Undefined unless the query asked for it (student booking views)
             roomAvailable: row.room_available === undefined ? undefined : !!Number(row.room_available),
+            // Only getSlotsForStudentView() selects these; every other caller
+            // filters these cases out in SQL instead, so they stay undefined.
+            tooSoon: row.too_soon === undefined ? undefined : !!Number(row.too_soon),
+            dateBlocked: row.date_blocked === undefined ? undefined : !!Number(row.date_blocked),
+            statusBlocked: row.status_blocked === undefined ? undefined : !!Number(row.status_blocked),
+            calendarBlocked: row.calendar_blocked === undefined ? undefined : !!Number(row.calendar_blocked),
         });
     });
     return Object.values(grouped);
@@ -100,7 +107,7 @@ const ConsultationModel = {
          FROM consultation_hours ch
          JOIN users u ON ch.instructor_id = u.id
          LEFT JOIN departments d ON u.department_id = d.id
-         LEFT JOIN appointments a ON ch.id = a.consultation_hour_id AND a.status IN ('pending','confirmed')
+         LEFT JOIN appointments a ON ch.id = a.consultation_hour_id AND a.status IN (${SLOT_HOLDING_SQL})
          LEFT JOIN instructor_unavailability iu ON iu.instructor_id = u.id AND iu.unavail_date = ch.consultation_date
          WHERE ch.id = ?`,
             [slotId]
@@ -165,7 +172,7 @@ const ConsultationModel = {
                     a.id AS appointment_id,
                     a.status AS appointment_status
                 FROM consultation_hours cs
-                LEFT JOIN appointments a ON cs.id = a.consultation_hour_id AND a.status IN ('pending','confirmed')
+                LEFT JOIN appointments a ON cs.id = a.consultation_hour_id AND a.status IN (${SLOT_HOLDING_SQL})
                 JOIN users u ON cs.instructor_id = u.id
                 WHERE u.public_id = ?
                 AND cs.status != 'closed'
@@ -206,7 +213,7 @@ const ConsultationModel = {
                   ) < r.capacity
             ) AS room_available
          FROM consultation_hours cs
-         LEFT JOIN appointments a ON cs.id = a.consultation_hour_id AND a.status IN ('pending','confirmed')
+         LEFT JOIN appointments a ON cs.id = a.consultation_hour_id AND a.status IN (${SLOT_HOLDING_SQL})
          JOIN users u ON cs.instructor_id = u.id
          WHERE u.public_id = ?
            AND cs.status != 'closed'
@@ -221,10 +228,86 @@ const ConsultationModel = {
                SELECT 1 FROM instructor_unavailability iu
                WHERE iu.instructor_id = u.id AND iu.unavail_date = cs.consultation_date
            )
+           -- A blocking event on a synced calendar hides the slot too
+           AND ${notBlockedByCalendarSql('u.id', 'cs.consultation_date', 'cs.start_time', 'cs.end_time')}
          ORDER BY cs.consultation_date, cs.start_time`,
-            [publicId, BOOKING_LEAD_TIME_HOURS]
+            [publicId, await bookingLeadTimeHours()]
         );
         return groupConsultationRows(rows);
+    },
+
+    /**
+     * Every slot an instructor has published, each carrying the reason it
+     * cannot be booked rather than being dropped from the list.
+     *
+     * getBookableSlotsByInstructor() filters unbookable slots out in SQL, which
+     * is right for "find me a free slot" but wrong for a profile page: the
+     * student saw a schedule with unexplained holes next to greyed-out entries,
+     * because half the reasons removed a slot and half greyed it. Here every
+     * reason is a flag, so the page can show one consistent list.
+     */
+    async getSlotsForStudentView(publicId) {
+        const [rows] = await pool.execute(
+            `SELECT
+            cs.id, cs.day_of_the_week, cs.consultation_date,
+            cs.start_time, cs.end_time, cs.status,
+            a.id AS appointment_id,
+            EXISTS (
+                SELECT 1 FROM rooms r
+                WHERE r.department_id = u.department_id
+                  AND r.room_type = 'Consultation Room'
+                  AND r.status = 'Active'
+                  AND (
+                      SELECT COUNT(*)
+                      FROM appointments a2
+                      JOIN consultation_hours ch2 ON a2.consultation_hour_id = ch2.id
+                      WHERE a2.room_id = r.id
+                        AND a2.status IN (${LIVE_APPOINTMENT_SQL})
+                        AND ch2.consultation_date = cs.consultation_date
+                        AND ch2.start_time < cs.end_time
+                        AND ch2.end_time   > cs.start_time
+                  ) < r.capacity
+            ) AS room_available,
+            (TIMESTAMP(cs.consultation_date, cs.start_time)
+                 < DATE_ADD(NOW(), INTERVAL ? HOUR))            AS too_soon,
+            EXISTS (
+                SELECT 1 FROM instructor_unavailability iu
+                WHERE iu.instructor_id = u.id AND iu.unavail_date = cs.consultation_date
+            )                                                    AS date_blocked,
+            (u.availability_status IS NOT NULL
+                 AND u.availability_status <> 'available'
+                 AND cs.consultation_date = CURDATE())           AS status_blocked,
+            ${blockedByCalendarSql('u.id', 'cs.consultation_date', 'cs.start_time', 'cs.end_time')}
+                                                                 AS calendar_blocked
+         FROM consultation_hours cs
+         LEFT JOIN appointments a ON cs.id = a.consultation_hour_id AND a.status IN (${SLOT_HOLDING_SQL})
+         JOIN users u ON cs.instructor_id = u.id
+         WHERE u.public_id = ?
+           AND cs.status <> 'closed'
+         ORDER BY cs.consultation_date, cs.start_time`,
+            [await bookingLeadTimeHours(), publicId]
+        );
+        return groupConsultationRows(rows);
+    },
+
+    /**
+     * Is this slot covered by a blocking calendar event?
+     * The list query filters these out, but a student may already be holding
+     * the page when a sync lands, so the reservation path re-checks.
+     */
+    async isBlockedByCalendar(slotId) {
+        // Uses the shared rule rather than its own copy. It previously carried
+        // a hand-written duplicate that only knew about imported events, so an
+        // instructor's own blocking event was invisible here even after the
+        // shared rule learned about them.
+        const [[row]] = await pool.execute(
+            `SELECT ${blockedByCalendarSql(
+                'cs.instructor_id', 'cs.consultation_date', 'cs.start_time', 'cs.end_time'
+            )} AS blocked
+             FROM consultation_hours cs WHERE cs.id = ?`,
+            [slotId]
+        );
+        return Boolean(row && row.blocked);
     },
 
     /** Just the date of one slot — used to bound reschedules server-side. */
@@ -394,7 +477,7 @@ const ConsultationModel = {
              JOIN users s ON a.student_id = s.id
              WHERE u.public_id = ?
                AND ch.consultation_date BETWEEN ? AND ?
-               AND a.status IN ('pending','confirmed')
+               AND a.status IN (${LIVE_APPOINTMENT_SQL})
              ORDER BY ch.consultation_date, ch.start_time`,
             [publicId, startDate, endDate]
         );
@@ -435,7 +518,7 @@ const ConsultationModel = {
          JOIN users u ON ch.instructor_id = u.id
          WHERE u.public_id = ?
            AND ch.consultation_date = ?
-           AND a.status != 'cancelled'`,
+           AND a.status IN (${LIVE_APPOINTMENT_SQL})`,
             [publicId, date]
         );
         return rows[0].count;
@@ -461,7 +544,7 @@ const ConsultationModel = {
          JOIN consultation_hours ch ON a.consultation_hour_id = ch.id
          WHERE ch.instructor_id = ?
            AND ch.consultation_date BETWEEN ? AND ?
-           AND a.status IN ('pending','confirmed')`,
+           AND a.status IN (${LIVE_APPOINTMENT_SQL})`,
             [user.id, startDate, endDate]
         );
 
@@ -473,7 +556,7 @@ const ConsultationModel = {
                  a.decline_reason = ?
              WHERE ch.instructor_id = ?
                AND ch.consultation_date BETWEEN ? AND ?
-               AND a.status IN ('pending','confirmed')`,
+               AND a.status IN (${LIVE_APPOINTMENT_SQL})`,
                 [reason, user.id, startDate, endDate]
             );
 

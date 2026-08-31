@@ -748,6 +748,174 @@ body{font-family:Arial,sans-serif;font-size:7.5pt;color:#000;background:#fff;-we
     setTimeout(() => el.remove(), 3000);
   }
 
+  /* ── Import from a workload form (.docx) ── */
+
+  let importData = null;
+
+  /** The rooms the page already renders into the block editor's picker. */
+  function roomOptions() {
+    return Array.from(document.querySelectorAll('#cmRoom option'))
+      .filter(o => o.value)
+      .map(o => ({ id: o.value, label: o.textContent.trim(), type: o.dataset.roomtype || '' }));
+  }
+
+  // A physical room decides the class type — the server rejects a Laboratory
+  // room saved as anything else. With no room, the caller's guess stands.
+  function typeForRoomType(roomType, fallback) {
+    if (roomType === 'Laboratory') return 'Laboratory';
+    return roomType ? 'Lecture' : (fallback || 'Lecture');
+  }
+
+  async function onImportFile(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';                       // so the same file can be picked twice
+    if (!file) return;
+
+    importData = null;
+    document.getElementById('impResult').hidden = true;
+    document.getElementById('impError').hidden = true;
+    document.getElementById('impLoading').hidden = false;
+    document.getElementById('impConfirm').disabled = true;
+    document.getElementById('impMeta').textContent = file.name;
+    showMo('importModal');
+
+    try {
+      const body = new FormData();
+      body.append('workload', file);
+      const res = await fetch('/instructor/workload/import', { method: 'POST', body });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || 'Could not read that file.');
+      renderImportPreview(json);
+    } catch (err) {
+      document.getElementById('impLoading').hidden = true;
+      const box = document.getElementById('impError');
+      box.textContent = err.message || 'Could not read that file.';
+      box.hidden = false;
+    }
+  }
+
+  function renderImportPreview(data) {
+    importData = data;
+    const rooms = roomOptions();
+
+    document.getElementById('impLoading').hidden = true;
+    document.getElementById('impResult').hidden = false;
+    document.getElementById('impConfirm').disabled = false;
+    document.getElementById('impConfirm').textContent = `Import ${data.blocks.length} class${data.blocks.length === 1 ? '' : 'es'}`;
+    document.getElementById('impMeta').textContent = [data.fileName, data.semester].filter(Boolean).join(' · ');
+
+    const hours = data.blocks.reduce((n, b) => n + (b.endSlot - b.startSlot), 0) / 2;
+    document.getElementById('impSummary').textContent =
+      `${data.blocks.length} classes · ${hours} teaching hours per week`;
+
+    // Rooms the form names but the system does not recognise outright
+    const needsMapping = data.rooms.filter(r => r.confidence !== 'exact');
+    const roomsSection = document.getElementById('impRoomsSection');
+    roomsSection.hidden = !needsMapping.length;
+    document.getElementById('impRooms').innerHTML = needsMapping.map(r => `
+      <div class="imp-maprow">
+        <code title="${esc(r.label)}">${esc(r.roomName || r.label)}
+          ${r.building ? `<em>${esc(r.building)}</em>` : ''}
+        </code>
+        <select data-room-label="${esc(r.label)}">
+          <option value="">Leave without a room</option>
+          ${rooms.map(o => `<option value="${o.id}"${String(o.id) === String(r.roomId) ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}
+        </select>
+        ${r.confidence === 'unknown-building'
+          ? `<small class="imp-maphint">${esc(r.building)} is not a building in the system, so nothing was suggested.</small>`
+          : ''}
+      </div>`).join('');
+
+    // Classes found
+    document.getElementById('impBlockCount').textContent = `(${data.blocks.length})`;
+    document.getElementById('impBlocks').innerHTML = data.blocks.map(b => `
+      <div class="imp-row">
+        <span class="imp-when">${esc(b.day.slice(0, 3))} · ${esc(rangeLabel(b.startSlot, b.endSlot))}</span>
+        <span class="imp-what">${esc(b.subjectCode)}
+          <small>${esc([b.section, b.roomLabel].filter(Boolean).join(' · ') || 'No section or room')}</small>
+        </span>
+        ${b.type === 'Laboratory' ? '<span class="imp-tag lab">Lab</span>' : ''}
+        ${b.overload ? '<span class="imp-tag overload">Overload</span>' : ''}
+      </div>`).join('');
+
+    // Cells the form has that are not teaching load
+    document.getElementById('impSkippedSection').hidden = !data.skipped.length;
+    document.getElementById('impSkippedCount').textContent = `(${data.skipped.length})`;
+    document.getElementById('impSkipped').innerHTML = data.skipped.map(s => `
+      <div class="imp-row">
+        <span class="imp-when">${esc(s.day.slice(0, 3))} · ${esc(rangeLabel(s.startSlot, s.endSlot))}</span>
+        <span class="imp-what">${esc(s.label)}<small>${esc(s.reason)}</small></span>
+      </div>`).join('');
+
+    document.getElementById('impWarnSection').hidden = !data.warnings.length;
+    document.getElementById('impWarnings').innerHTML =
+      data.warnings.map(w => `<li>${esc(w)}</li>`).join('');
+
+    const existing = Object.values(blocks).filter(b => b.type !== 'Make Up Class').length;
+    document.getElementById('impReplaceHint').textContent = existing
+      ? `Removes the ${existing} block${existing === 1 ? '' : 's'} already on my schedule`
+      : 'My schedule is empty, so nothing is removed';
+  }
+
+  function applyImport() {
+    if (!importData) return;
+
+    const mode = document.querySelector('input[name="impMode"]:checked').value;
+    const rooms = roomOptions();
+
+    // Rooms the instructor mapped by hand override what the server matched.
+    const chosen = {};
+    document.querySelectorAll('#impRooms select').forEach(sel => {
+      chosen[sel.dataset.roomLabel] = sel.value || null;
+    });
+
+    // Make-up classes are the dean's, not the instructor's, so a replace never
+    // touches them — matching what the server does when it prunes.
+    if (mode === 'replace') {
+      Object.keys(blocks).forEach(k => {
+        if (blocks[k].type !== 'Make Up Class') delete blocks[k];
+      });
+    }
+
+    let added = 0;
+    let displaced = 0;
+    importData.blocks.forEach(b => {
+      // Anything already sitting in this block's hours has to go, or the two
+      // would render on top of each other.
+      Object.entries(blocks).forEach(([k, e]) => {
+        if (e.day !== b.day || e.type === 'Make Up Class') return;
+        if (b.startSlot < e.endSlot && e.startSlot < b.endSlot) { delete blocks[k]; displaced++; }
+      });
+
+      const roomId = b.roomLabel in chosen ? chosen[b.roomLabel] : (b.roomId || null);
+      const room = rooms.find(o => String(o.id) === String(roomId));
+      const type = typeForRoomType(room && room.type, b.type);
+
+      blocks[`${b.day}_${b.startSlot}`] = {
+        day: b.day,
+        startSlot: b.startSlot,
+        endSlot: b.endSlot,
+        subjectCode: b.subjectCode,
+        // The form carries codes only — the instructor fills in real names later.
+        subjectName: b.subjectName || b.subjectCode,
+        roomId: roomId || null,
+        room: room ? room.label : b.roomLabel,
+        section: b.section || '',
+        type,
+        color: typeColor(type),
+      };
+      added++;
+    });
+
+    hideMo('importModal');
+    renderBlocks();
+    autoSave();
+
+    toast(displaced && mode === 'merge'
+      ? `Imported ${added} classes · ${displaced} overlapping block${displaced === 1 ? '' : 's'} replaced`
+      : `Imported ${added} classes`, 'success');
+  }
+
   /* ── Wire ── */
   function wire() {
     document.getElementById('cmSave').addEventListener('click', saveCell);
@@ -786,19 +954,18 @@ body{font-family:Arial,sans-serif;font-size:7.5pt;color:#000;background:#fff;-we
       }
     });
     document.getElementById('cmRoom').addEventListener('change', function () {
-      const selected = this.options[this.selectedIndex];
-      const roomType = selected?.dataset.roomtype || '';
+      const roomType = this.options[this.selectedIndex]?.dataset.roomtype || '';
+      document.getElementById('cmType').value = typeForRoomType(roomType, 'Lecture');
+    });
 
-      const typeMap = {
-        'Laboratory': 'Laboratory',
-        'Lecture': 'Lecture',
-        'Faculty Office': 'Lecture',
-        'Consultation Room': 'Lecture',
-        'Faculty Lounge': 'Lecture',
-      };
-
-      const mappedType = typeMap[roomType] || 'Lecture';
-      document.getElementById('cmType').value = mappedType;
+    // Import from a workload form
+    document.getElementById('btnImportWorkload').addEventListener('click', () => {
+      document.getElementById('importFileInput').click();
+    });
+    document.getElementById('importFileInput').addEventListener('change', onImportFile);
+    document.getElementById('impConfirm').addEventListener('click', applyImport);
+    ['impCancel', 'impClose'].forEach(id => {
+      document.getElementById(id).addEventListener('click', () => hideMo('importModal'));
     });
     document.getElementById('exportClose').addEventListener('click', () => hideMo('exportModal'));
     document.getElementById('exportCancel').addEventListener('click', () => hideMo('exportModal'));
@@ -825,7 +992,7 @@ body{font-family:Arial,sans-serif;font-size:7.5pt;color:#000;background:#fff;-we
     document.getElementById('removeBlockCancel').addEventListener('click', () => hideMo('removeBlockModal'));
     document.getElementById('removeBlockConfirm').addEventListener('click', confirmRemoveBlock);
 
-    ['cellModal', 'clearModal', 'exportModal', 'removeBlockModal'].forEach(id => {
+    ['cellModal', 'clearModal', 'exportModal', 'removeBlockModal', 'importModal'].forEach(id => {
       document.getElementById(id)?.addEventListener('click', function (e) {
         if (e.target === this) hideMo(id);
       });

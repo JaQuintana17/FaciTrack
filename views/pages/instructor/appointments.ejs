@@ -21,11 +21,46 @@
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
                         Approve All (<span id="approveAllCount"><%= pendingApts.length %></span>)
                     </button>
+                    <%# Shown only when a confirmed consultation has actually ended;
+                        the count is worked out client-side from endsAt. %>
+                    <button class="btn-header-action apt-btn-complete-all" id="completeAllBtn" hidden>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                        Complete All (<span id="completeAllCount">0</span>)
+                    </button>
+                    <button class="btn-header-action" id="btnAddEvent" title="Add your own event or task to this calendar">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="12" y1="14" x2="12" y2="18"/><line x1="10" y1="16" x2="14" y2="16"/></svg>
+                        Add Event
+                    </button>
+                    <button class="btn-header-action" id="calSyncBtn" title="Pull the latest from your connected calendars">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+                        Sync calendars
+                    </button>
                     <button class="btn-header-action" id="genLogsBtn">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                         Generate Logs
                     </button>
                 </div>
+            </div>
+
+            <!-- Imported events waiting on a blocking decision.
+                 A banner, not a modal: syncs run on a schedule, so there may be
+                 nobody here when one lands. Until answered, nothing is blocked. -->
+            <div class="cal-pending" id="calPendingBanner" hidden>
+                <div class="cal-pending-head">
+                    <div>
+                        <p class="cal-pending-title">
+                            <span id="calPendingCount">0</span> imported <span id="calPendingWord">events need</span> a decision
+                        </p>
+                        <p class="cal-pending-sub">
+                            Should students be able to book over these? Until you choose, they stay bookable.
+                        </p>
+                    </div>
+                    <div class="cal-pending-bulk">
+                        <button type="button" id="calPendingBlockAll">Block all</button>
+                        <button type="button" id="calPendingAllowAll">Allow all</button>
+                    </div>
+                </div>
+                <ul class="cal-pending-list" id="calPendingList"></ul>
             </div>
 
             <!-- Stats Bar -->
@@ -244,6 +279,107 @@
     </div>
 </div>
 
+<!-- Add / edit an event or task of the instructor's own.
+     Manual backdrop close: a half-typed entry should not vanish on a stray click. -->
+<div class="modal-overlay" id="eventModal" data-backdrop-close="manual">
+    <div class="modal-content" style="max-width:480px;">
+        <div class="modal-header">
+            <h3 class="modal-title" id="eventModalTitle">Add to my calendar</h3>
+            <button class="modal-close" id="eventClose">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="ev-grid">
+                <div class="ev-field">
+                    <label class="modal-label" for="eventKind">Type</label>
+                    <select class="modal-input" id="eventKind">
+                        <option value="event">Event</option>
+                        <option value="task">Task</option>
+                    </select>
+                </div>
+                <div class="ev-field">
+                    <label class="modal-label" for="eventDate">Date</label>
+                    <input type="date" class="modal-input" id="eventDate">
+                </div>
+            </div>
+
+            <div class="ev-field">
+                <label class="modal-label" for="eventTitle">Title</label>
+                <input type="text" class="modal-input" id="eventTitle" maxlength="200"
+                       placeholder="Faculty meeting, thesis defence, grading…">
+            </div>
+
+            <label class="ev-check">
+                <input type="checkbox" id="eventAllDay">
+                <span>All day</span>
+            </label>
+
+            <div class="ev-grid" id="eventTimeRow">
+                <div class="ev-field">
+                    <label class="modal-label" for="eventStart">Start</label>
+                    <input type="time" class="modal-input" id="eventStart" step="1800">
+                </div>
+                <div class="ev-field">
+                    <label class="modal-label" for="eventEnd">End</label>
+                    <input type="time" class="modal-input" id="eventEnd" step="1800">
+                </div>
+            </div>
+
+            <div class="ev-field">
+                <label class="modal-label" for="eventNotes">Notes <span class="ev-optional">(optional)</span></label>
+                <textarea class="modal-input" id="eventNotes" rows="2" maxlength="500"></textarea>
+            </div>
+
+            <label class="ev-check">
+                <input type="checkbox" id="eventBlocks" checked>
+                <span>Block consultations during this time</span>
+            </label>
+            <p class="ev-hint" id="eventBlocksHint"></p>
+
+            <label class="ev-check" id="eventDoneRow" hidden>
+                <input type="checkbox" id="eventDone">
+                <span>Mark this task done</span>
+            </label>
+
+            <div class="ev-conflicts" id="eventConflicts" hidden></div>
+            <p class="ev-error" id="eventError" hidden></p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-modal btn-danger-soft" id="eventDelete" hidden>Delete</button>
+            <button class="btn-modal btn-cancel" id="eventCancel">Cancel</button>
+            <button class="btn-modal btn-confirm-green" id="eventSave">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- Complete All confirmation. Same manual-backdrop reasoning as Approve All. -->
+<div class="modal-overlay" id="completeAllModal" data-backdrop-close="manual">
+    <div class="modal-content" style="max-width:480px;">
+        <div class="modal-header">
+            <h3 class="modal-title">Complete finished consultations</h3>
+            <button class="modal-close" id="completeAllClose">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div id="completeAllPrompt">
+                <p class="modal-description">
+                    This closes out <strong id="completeAllTotal">0</strong> consultation<span id="completeAllPlural">s</span>
+                    whose time has already passed. Anything still to come is left alone.
+                </p>
+                <ul class="apt-approve-list" id="completeAllList"></ul>
+                <p class="apt-approve-warn">This cannot be undone in bulk.</p>
+            </div>
+            <div id="completeAllResult" hidden></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-modal btn-cancel" id="completeAllCancel">Cancel</button>
+            <button class="btn-modal btn-confirm-green" id="completeAllConfirm">Complete all</button>
+        </div>
+    </div>
+</div>
+
 <!-- Generate Logs Modal -->
 <div class="modal-overlay" id="genLogsModal">
     <div class="modal-content" style="max-width:600px;">
@@ -401,6 +537,15 @@ window.onUnavailabilityChanged = function () {
 }
 .apt-btn-approve-all[hidden] { display: none; }
 
+/* ── Complete all ── Green, so it reads as closing out rather than accepting */
+.apt-btn-complete-all {
+    background: #ecfdf5; color: #15803d; border-color: #bbf7d0;
+}
+.apt-btn-complete-all:hover {
+    background: #15803d; color: #fff; border-color: #15803d;
+}
+.apt-btn-complete-all[hidden] { display: none; }
+
 .apt-approve-list {
     list-style: none; margin: .9rem 0; padding: 0;
     max-height: 220px; overflow-y: auto;
@@ -430,8 +575,166 @@ window.onUnavailabilityChanged = function () {
 .apt-approve-note.ok  { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
 .apt-approve-note.bad { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; }
 
+/* ── Imported calendar events ── */
+.apt-cal-ext {
+    display: block; margin-top: 2px; padding: 1px 5px;
+    border-radius: 4px; font-size: .62rem; font-weight: 600;
+    color: var(--gray-500); background: var(--gray-100);
+    border-left: 2px solid var(--gray-300);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.apt-cal-ext.blocks {
+    color: #7c2d12; background: #fff7ed; border-left-color: #fb923c;
+}
+.apt-cal-ext.pending {
+    color: var(--gray-600); background: #fffbeb;
+    border-left-color: #fbbf24; border-left-style: dashed;
+}
+
+/* ── The instructor's own events and tasks ──
+   Same row as imported events, since to a student they mean the same thing,
+   but tinted differently and clickable — these are the editable ones. */
+.apt-cal-own {
+    display: block; margin-top: 2px; padding: 1px 5px;
+    border-radius: 4px; font-size: .62rem; font-weight: 600;
+    color: var(--primary-blue); background: rgba(10, 61, 98, .07);
+    border-left: 2px solid var(--primary-blue);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    cursor: pointer;
+}
+.apt-cal-own:hover { background: rgba(10, 61, 98, .14); }
+.apt-cal-own.blocks { border-left-color: #7c3aed; color: #6d28d9; background: rgba(124, 58, 237, .08); }
+.apt-cal-own.task { border-left-style: dotted; }
+.apt-cal-own.done { text-decoration: line-through; opacity: .6; }
+
+/* ── Own entries in the mobile day panel ── */
+.day-panel-subhead {
+    font-size: .65rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--gray-400);
+    padding: .75rem .25rem .35rem; border-top: 1px solid var(--gray-100); margin-top: .5rem;
+}
+.day-panel-own { display: flex; align-items: center; gap: .6rem; padding: .55rem .25rem; }
+.day-panel-own.done .day-panel-name { text-decoration: line-through; opacity: .6; }
+.day-panel-own-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    background: var(--primary-blue);
+}
+.day-panel-own-dot.blocks { background: #7c3aed; }
+.day-panel-btn {
+    flex-shrink: 0; padding: .3rem .7rem; border: 1.5px solid var(--gray-200);
+    border-radius: var(--radius-md); background: #fff; color: var(--gray-600);
+    font-size: .72rem; font-weight: 600; cursor: pointer; font-family: var(--font-body);
+}
+.day-panel-btn:hover { border-color: var(--primary-blue); color: var(--primary-blue); }
+/* Marker on a narrow calendar cell */
+.apt-cal-own-dot {
+    display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    background: #7c3aed; margin-top: 3px;
+}
+
+/* ── Event modal ──
+   The conflict warning can add several lines, and .modal-content has no height
+   limit of its own — so the footer used to slide off the bottom of the screen
+   with the Save button on it. Header and footer stay put; the body scrolls.
+   dvh rather than vh so a phone's collapsing address bar is accounted for. */
+#eventModal .modal-content {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 2rem);
+    max-height: calc(100dvh - 2rem);
+}
+#eventModal .modal-header,
+#eventModal .modal-footer { flex-shrink: 0; }
+#eventModal .modal-body {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    min-height: 0;              /* a flex child will not shrink below content without this */
+}
+
+.ev-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+.ev-field { margin-bottom: .875rem; }
+.ev-field .modal-input { width: 100%; }
+.ev-optional { font-weight: 400; color: var(--gray-400); }
+.ev-check {
+    display: flex; align-items: center; gap: .5rem;
+    font-size: .8125rem; font-weight: 600; color: var(--gray-700);
+    cursor: pointer; margin-bottom: .5rem;
+}
+.ev-check input { width: 16px; height: 16px; cursor: pointer; flex-shrink: 0; }
+.ev-hint { font-size: .72rem; color: var(--gray-500); margin: 0 0 .875rem 1.5rem; line-height: 1.5; }
+.ev-error {
+    margin: .75rem 0 0; padding: .6rem .75rem; border-radius: var(--radius-md);
+    background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; font-size: .8rem;
+}
+.ev-conflicts {
+    margin-top: .875rem; padding: .7rem .85rem; border-radius: var(--radius-md);
+    background: #fffbeb; border: 1px solid #fde68a; color: #92400e;
+    font-size: .78rem; line-height: 1.55;
+}
+/* A busy day can list many bookings; cap the list so the warning never
+   crowds out the form controls above it. */
+.ev-conflicts ul {
+    margin: .4rem 0; padding-left: 1.1rem;
+    max-height: 7.5rem; overflow-y: auto;
+}
+.ev-conflicts span { display: block; margin-top: .35rem; font-size: .72rem; }
+.btn-danger-soft {
+    background: #fff; color: #dc2626; border: 1.5px solid #fecaca; margin-right: auto;
+}
+.btn-danger-soft:hover { background: #fef2f2; border-color: #dc2626; }
+@media (max-width: 480px) {
+    .ev-grid { grid-template-columns: 1fr; gap: 0; }
+}
+
+/* ── Blocking prompt ── */
+.cal-pending {
+    margin-bottom: 1.25rem; padding: .9rem 1rem;
+    background: #fff; border: 1px solid var(--gray-200);
+    border-left: 4px solid var(--primary-blue);
+    border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);
+}
+.cal-pending-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 1rem; flex-wrap: wrap;
+}
+.cal-pending-title { margin: 0; font-size: .875rem; font-weight: 700; color: var(--gray-900); }
+.cal-pending-sub { margin: .2rem 0 0; font-size: .76rem; color: var(--gray-500); line-height: 1.5; }
+.cal-pending-bulk { display: flex; gap: .4rem; flex-shrink: 0; }
+.cal-pending-bulk button,
+.cal-decide {
+    padding: .35rem .7rem; border-radius: var(--radius-md);
+    border: 1.5px solid var(--gray-300); background: #fff;
+    font-family: var(--font-body); font-size: .74rem; font-weight: 700;
+    color: var(--gray-600); cursor: pointer; transition: all .15s; white-space: nowrap;
+}
+.cal-pending-bulk button:hover, .cal-decide:hover { border-color: var(--primary-blue); color: var(--primary-blue); }
+.cal-decide.block:hover { background: #fff7ed; border-color: #fb923c; color: #7c2d12; }
+.cal-decide:disabled, .cal-pending-bulk button:disabled { opacity: .5; cursor: not-allowed; }
+
+.cal-pending-list {
+    list-style: none; margin: .85rem 0 0; padding: 0;
+    max-height: 240px; overflow-y: auto;
+    display: flex; flex-direction: column; gap: .4rem;
+}
+.cal-pending-list li {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: .75rem; flex-wrap: wrap;
+    padding: .5rem .7rem; border: 1px solid var(--gray-200);
+    border-radius: var(--radius-md); background: var(--gray-50);
+}
+.cal-pending-what { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+.cal-pending-what strong { font-size: .8rem; color: var(--gray-900); }
+.cal-pending-what span { font-size: .72rem; color: var(--gray-500); }
+.cal-pending-actions { display: flex; gap: .4rem; flex-shrink: 0; }
+
 @media (max-width: 560px) {
-    .apt-btn-approve-all { flex: 1; justify-content: center; }
+    .apt-btn-approve-all,
+    .apt-btn-complete-all { flex: 1; justify-content: center; }
     .apt-approve-list li { flex-direction: column; gap: .15rem; }
+    .cal-pending-head { flex-direction: column; }
+    .cal-pending-bulk { width: 100%; }
+    .cal-pending-bulk button { flex: 1; }
+    .cal-pending-list li { flex-direction: column; align-items: stretch; }
+    .cal-pending-actions button { flex: 1; }
 }
 </style>

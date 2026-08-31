@@ -3,6 +3,7 @@ const router = express.Router();
 const instructorRouter = require('./instructor');
 const emailService = require('../services/email');
 const StudentController = require('../controllers/StudentController');
+const CalendarFeedController = require('../controllers/CalendarFeedController');
 const { buildStudentUser } = require('../utils/sessionUser');
 
 router.use((req, res, next) => {
@@ -354,16 +355,14 @@ router.post('/faculty/consultation/:slotId/cancel', StudentController.updateStat
 
 router.get('/appointments', StudentController.renderAppointmentsPage);
 router.post('/appointments/:appointmentId/cancel', StudentController.cancelAppointment);
+// Kept below the cancel route so ':instructorId' cannot swallow a POST path
+router.get('/appointments/:instructorId', StudentController.renderInstructorHistoryPage);
 
-// NOTE: still renders the hardcoded facultyList — scheduled for DB migration.
-// `student` is required by student-sidebar.ejs; omitting it crashed the render.
-router.get('/availability', (req, res) => {
-    res.render('pages/student/availability', {
-        title: 'FaciTrack - Faculty Availability',
-        student: buildStudentUser(req.session),
-        facultyList
-    });
-});
+router.get('/availability', StudentController.renderAvailabilityPage);
+
+// Outbound calendar feed link (the feed itself is public + token-authenticated)
+router.get('/calendar/feed-link',  CalendarFeedController.getMine);
+router.post('/calendar/feed-link', CalendarFeedController.rotate);
 
 // ── Auto-reschedule endpoint (called by instructor/admin when marking unavailable) ──
 router.post('/reschedule/:refNumber', (req, res) => {

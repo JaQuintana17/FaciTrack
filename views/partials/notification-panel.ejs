@@ -1,0 +1,381 @@
+<%
+/**
+ * The notification bell's panel.
+ *
+ * The bell itself lives in partials/header.ejs for every role, but the panel it
+ * opens was written separately inside each role's sidebar. Those copies drifted
+ * — the dean's never gained live updates — so this is the one version, and each
+ * sidebar includes it.
+ *
+ * Locals:
+ *   role  — 'Admin' | 'Dean' | 'Instructor' | 'Student', decides where clicking
+ *           a notification takes you. Anything else just marks it read.
+ *   notifications — supplied globally by middleware/attachNotifications.
+ */
+const _role      = (typeof role !== 'undefined' && role) ? role : '';
+const _allNotifs = (typeof notifications !== 'undefined') ? notifications : [];
+const _unread    = _allNotifs.filter(n => !n.read);
+const _read      = _allNotifs.filter(n =>  n.read);
+const BATCH      = 10;
+
+// Notification types that any role can receive, for the filter tabs
+const _tabs = [
+    ['all', 'All'],
+    ['new-request', 'New Requests'],
+    ['cancellation', 'Cancellations'],
+    ['unavailability', 'Unavailability'],
+    ['reminder', 'Reminders'],
+    ['makeup', 'Make-Up Class'],
+    ['alert', 'Alerts'],
+];
+%>
+
+<div class="notif-panel" id="notifPanel" aria-label="Notifications panel">
+
+    <div class="notif-panel-header">
+        <div>
+            <h3 class="notif-panel-title">Notifications</h3>
+            <span class="notif-panel-subtitle" id="notifSubtitle">
+                <%= _unread.length > 0 ? _unread.length + ' unread' : 'All caught up' %>
+            </span>
+        </div>
+        <div style="display:flex;align-items:center;gap:.4rem">
+            <button class="notif-mark-all" id="notifMarkAll">Mark all read</button>
+            <button class="notif-clear-read" id="notifClearRead" title="Remove all read notifications">Clear read</button>
+            <button class="notif-panel-close" id="notifPanelClose" aria-label="Close">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <div class="notif-filter-bar">
+        <% _tabs.forEach(([value, label], i) => { %>
+        <button class="notif-filter-btn <%= i === 0 ? 'active' : '' %>" data-filter="<%= value %>"><%= label %></button>
+        <% }); %>
+    </div>
+
+    <div class="notif-panel-body" id="notifPanelBody">
+
+        <% if (_allNotifs.length === 0) { %>
+            <div class="notif-panel-empty">
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                <p>No notifications yet</p>
+            </div>
+        <% } else { %>
+
+            <% if (_unread.length > 0) { %>
+            <div class="notif-group-label">
+                <span>Unread</span>
+                <span class="notif-group-count"><%= _unread.length %></span>
+            </div>
+            <% _unread.forEach(notif => { %>
+            <div class="notif-panel-item unread" data-id="<%= notif.id %>" data-type="<%= notif.type %>" data-apt-id="<%= notif.relatedAppointmentId || '' %>">
+                <%- include('notification-icon', { type: notif.type }) %>
+                <div class="notif-panel-content">
+                    <p class="notif-panel-msg"><%= notif.message %></p>
+                    <span class="notif-panel-time"><%= notif.time %></span>
+                </div>
+                <span class="notif-panel-dot"></span>
+            </div>
+            <% }); %>
+            <% } %>
+
+            <% if (_read.length > 0) { %>
+            <div class="notif-group-label">
+                <span>Earlier</span>
+                <span class="notif-group-count"><%= _read.length %></span>
+            </div>
+            <% _read.slice(0, BATCH).forEach(notif => { %>
+            <div class="notif-panel-item" data-id="<%= notif.id %>" data-type="<%= notif.type %>" data-apt-id="<%= notif.relatedAppointmentId || '' %>">
+                <%- include('notification-icon', { type: notif.type }) %>
+                <div class="notif-panel-content">
+                    <p class="notif-panel-msg"><%= notif.message %></p>
+                    <span class="notif-panel-time"><%= notif.time %></span>
+                </div>
+            </div>
+            <% }); %>
+            <% if (_read.length > BATCH) { %>
+            <button class="notif-load-more" id="notifLoadMore">
+                Load more · <%= _read.length - BATCH %> remaining
+            </button>
+            <% } %>
+            <% } %>
+
+        <% } %>
+    </div>
+</div>
+
+<script>
+(function () {
+    'use strict';
+
+    var bell     = document.getElementById('btnNotifBell');
+    var panel    = document.getElementById('notifPanel');
+    var closeBtn = document.getElementById('notifPanelClose');
+    var markAll  = document.getElementById('notifMarkAll');
+    var clearRead = document.getElementById('notifClearRead');
+    var badge    = document.getElementById('notifBellBadge');
+    var subtitle = document.getElementById('notifSubtitle');
+    var body     = document.getElementById('notifPanelBody');
+    var loadMore = document.getElementById('notifLoadMore');
+
+    if (!bell || !panel) return;
+
+    // Tracked rather than counted from the DOM: filtering hides rows, and a
+    // hidden row is still unread.
+    var unreadCount = <%- JSON.stringify(_unread.length) %>;
+
+    var ROLE = <%- JSON.stringify(_role) %>;
+
+    /** Where a notification takes you, per role. Null just marks it read. */
+    function notifTarget(item) {
+        var aptId = item.dataset.aptId;
+        var type  = item.dataset.type;
+
+        if (ROLE === 'Instructor') {
+            if (type === 'makeup') return '/instructor/makeup/requests';
+            return aptId ? '/instructor/appointments?openApt=' + encodeURIComponent(aptId) : null;
+        }
+        if (ROLE === 'Student') {
+            return aptId ? '/student/appointments?openApt=' + encodeURIComponent(aptId) : null;
+        }
+        if (ROLE === 'Dean') {
+            return type === 'makeup' ? '/dean/makeup/requests' : null;
+        }
+        // Admin has no per-notification destination yet
+        return null;
+    }
+
+    function updateBadge() {
+        if (!badge) return;
+        if (unreadCount <= 0) { badge.style.display = 'none'; return; }
+        badge.style.display = '';
+        badge.textContent = unreadCount > 9 ? '9+' : unreadCount;
+    }
+
+    function updateSubtitle() {
+        if (!subtitle) return;
+        subtitle.textContent = unreadCount > 0 ? unreadCount + ' unread' : 'All caught up';
+    }
+
+    function openPanel() { panel.classList.add('open'); }
+    function closePanel() { panel.classList.remove('open'); }
+
+    bell.addEventListener('click', function (e) {
+        e.stopPropagation();
+        panel.classList.contains('open') ? closePanel() : openPanel();
+    });
+    if (closeBtn) closeBtn.addEventListener('click', closePanel);
+
+    document.addEventListener('click', function (e) {
+        if (panel.classList.contains('open') && !panel.contains(e.target) && !bell.contains(e.target)) closePanel();
+    });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closePanel(); });
+
+    // ── Mark all read ──
+    if (markAll) {
+        markAll.addEventListener('click', function () {
+            fetch('/notifications/mark-all-read', { method: 'POST' })
+                .catch(function (err) { console.error('[Notifications] Failed to mark all read:', err); });
+
+            panel.querySelectorAll('.notif-panel-item.unread').forEach(function (item) {
+                item.classList.remove('unread');
+                var dot = item.querySelector('.notif-panel-dot');
+                if (dot) dot.remove();
+            });
+            // Any list on the page behind the panel follows suit
+            document.querySelectorAll('.notification-row.unread').forEach(function (row) {
+                row.classList.remove('unread');
+                var dot = row.querySelector('.notif-unread-dot');
+                if (dot) dot.remove();
+            });
+            if (body) {
+                body.querySelectorAll('.notif-group-label').forEach(function (label) {
+                    var first = label.querySelector('span:first-child');
+                    if (first && first.textContent.trim() === 'Unread') label.style.display = 'none';
+                });
+            }
+
+            // Reset before repainting — otherwise the badge keeps the stale count
+            unreadCount = 0;
+            updateBadge();
+            updateSubtitle();
+        });
+    }
+
+    // ── Clear read ──
+    if (clearRead) {
+        clearRead.addEventListener('click', function () {
+            if (!confirm('Remove all read notifications? This cannot be undone.')) return;
+
+            fetch('/notifications/read', { method: 'DELETE' })
+                .catch(function (err) { console.error('[Notifications] Failed to clear read:', err); });
+
+            panel.querySelectorAll('.notif-panel-item:not(.unread)').forEach(function (i) { i.remove(); });
+            if (body) {
+                body.querySelectorAll('.notif-group-label').forEach(function (label) {
+                    var first = label.querySelector('span:first-child');
+                    if (first && first.textContent.trim() === 'Earlier') label.remove();
+                });
+            }
+            if (loadMore) loadMore.remove();
+
+            if (body && !body.querySelector('.notif-panel-item')) {
+                body.innerHTML =
+                    '<div class="notif-panel-empty">' +
+                    '<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">' +
+                    '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>' +
+                    '<p>No notifications yet</p></div>';
+            }
+
+            // Only read rows went, so the unread total is unchanged — but resync
+            // against what is actually left.
+            unreadCount = panel.querySelectorAll('.notif-panel-item.unread').length;
+            updateBadge();
+            updateSubtitle();
+        });
+    }
+
+    // ── Open what a notification is about, marking it read on the way ──
+    if (body) {
+        body.addEventListener('click', async function (e) {
+            var item = e.target.closest('.notif-panel-item');
+            if (!item) return;
+
+            var target = notifTarget(item);
+            var wasUnread = item.classList.contains('unread');
+
+            try {
+                if (item.dataset.id) {
+                    await fetch('/notifications/' + item.dataset.id + '/mark-read', { method: 'POST' });
+                }
+            } catch (err) {
+                console.error('[Notifications] Failed to mark read:', err);
+            }
+
+            if (wasUnread) {
+                item.classList.remove('unread');
+                var dot = item.querySelector('.notif-panel-dot');
+                if (dot) dot.remove();
+                unreadCount = Math.max(0, unreadCount - 1);
+                updateBadge();
+                updateSubtitle();
+            }
+            if (target) window.location.href = target;
+        });
+    }
+
+    // ── Type filter tabs ──
+    panel.querySelectorAll('.notif-filter-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            panel.querySelectorAll('.notif-filter-btn').forEach(function (b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+
+            var filter = btn.dataset.filter;
+            panel.querySelectorAll('.notif-panel-item').forEach(function (item) {
+                item.style.display = (filter === 'all' || item.dataset.type === filter) ? '' : 'none';
+            });
+
+            // A group label with nothing under it is noise
+            panel.querySelectorAll('.notif-group-label').forEach(function (label) {
+                var visible = 0;
+                var node = label.nextElementSibling;
+                while (node && node.classList.contains('notif-panel-item')) {
+                    if (node.style.display !== 'none') visible++;
+                    node = node.nextElementSibling;
+                }
+                label.style.display = visible ? '' : 'none';
+            });
+        });
+    });
+
+    if (loadMore) {
+        loadMore.addEventListener('click', function () {
+            this.textContent = 'No more notifications';
+            this.disabled = true;
+            this.style.cursor = 'default';
+        });
+    }
+
+    updateBadge();
+
+    // ── Live updates ──
+    // A SharedWorker keeps one SSE stream across tabs; browsers without it fall
+    // back to a stream per tab.
+    function iconSvg(type) {
+        switch (type) {
+            case 'new-request':
+                return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>';
+            case 'cancellation':
+                return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>';
+            case 'unavailability':
+                return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="9" y1="16" x2="15" y2="16"/></svg>';
+            case 'reminder':
+                return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
+            case 'makeup':
+                return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="12" y1="14" x2="12" y2="18"/><line x1="10" y1="16" x2="14" y2="16"/></svg>';
+            default:
+                return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
+        }
+    }
+
+    function escapeHtml(str) {
+        var div = document.createElement('div');
+        div.textContent = str == null ? '' : str;
+        return div.innerHTML;
+    }
+
+    function prepend(notif) {
+        if (!body) return;
+
+        var empty = body.querySelector('.notif-panel-empty');
+        if (empty) empty.remove();
+
+        var label = body.querySelector('.notif-group-label');
+        var first = label && label.querySelector('span:first-child');
+        if (!label || !first || first.textContent.trim() !== 'Unread') {
+            label = document.createElement('div');
+            label.className = 'notif-group-label';
+            label.innerHTML = '<span>Unread</span><span class="notif-group-count">0</span>';
+            body.insertBefore(label, body.firstChild);
+        }
+        label.style.display = '';
+        var counter = label.querySelector('.notif-group-count');
+        counter.textContent = (parseInt(counter.textContent, 10) || 0) + 1;
+
+        var item = document.createElement('div');
+        item.className = 'notif-panel-item unread';
+        item.dataset.id = notif.id;
+        item.dataset.type = notif.type;
+        item.dataset.aptId = notif.relatedAppointmentId || '';
+        item.innerHTML =
+            '<div class="notif-panel-icon ' + escapeHtml(notif.type) + '">' + iconSvg(notif.type) + '</div>' +
+            '<div class="notif-panel-content">' +
+            '<p class="notif-panel-msg">' + escapeHtml(notif.message) + '</p>' +
+            '<span class="notif-panel-time">Just now</span></div>' +
+            '<span class="notif-panel-dot"></span>';
+        label.insertAdjacentElement('afterend', item);
+    }
+
+    function received(notif) {
+        prepend(notif);
+        unreadCount++;
+        updateBadge();
+        updateSubtitle();
+    }
+
+    if (window.SharedWorker) {
+        var worker = new SharedWorker('/js/notif-shared-worker.js');
+        worker.port.start();
+        worker.port.onmessage = function (e) {
+            if (e.data && e.data.type === 'notification:new') received(e.data.payload);
+            else if (e.data && e.data.type === 'connection:error') console.warn('[Notifications] SSE lost, retrying…');
+        };
+        window.addEventListener('beforeunload', function () { worker.port.postMessage('close'); });
+    } else {
+        var stream = new EventSource('/notifications/stream');
+        stream.addEventListener('notification:new', function (e) { received(JSON.parse(e.data)); });
+        stream.onerror = function () { console.warn('[Notifications] SSE lost, retrying…'); };
+    }
+})();
+</script>

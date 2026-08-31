@@ -85,6 +85,9 @@ function mapAppointmentRow(row) {
         date: row.consultation_date,
         dayOfWeek: row.day_of_the_week,
         time: `${to12Hour(row.start_time)} – ${to12Hour(row.end_time)}`,
+        // Local wall-clock end, so the page can tell which consultations have
+        // finished without re-deriving it from the formatted time string
+        endsAt: `${row.consultation_date}T${row.end_time}`,
         duration: computeDuration(row.start_time, row.end_time),
         roomNumber: row.room_number,
         buildingName: row.building_name,
@@ -923,6 +926,63 @@ const InstructorController = {
         } catch (err) {
             console.error('[InstructorController.approveAllAppointments]', err);
             res.status(500).json({ success: false, error: 'Failed to approve the pending requests.' });
+        }
+    },
+
+    /**
+     * Close out every confirmed consultation whose slot has already ended.
+     *
+     * Each one still goes through completeAppointment(), so the "has it
+     * actually finished yet" rule is enforced per appointment rather than
+     * being re-implemented here. Anything refused is reported instead of
+     * aborting the batch.
+     */
+    async completeAllAppointments(req, res) {
+        try {
+            const instructorPublicId = req.session.userId;
+            const all = await AppointmentModel.getAppointmentsByInstructor(instructorPublicId);
+            const confirmed = all.filter(a => a.status === 'confirmed');
+
+            if (!confirmed.length) {
+                return res.json({ success: true, total: 0, completed: 0, skipped: [] });
+            }
+
+            const skipped = [];
+            let completed = 0;
+
+            for (const appointment of confirmed) {
+                const student = `${appointment.student_first_name} ${appointment.student_last_name}`;
+                try {
+                    const result = await AppointmentModel.completeAppointment(
+                        appointment.id, instructorPublicId);
+                    if (result.success) {
+                        completed++;
+                    } else if (result.reason === 'NOT_YET_ENDED') {
+                        // Not an error — it simply has not happened yet
+                        skipped.push({ id: appointment.id, student, reason: 'Has not ended yet.' });
+                    } else {
+                        skipped.push({ id: appointment.id, student, reason: 'No longer confirmed — it was cancelled or already resolved.' });
+                    }
+                } catch (err) {
+                    console.error('[InstructorController.completeAllAppointments] one failed:', err);
+                    skipped.push({ id: appointment.id, student, reason: 'Could not be completed. Please try it on its own.' });
+                }
+            }
+
+            if (completed) {
+                try {
+                    const instructor = await UserModel.getUserByPublicId(instructorPublicId);
+                    await AuditLogModel.log(instructor.internal_id, instructor.role,
+                        `Completed ${completed} consultation${completed === 1 ? '' : 's'}`, 'appointment');
+                } catch (err) {
+                    console.error('[AuditLog] Failed to log bulk completion:', err);
+                }
+            }
+
+            res.json({ success: true, total: confirmed.length, completed, skipped });
+        } catch (err) {
+            console.error('[InstructorController.completeAllAppointments]', err);
+            res.status(500).json({ success: false, error: 'Failed to complete the consultations.' });
         }
     },
 

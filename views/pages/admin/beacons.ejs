@@ -1,0 +1,222 @@
+<%- include('../../partials/header') %>
+<link rel="stylesheet" href="/css/instructor/dashboard.css?v=<%= Date.now() %>">
+<link rel="stylesheet" href="/css/admin/beacons.css?v=<%= Date.now() %>">
+
+<div class="instructor-layout">
+    <%- include('../../partials/admin-sidebar', { activePage: 'beacons' }) %>
+
+    <main class="instructor-main">
+        <div class="main-container">
+
+            <div class="page-header">
+                <div>
+                    <h1 class="page-title">BLE Devices</h1>
+                    <p class="page-subtitle">Room scanners and the tags they hear. Presence follows the tag, never a phone.</p>
+                </div>
+                <div class="header-actions">
+                    <span class="bx-live" id="bxLive" title="This page refreshes on its own">
+                        <span class="bx-live-dot"></span> Live
+                    </span>
+                </div>
+            </div>
+
+            <% if (!scannerConfigured) { %>
+            <div class="bx-note warn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                <span><strong>PRESENCE_INGEST_KEY is not set in .env.</strong> Scanners cannot report until it is.</span>
+            </div>
+            <% } %>
+
+            <!-- ── Health at a glance ── -->
+            <div class="bx-stats">
+                <div class="bx-stat <%= stats.scannersTotal && stats.scannersOnline === stats.scannersTotal ? 'good' : (stats.scannersOnline ? 'warn' : 'bad') %>">
+                    <p class="bx-stat-label">Scanners online</p>
+                    <h3 class="bx-stat-value"><%= stats.scannersOnline %><span>/<%= stats.scannersTotal %></span></h3>
+                    <p class="bx-stat-sub">reporting in the last <%= scannerOfflineAfter %>s</p>
+                </div>
+                <div class="bx-stat">
+                    <p class="bx-stat-label">Tags assigned</p>
+                    <h3 class="bx-stat-value"><%= stats.tagsAssigned %><span>/<%= stats.tagsTotal %></span></h3>
+                    <p class="bx-stat-sub">the rest are unassigned</p>
+                </div>
+                <div class="bx-stat">
+                    <p class="bx-stat-label">Tags heard recently</p>
+                    <h3 class="bx-stat-value"><%= stats.tagsOnline %></h3>
+                    <p class="bx-stat-sub">within <%= tagOfflineAfter %>s</p>
+                </div>
+                <div class="bx-stat">
+                    <p class="bx-stat-label">In-room threshold</p>
+                    <h3 class="bx-stat-value"><%= rssiThreshold %><span> dBm</span></h3>
+                    <p class="bx-stat-sub">default · <a href="/admin/settings">change</a>, or per room below</p>
+                </div>
+            </div>
+
+            <!-- ── Scanners ── -->
+            <div class="content-card">
+                <div class="card-header">
+                    <h3 class="card-title">Room scanners <span class="bx-muted">(<%= scanners.length %>)</span></h3>
+                </div>
+                <div class="card-body" style="padding:0">
+                    <% if (!scanners.length) { %>
+                        <p class="bx-empty">No scanner has reported yet. Power one on and it appears here on its own.</p>
+                    <% } else { %>
+                    <div class="bx-table-wrap">
+                        <table class="bx-table">
+                            <thead>
+                                <tr>
+                                    <th>Status</th><th>Scanner</th><th>Room</th>
+                                    <th>Last report</th><th>Uptime</th>
+                                    <th>Hearing now</th><th>In-room threshold</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% scanners.forEach(s => { %>
+                                <tr class="<%= s.online ? '' : 'is-offline' %>" data-room-id="<%= s.room_id || '' %>">
+                                    <td><span class="bx-pill <%= s.online ? 'ok' : 'off' %>"><%= s.online ? 'Online' : 'Offline' %></span></td>
+                                    <td>
+                                        <span class="bx-mono"><%= s.scanner_id %></span>
+                                        <span class="bx-muted bx-sub"><%= s.last_ip || 'no address' %></span>
+                                    </td>
+                                    <td>
+                                        <% if (s.room_number) { %>
+                                            <%= s.room_number %>
+                                            <span class="bx-muted bx-sub"><%= s.room_type %></span>
+                                        <% } else { %>
+                                            <span class="bx-muted">No room</span>
+                                        <% } %>
+                                    </td>
+                                    <td><span data-since="<%= s.last_seen_at %>">—</span></td>
+                                    <td data-uptime="<%= s.last_uptime_sec || 0 %>">—</td>
+                                    <td>
+                                        <% if (s.tags_heard) { %>
+                                            <span class="bx-range"><%= s.strongest %> … <%= s.weakest %> dBm</span>
+                                            <span class="bx-muted bx-sub"><%= s.tags_heard %> tag<%= s.tags_heard === 1 ? '' : 's' %> in 5 min</span>
+                                        <% } else { %>
+                                            <span class="bx-muted">nothing heard</span>
+                                        <% } %>
+                                    </td>
+                                    <td>
+                                        <% if (s.room_id) { %>
+                                        <div class="bx-threshold">
+                                            <input type="number" class="bx-input bx-thr-input" data-field="threshold"
+                                                   min="-100" max="-30" step="1"
+                                                   value="<%= s.rssi_threshold === null || s.rssi_threshold === undefined ? '' : s.rssi_threshold %>"
+                                                   placeholder="<%= rssiThreshold %>">
+                                            <button class="bx-btn primary" data-action="save-threshold">Set</button>
+                                        </div>
+                                        <span class="bx-muted bx-sub" data-threshold-note>
+                                            <%= s.rssi_threshold === null || s.rssi_threshold === undefined
+                                                ? 'using the default' : 'tuned for this room' %>
+                                        </span>
+                                        <% } else { %>
+                                            <span class="bx-muted">—</span>
+                                        <% } %>
+                                    </td>
+                                </tr>
+                                <% }); %>
+                            </tbody>
+                        </table>
+                    </div>
+                    <% } %>
+
+                    <% if (roomsAwaitingScanner.length) { %>
+                    <div class="bx-note warn" style="margin:.9rem 1rem 1rem">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                        <span>
+                            Marked as having a scanner but never heard from:
+                            <strong><%= roomsAwaitingScanner.map(r => r.room_number).join(', ') %></strong>.
+                            Check the board is powered and that its <code>ROOM_CODE</code> matches the room name exactly.
+                        </span>
+                    </div>
+                    <% } %>
+                </div>
+            </div>
+
+            <!-- ── Tags ── -->
+            <div class="content-card">
+                <div class="card-header">
+                    <h3 class="card-title">Tags <span class="bx-muted">(<%= beacons.length %>)</span></h3>
+                    <span class="bx-muted bx-sub">A new tag appears here by itself once a scanner hears it</span>
+                </div>
+                <div class="card-body" style="padding:0">
+                    <% if (!beacons.length) { %>
+                        <p class="bx-empty">No tags detected yet. Power one on within range of a scanner.</p>
+                    <% } else { %>
+                    <div class="bx-table-wrap">
+                        <table class="bx-table">
+                            <thead>
+                                <tr>
+                                    <th>Status</th><th>Tag address</th><th>Label</th>
+                                    <th>Assigned to</th><th>Last seen</th><th>Signal</th><th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% beacons.forEach(b => { %>
+                                <tr data-id="<%= b.id %>" class="<%= b.instructor_id ? '' : 'unassigned' %><%= b.online ? '' : ' is-offline' %>">
+                                    <td>
+                                        <span class="bx-pill <%= b.online ? 'ok' : 'off' %>"><%= b.online ? 'Live' : 'Quiet' %></span>
+                                        <% if (b.instructor_id && b.is_present) { %>
+                                            <span class="bx-pill in-room" title="Currently counted as in this room">In <%= b.present_room || 'room' %></span>
+                                        <% } %>
+                                    </td>
+                                    <td>
+                                        <span class="bx-mono"><%= b.mac_address %></span>
+                                        <% if (b.ibeacon_major !== null && b.ibeacon_major !== undefined) { %>
+                                            <span class="bx-muted bx-sub">iBeacon <%= b.ibeacon_major %>/<%= b.ibeacon_minor %></span>
+                                        <% } %>
+                                    </td>
+                                    <td><input type="text" class="bx-input" data-field="label" value="<%= b.label || '' %>" placeholder="e.g. Tag 01"></td>
+                                    <td>
+                                        <select class="bx-select" data-field="instructor">
+                                            <option value="">— Unassigned —</option>
+                                            <% instructors.forEach(i => { %>
+                                            <option value="<%= i.public_id %>" <%= b.instructor_id === i.public_id ? 'selected' : '' %>>
+                                                <%= i.last_name %>, <%= i.first_name %>
+                                            </option>
+                                            <% }); %>
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <% if (b.last_seen_at) { %>
+                                            <span data-since="<%= b.last_seen_at %>">—</span>
+                                            <% if (b.last_room) { %><span class="bx-muted bx-sub"><%= b.last_room %></span><% } %>
+                                        <% } else { %>
+                                            <span class="bx-muted">Never</span>
+                                        <% } %>
+                                    </td>
+                                    <td>
+                                        <% if (b.last_rssi !== null && b.last_rssi !== undefined) { %>
+                                            <span class="bx-signal <%= b.last_rssi >= rssiThreshold ? 'strong' : 'weak' %>"><%= b.last_rssi %> dBm</span>
+                                        <% } else { %>
+                                            <span class="bx-muted">—</span>
+                                        <% } %>
+                                    </td>
+                                    <td>
+                                        <div class="bx-actions">
+                                            <button class="bx-btn primary" data-action="save">Save</button>
+                                            <button class="bx-btn danger" data-action="remove" title="Forget this tag">Remove</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <% }); %>
+                            </tbody>
+                        </table>
+                    </div>
+                    <% } %>
+                </div>
+            </div>
+
+        </div>
+    </main>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+<%- include('../../partials/footer') %>
+<%- include('../../partials/script') %>
+<script src="/js/realtime.js?v=<%= Date.now() %>"></script>
+<script>
+  window.__RSSI_THRESHOLD__ = <%- JSON.stringify(rssiThreshold) %>;
+  window.__SCANNER_OFFLINE_AFTER__ = <%- JSON.stringify(scannerOfflineAfter) %>;
+  window.__TAG_OFFLINE_AFTER__ = <%- JSON.stringify(tagOfflineAfter) %>;
+</script>
+<script src="/js/admin-beacons.js?v=<%= Date.now() %>"></script>

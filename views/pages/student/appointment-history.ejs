@@ -1,0 +1,126 @@
+<%- include('../../partials/header') %>
+<link rel="stylesheet" href="/css/instructor/dashboard.css?v=<%= Date.now() %>">
+<link rel="stylesheet" href="/css/report-table.css?v=<%= Date.now() %>">
+<link rel="stylesheet" href="/css/student/appointments.css?v=<%= Date.now() %>">
+
+<div class="instructor-layout">
+    <%- include('../../partials/student-sidebar', { activePage: 'appointments', appointmentCount: appointments.length }) %>
+
+    <main class="instructor-main">
+        <div class="main-container">
+
+            <%
+                const initials = name => name.split(/[\s,]+/).filter(Boolean).slice(0, 2).map(n => n[0]).join('').toUpperCase();
+                const todayKey = new Date().toISOString().slice(0, 10);
+                const dayKey = value => String(value).slice(0, 10);
+
+                // Anything still to come sits above the record of what already
+                // happened, so the actionable half of the page is on top.
+                const upcoming = appointments.filter(a =>
+                    ['pending', 'confirmed'].includes(a.status) && dayKey(a.date) >= todayKey);
+                const past = appointments.filter(a => !upcoming.includes(a));
+            %>
+
+            <a class="back-link" href="/student/appointments">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                All instructors
+            </a>
+
+            <div class="history-head">
+                <div class="history-avatar">
+                    <% if (instructor.facultyPhoto) { %>
+                        <img src="<%= instructor.facultyPhoto %>" alt="<%= instructor.facultyDisplayName %>">
+                    <% } else { %>
+                        <%= initials(instructor.facultyDisplayName) %>
+                    <% } %>
+                </div>
+                <div style="flex:1;min-width:0">
+                    <p class="history-name"><%= instructor.facultyDisplayName %></p>
+                    <p class="history-sub">
+                        <%= instructor.position || 'Faculty' %><% if (instructor.departmentName) { %> · <%= instructor.departmentName %><% } %>
+                    </p>
+                </div>
+                <div class="inst-counts">
+                    <% if (instructor.pending) { %><span class="inst-chip pending"><%= instructor.pending %> pending</span><% } %>
+                    <% if (instructor.upcoming) { %><span class="inst-chip upcoming"><%= instructor.upcoming %> upcoming</span><% } %>
+                    <span class="inst-chip"><%= instructor.total %> total</span>
+                </div>
+            </div>
+
+            <%
+                // Every status the appointments enum can hold, so the dropdown
+                // reads the same on every instructor's page
+                const STATUS_OPTIONS = [
+                    ['pending', 'Pending'], ['confirmed', 'Confirmed'], ['completed', 'Completed'],
+                    ['rescheduled', 'Rescheduled'], ['declined', 'Declined'], ['cancelled', 'Cancelled'],
+                ];
+            %>
+
+            <div class="card-toolbar">
+                <div class="toolbar-group">
+                    <span class="toolbar-label">Search</span>
+                    <input type="search" class="table-search" id="aptSearch" placeholder="Topic, subject, section or notes…">
+                </div>
+                <div class="toolbar-group">
+                    <span class="toolbar-label">Status</span>
+                    <select class="table-select" id="aptStatus">
+                        <option value="all">All Status</option>
+                        <% STATUS_OPTIONS.forEach(([value, label]) => { %>
+                        <option value="<%= value %>"><%= label %></option>
+                        <% }); %>
+                    </select>
+                </div>
+                <span class="result-count" id="aptCount">—</span>
+            </div>
+
+            <div class="no-results" id="aptEmpty" hidden>
+                <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <p>No appointment matches your search.</p>
+            </div>
+
+            <% if (upcoming.length) { %>
+            <div class="history-section">
+                <p class="history-section-title">Upcoming</p>
+                <% upcoming.forEach(apt => { %>
+                    <%- include('../../partials/student-appointment-card', { apt }) %>
+                <% }); %>
+            </div>
+            <% } %>
+
+            <% if (past.length) { %>
+            <div class="history-section">
+                <p class="history-section-title">History</p>
+                <% past.forEach(apt => { %>
+                    <%- include('../../partials/student-appointment-card', { apt }) %>
+                <% }); %>
+            </div>
+            <% } %>
+
+        </div>
+    </main>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- Cancel Confirmation Modal -->
+<div class="decline-modal-overlay" id="declineModal">
+    <div class="decline-modal">
+        <div class="decline-modal-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+        </div>
+        <h3 class="decline-modal-title">Cancel Appointment?</h3>
+        <p class="decline-modal-text" id="declineModalText">Are you sure you want to cancel this appointment?</p>
+        <div class="decline-modal-actions">
+            <button type="button" class="decline-modal-btn decline-modal-cancel" onclick="hideDeclineModal()">No, Keep It</button>
+            <button type="button" class="decline-modal-btn decline-modal-confirm" onclick="confirmDecline()">Yes, Cancel</button>
+        </div>
+    </div>
+</div>
+
+<%- include('../../partials/footer') %>
+<%- include('../../partials/script') %>
+<script>
+  window.STUDENT_OPEN_APT = <%- JSON.stringify(openApt) %>;
+</script>
+<script src="/js/card-filter.js?v=<%= Date.now() %>"></script>
+<script src="/js/student-appointment-history.js?v=<%= Date.now() %>"></script>

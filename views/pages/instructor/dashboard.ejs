@@ -138,20 +138,30 @@
 .refresh-dot{width:6px;height:6px;border-radius:50%;background:#22c55e;animation:pulse-green 2s ease-in-out infinite;}
 @keyframes pulse-green{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.4;transform:scale(.7);}}
 
-@media(max-width:900px){.dash-grid{grid-template-columns:1fr;}}
-/* Grid and flex children default to min-width:auto, so one wide row inside a
-   card stretched the whole column past the right edge of the screen. */
+@media(max-width:900px){
+  .dash-grid{grid-template-columns:1fr;}
+  /* One column collapses the two columns into DOM order, which would bury
+     Upcoming Appointments below the slot list. Dissolving the columns lets the
+     cards be ordered for a phone: what needs answering, then what's coming up,
+     then the slots that only need managing occasionally. */
+  .dash-col{display:contents;}
+  .dash-card-pending {order:1;}
+  .dash-card-upcoming{order:2;}
+  .dash-card-slots   {order:3;}
+}
+/* Grid and flex children default to min-width:auto, so one wide row inside a
+   card stretched the whole column past the right edge of the screen. */
 .dash-grid,.dash-col,.dash-col > *{min-width:0;}
-.apt-meta-topic::before{content:" · ";}
-@media(max-width:640px){
-  .upco-time{min-width:0;}
+.apt-meta-topic::before{content:" · ";}
+@media(max-width:640px){
+  .upco-time{min-width:0;}
   .upco-item{gap:.5rem;padding:.7rem .75rem;}
   /* A pill reading "9:00 AM - 9:20 AM · Name (Pending)" cannot fit one line */
   .today-strip-items{min-width:0;width:100%;}
   .today-pill{white-space:normal;max-width:100%;}
   /* Give the topic its own line so the separator never dangles at a wrap */
   .apt-meta-topic{display:block;}
-  .apt-meta-topic::before{content:none;}
+  .apt-meta-topic::before{content:none;}
 }
 @media(max-width:640px){.today-strip{flex-direction:column;align-items:flex-start;gap:.75rem;}.today-strip-divider{display:none;}}
 </style>
@@ -293,7 +303,7 @@
         <div class="dash-col">
 
           <!-- Pending Requests -->
-          <div class="content-card">
+          <div class="content-card dash-card-pending">
             <div class="card-header">
               <h3 class="card-title">
                 Pending Requests
@@ -341,7 +351,7 @@
           </div>
 
           <!-- Consultation Schedule -->
-          <div class="content-card">
+          <div class="content-card dash-card-slots">
             <div class="card-header">
               <h3 class="card-title">Consultation Slots</h3>
               <a href="/instructor/consultation-schedule" class="card-link">Manage →</a>
@@ -395,7 +405,7 @@
         <div class="dash-col">
 
           <!-- Upcoming Appointments -->
-          <div class="content-card">
+          <div class="content-card dash-card-upcoming">
             <div class="card-header" style="flex-wrap:wrap;gap:.625rem;">
               <h3 class="card-title">Upcoming Appointments</h3>
               <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;">
@@ -523,8 +533,34 @@ function applyStatus(status, label) {
   currentStatus = status;
 }
 
+// Leave and Official Travel usually span days, but the status by itself only
+// hides TODAY's slots — the blocked dates are what give students notice.
+const MULTI_DAY = { leave: 'On Leave', travel: 'Official Travel' };
+
+async function saveStatus(status, label, previous, previousLabel) {
+  try {
+    const res  = await fetch('/instructor/availability-status', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    const data = await res.json();
+
+    if (!data.success) {
+      applyStatus(previous, previousLabel);
+      showToast('error', 'Status Not Saved', data.error || 'Please try again.');
+      return;
+    }
+    applyStatus(status, label);
+    showToast('success', 'Status Updated', 'Your status is now: ' + label);
+  } catch (err) {
+    applyStatus(previous, previousLabel);
+    showToast('error', 'Status Not Saved', 'Network error. Please try again.');
+  }
+}
+
 document.querySelectorAll('#statusDropdown .status-option').forEach(opt => {
-  opt.addEventListener('click', async function () {
+  opt.addEventListener('click', function () {
     const status = this.dataset.status;
     const label  = this.querySelector('.status-option-label').textContent;
 
@@ -535,36 +571,24 @@ document.querySelectorAll('#statusDropdown .status-option').forEach(opt => {
     const previous      = currentStatus;
     const previousLabel = statusTxt.textContent;
 
-    applyStatus(status, label);   // optimistic
-
-    try {
-      const res  = await fetch('/instructor/availability-status', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
+    // Ask for the dates FIRST. Saving the status up front left an instructor
+    // marked On Leave with nothing blocked whenever they backed out here.
+    if (MULTI_DAY[status]) {
+      UnavailModal.open(null, {
+        prompt: 'Block the days you will be away, so students cannot book them. ' +
+                'Your status is not changed until you finish here.',
+        reason: MULTI_DAY[status],
+        skipLabel: 'Set status only',
+        onBlocked:  () => saveStatus(status, label, previous, previousLabel),
+        onSkipped:  () => saveStatus(status, label, previous, previousLabel),
+        onDismissed: () => showToast('error', 'Status Unchanged',
+          'You are still ' + previousLabel + '. Nothing was blocked.'),
       });
-      const data = await res.json();
-
-      if (!data.success) {
-        applyStatus(previous, previousLabel);
-        showToast('error', 'Status Not Saved', data.error || 'Please try again.');
-        return;
-      }
-      showToast('success', 'Status Updated', 'Your status is now: ' + label);
-
-      // Leave and Official Travel usually span days, but the status only hides
-      // TODAY. Prompt for the date range so students get proper notice.
-      const MULTI_DAY = { leave: 'On Leave', travel: 'Official Travel' };
-      if (MULTI_DAY[status]) {
-        UnavailModal.open(null, {
-          prompt: 'Select a date range of your unavailable days to block your consultation slots.',
-          reason: MULTI_DAY[status],
-        });
-      }
-    } catch (err) {
-      applyStatus(previous, previousLabel);
-      showToast('error', 'Status Not Saved', 'Network error. Please try again.');
+      return;
     }
+
+    applyStatus(status, label);   // optimistic for the instant statuses
+    saveStatus(status, label, previous, previousLabel);
   });
 });
 

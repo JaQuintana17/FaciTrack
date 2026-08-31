@@ -1,4 +1,5 @@
 const bcrypt = require('bcrypt');
+const crypto = require('crypto');
 const pool = require('../configs/db');
 
 const UserModel = {
@@ -98,6 +99,10 @@ const UserModel = {
             u.department_id,
             d.full_name          AS department_name,
             u.profile_picture,
+            -- Needed to work out whether a slot is actually offerable, the same
+            -- way the profile page does
+            u.default_meeting_link,
+            u.availability_status,
             -- Next available slot fields
             next_slot.consultation_date AS next_date,
             next_slot.day_of_the_week   AS next_day,
@@ -294,6 +299,86 @@ const UserModel = {
             [internalId]
         );
         return rows[0] || null;
+    },
+
+    /**
+     * The credential for someone's outbound calendar feed, minted on first use.
+     *
+     * Calendar clients cannot log in, so the URL is the credential — 32 random
+     * bytes, which is why it is generated rather than derived from anything
+     * guessable like the public id.
+     */
+    async getOrCreateFeedToken(publicId) {
+        const [rows] = await pool.execute(
+            'SELECT calendar_feed_token FROM users WHERE public_id = ?', [publicId]
+        );
+        if (!rows.length) return null;
+        if (rows[0].calendar_feed_token) return rows[0].calendar_feed_token;
+
+        const token = crypto.randomBytes(32).toString('base64url');
+        await pool.execute(
+            'UPDATE users SET calendar_feed_token = ? WHERE public_id = ?', [token, publicId]
+        );
+        return token;
+    },
+
+    /** Regenerate, so a leaked feed URL can be revoked without affecting anyone else. */
+    async rotateFeedToken(publicId) {
+        const token = crypto.randomBytes(32).toString('base64url');
+        const [result] = await pool.execute(
+            'UPDATE users SET calendar_feed_token = ? WHERE public_id = ?', [token, publicId]
+        );
+        return result.affectedRows ? token : null;
+    },
+
+    /** Who a feed token belongs to. Returns null for anything unrecognised. */
+    async getUserByFeedToken(token) {
+        if (!token) return null;
+        const [rows] = await pool.execute(
+            `SELECT id AS internal_id, public_id, first_name, last_name, role, status
+               FROM users WHERE calendar_feed_token = ?`,
+            [token]
+        );
+        return rows[0] || null;
+    },
+
+    /**
+     * Every active instructor with their office, self-reported availability
+     * and BLE presence, for the student's Faculty Availability board.
+     *
+     * `faculty_presence` is a LEFT JOIN because the BLE module has not shipped:
+     * the rows come back with no presence today and the page says so, and the
+     * same query starts returning real values the moment scanners are
+     * installed — no change needed here or in the view.
+     */
+    async getFacultyPresence({ departmentId = null } = {}) {
+        const [rows] = await pool.execute(
+            `SELECT u.public_id            AS id,
+                    CONCAT(u.first_name, ' ', u.last_name) AS name,
+                    u.position,
+                    u.profile_picture,
+                    u.availability_status,
+                    d.full_name            AS department_name,
+                    d.short_name           AS department_short,
+                    office.room_number     AS office_room_number,
+                    officeDept.building    AS office_building,
+                    fp.is_present,
+                    fp.last_updated        AS presence_updated_at,
+                    detected.room_number   AS detected_room_number,
+                    detected.room_type     AS detected_room_type
+               FROM users u
+               LEFT JOIN departments d          ON u.department_id      = d.id
+               LEFT JOIN rooms office           ON u.base_room_id       = office.id
+               LEFT JOIN departments officeDept ON office.department_id = officeDept.id
+               LEFT JOIN faculty_presence fp    ON fp.instructor_id     = u.id
+               LEFT JOIN rooms detected         ON fp.room_id           = detected.id
+              WHERE u.role = 'Instructor'
+                AND u.status = 'Active'
+                AND (? IS NULL OR u.department_id = ?)
+              ORDER BY u.last_name ASC, u.first_name ASC`,
+            [departmentId, departmentId]
+        );
+        return rows;
     },
 }
 

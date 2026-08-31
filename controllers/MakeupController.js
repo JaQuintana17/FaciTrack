@@ -13,12 +13,23 @@ const AuditLogModel = require('../models/AuditLogModel');
 const { notifyUser } = require('../services/notify');
 const { buildInstructorUser } = require('../utils/sessionUser');
 
-// A make-up must be scheduled ahead, but not indefinitely far ahead
-const MAX_WEEKS_AHEAD = parseInt(process.env.MAKEUP_MAX_WEEKS_AHEAD, 10) || 8;
+// How far ahead a make-up may be scheduled, and the hours a generated slot may
+// fall in. Read per request so a change in System Settings takes effect without
+// a restart; .env still supplies the default.
+const appSettings = require('../services/app-settings');
 
-// The hours a generated slot may fall in, as half-hour slot indices
-const DAY_START_SLOT = MakeupRequestModel.timeToSlot(process.env.MAKEUP_DAY_START || '07:00');
-const DAY_END_SLOT = MakeupRequestModel.timeToSlot(process.env.MAKEUP_DAY_END || '21:00');
+async function makeupWindow() {
+    const [weeks, dayStart, dayEnd] = await Promise.all([
+        appSettings.get('makeup_max_weeks_ahead'),
+        appSettings.get('makeup_day_start'),
+        appSettings.get('makeup_day_end'),
+    ]);
+    return {
+        weeks,
+        dayStartSlot: MakeupRequestModel.timeToSlot(dayStart),
+        dayEndSlot: MakeupRequestModel.timeToSlot(dayEnd),
+    };
+}
 
 const DELIVERY_MODES = ['in-campus', 'online'];
 
@@ -26,15 +37,17 @@ function toDateKey(d) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/** Tomorrow through MAX_WEEKS_AHEAD weeks out. */
-function bookingWindow() {
+/** Tomorrow through the configured number of weeks out. */
+async function bookingWindow() {
+    const { weeks } = await makeupWindow();
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const min = new Date(today);
     min.setDate(today.getDate() + 1);
     const max = new Date(today);
-    max.setDate(today.getDate() + MAX_WEEKS_AHEAD * 7);
-    return { minDate: toDateKey(min), maxDate: toDateKey(max), weeks: MAX_WEEKS_AHEAD };
+    max.setDate(today.getDate() + weeks * 7);
+    const { dayStartSlot, dayEndSlot } = await makeupWindow();
+    return { minDate: toDateKey(min), maxDate: toDateKey(max), weeks, dayStartSlot, dayEndSlot };
 }
 
 /** Delete an upload we are no longer keeping; never let it break the response. */
@@ -231,7 +244,7 @@ const MakeupController = {
                 missedClasses,
                 rooms,
                 roomTypesForClass: MakeupRequestModel.ROOM_TYPES_FOR_CLASS,
-                window: bookingWindow(),
+                window: await bookingWindow(),
                 editing,
                 flash,
             });
@@ -253,7 +266,7 @@ const MakeupController = {
                 return res.status(422).json({ success: false, error: 'Nothing to schedule.' });
             }
 
-            const window = bookingWindow();
+            const window = await bookingWindow();
             const wanted = raw.map((item, index) => ({
                 key: String(item.key || index),
                 classType: item.classType,
@@ -276,8 +289,8 @@ const MakeupController = {
             const result = await MakeupRequestModel.suggestSlots(req.session.userId, wanted, {
                 minDate: window.minDate,
                 maxDate: window.maxDate,
-                dayStartSlot: DAY_START_SLOT,
-                dayEndSlot: DAY_END_SLOT,
+                dayStartSlot: window.dayStartSlot,
+                dayEndSlot: window.dayEndSlot,
                 ignoreRequestId: req.body.editingRequestId || null,
                 occupied,
             });
@@ -297,7 +310,7 @@ const MakeupController = {
         const isEdit = Boolean(req.params.id);
         const uploads = collectUploads(req);
         try {
-            const window = bookingWindow();
+            const window = await bookingWindow();
             const support = uploads.filter(d => d.kind === 'support');
 
             if (!isEdit && !support.length) {
@@ -458,7 +471,7 @@ const MakeupController = {
     async checkConflicts(req, res) {
         const conn = await pool.getConnection();
         try {
-            const window = bookingWindow();
+            const window = await bookingWindow();
             const parsed = parseSessions({ sessions: [req.body] }, window);
             if (parsed.error) return res.json({ success: true, conflicts: [], note: parsed.error });
 

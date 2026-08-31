@@ -1,0 +1,196 @@
+<%- include('../../partials/header') %>
+<link rel="stylesheet" href="/css/instructor/dashboard.css?v=<%= Date.now() %>">
+<link rel="stylesheet" href="/css/admin/consultation-room.css?v=<%= Date.now() %>">
+
+<div class="instructor-layout">
+    <%- include('../../partials/admin-sidebar', { activePage: 'consultation-room' }) %>
+
+    <main class="instructor-main">
+        <div class="main-container">
+
+            <!-- ── Page Header ── -->
+            <div class="page-header">
+                <div>
+                    <h1 class="page-title">Consultation Room</h1>
+                    <p class="page-subtitle">
+                        Face-to-face consultations in <%= admin.department || 'your department' %>, by time
+                    </p>
+                </div>
+            </div>
+
+            <!-- ── Stats Cards ── -->
+            <div class="cr-stats-grid">
+                <div class="cr-stat-card">
+                    <div class="cr-stat-icon primary">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    </div>
+                    <div class="cr-stat-content">
+                        <p class="cr-stat-label">Consultations</p>
+                        <h3 class="cr-stat-value" id="totalSlotsCount">—</h3>
+                        <p class="cr-stat-sub">this week</p>
+                    </div>
+                </div>
+                <div class="cr-stat-card">
+                    <div class="cr-stat-icon warning">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    </div>
+                    <div class="cr-stat-content">
+                        <p class="cr-stat-label">Pending</p>
+                        <h3 class="cr-stat-value" id="pendingCount">—</h3>
+                        <p class="cr-stat-sub">awaiting the instructor</p>
+                    </div>
+                </div>
+                <div class="cr-stat-card">
+                    <div class="cr-stat-icon info">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    </div>
+                    <div class="cr-stat-content">
+                        <p class="cr-stat-label">Confirmed</p>
+                        <h3 class="cr-stat-value" id="confirmedCount">—</h3>
+                        <p class="cr-stat-sub">going ahead</p>
+                    </div>
+                </div>
+                <div class="cr-stat-card">
+                    <div class="cr-stat-icon success">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                    </div>
+                    <div class="cr-stat-content">
+                        <p class="cr-stat-label">Completed</p>
+                        <h3 class="cr-stat-value" id="completedCount">—</h3>
+                        <p class="cr-stat-sub">already held</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Main Calendar Section ── -->
+            <div class="cr-calendar-section">
+
+                <!-- Left Sidebar: mini calendar + filters + legend -->
+                <div class="cr-sidebar">
+
+                    <!-- Mini Month Calendar — picks the week the grid shows -->
+                    <div class="content-card cr-mini-cal-card">
+                        <div class="cr-mini-cal-header">
+                            <button class="cr-mini-nav" id="miniPrevMonth" aria-label="Previous month">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+                            </button>
+                            <span class="cr-mini-month-label" id="miniMonthLabel">—</span>
+                            <button class="cr-mini-nav" id="miniNextMonth" aria-label="Next month">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                            </button>
+                        </div>
+                        <div class="cr-mini-grid" id="miniCalGrid"><!-- JS --></div>
+                        <p class="cr-mini-hint">Pick a date to jump the schedule to that week.</p>
+                    </div>
+
+                    <!-- Filters -->
+                    <div class="content-card">
+                        <div class="card-header">
+                            <h3 class="card-title">Filters</h3>
+                            <button type="button" class="cr-clear-btn" id="clearFiltersBtn">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                Clear
+                            </button>
+                        </div>
+                        <div class="card-body cr-filter-body">
+                            <div class="cr-filter-group">
+                                <label class="cr-filter-label" for="filterInstructor">Instructor</label>
+                                <select id="filterInstructor" class="cr-select">
+                                    <option value="">All Instructors</option>
+                                    <% instructors.forEach(inst => { %>
+                                        <option value="<%= inst.public_id %>"><%= inst.last_name %>, <%= inst.first_name %></option>
+                                    <% }); %>
+                                </select>
+                            </div>
+                            <div class="cr-filter-group">
+                                <label class="cr-filter-label" for="filterStatus">Status</label>
+                                <select id="filterStatus" class="cr-select">
+                                    <option value="">All Statuses</option>
+                                    <option value="Booking">Being booked</option>
+                                    <option value="Pending">Pending</option>
+                                    <option value="Confirmed">Confirmed</option>
+                                    <option value="Completed">Completed</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Legend -->
+                    <div class="content-card cr-legend-card">
+                        <div class="cr-legend-inner">
+                            <div class="cr-legend-title-col">
+                                <span class="cr-legend-heading">Legend</span>
+                            </div>
+                            <div class="cr-legend-sep"></div>
+                            <div class="cr-legend-items-col">
+                                <div class="cr-legend-row">
+                                    <span class="cr-block-dot booking"></span>
+                                    <span>Being booked</span>
+                                </div>
+                                <div class="cr-legend-row">
+                                    <span class="cr-block-dot pending"></span>
+                                    <span>Pending confirmation</span>
+                                </div>
+                                <div class="cr-legend-row">
+                                    <span class="cr-block-dot confirmed"></span>
+                                    <span>Confirmed</span>
+                                </div>
+                                <div class="cr-legend-row">
+                                    <span class="cr-block-dot completed"></span>
+                                    <span>Completed</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div><!-- /.cr-sidebar -->
+
+                <!-- Right: Week Calendar -->
+                <div class="cr-week-panel content-card">
+
+                    <!-- Week Nav Header -->
+                    <div class="cr-week-nav">
+                        <div class="cr-week-nav-left">
+                            <button class="cr-week-btn" id="prevWeekBtn" aria-label="Previous week">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+                            </button>
+                            <button class="cr-week-btn" id="nextWeekBtn" aria-label="Next week">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                            </button>
+                            <button class="cr-today-btn" id="todayBtn">Today</button>
+                            <h2 class="cr-week-label" id="weekLabel">—</h2>
+                            <span class="cr-week-badge" id="weekBadge">Week —</span>
+                        </div>
+                    </div>
+
+                    <!-- Week Grid -->
+                    <div class="cr-week-grid-wrap">
+                        <div class="cr-week-grid" id="weekGrid"><!-- JS --></div>
+                        <p class="cr-empty" id="weekEmpty" hidden>No consultations booked this week.</p>
+                    </div>
+
+                </div><!-- /.cr-week-panel -->
+
+            </div><!-- /.cr-calendar-section -->
+
+        </div><!-- /.main-container -->
+    </main>
+</div><!-- /.instructor-layout -->
+
+<!-- ── Slot Detail Popover ── -->
+<div class="cr-popover" id="slotPopover">
+    <div class="cr-popover-inner" id="slotPopoverInner"></div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<%- include('../../partials/footer') %>
+<%- include('../../partials/script') %>
+
+<script>
+    window.CONSULT_DATA = {
+        startDate: '<%= startDate %>',
+        endDate: '<%= endDate %>'
+    };
+</script>
+<script src="/js/admin/consultation-room.js?v=<%= Date.now() %>"></script>

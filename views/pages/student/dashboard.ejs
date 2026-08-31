@@ -69,7 +69,7 @@
                         </div>
 
                         <% facultyList.forEach((faculty, index) => { %>
-                        <a href="/student/faculty/<%= faculty.instructor_id %>" class="faculty-card" data-status="<%= faculty.status %>" data-name="<%= faculty.full_name.toLowerCase() %>" data-spec="<%= faculty.position.toLowerCase() %>" data-dept="<%= faculty.department_id %>">
+                        <a href="/student/faculty/<%= faculty.instructor_id %>" class="faculty-card" data-status="<%= faculty.status %>" data-name="<%= (faculty.full_name || '').toLowerCase() %>" data-spec="<%= (faculty.position || '').toLowerCase() %>" data-dept="<%= faculty.department_id %>">
                             <div class="card-top">
                                 <!-- Photo placeholder — replace with <img> when actual photo is available -->
                                 <div class="card-photo-placeholder">

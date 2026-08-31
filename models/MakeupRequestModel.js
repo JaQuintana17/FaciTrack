@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const pool = require('../configs/db');
+const { calendarBusyIntervals } = require('../services/availability');
 
 /**
  * Make-up class requests.
@@ -215,6 +216,22 @@ const MakeupRequestModel = {
                          (blocked.reason ? ` (${blocked.reason}).` : '.'),
             });
         }
+
+        // 6. A blocking event on a calendar the instructor synced
+        const [external] = await conn.execute(
+            `SELECT summary, start_slot, end_slot, all_day
+               FROM external_events
+              WHERE user_id = ? AND blocks = 1 AND event_date = ?
+                AND (all_day = 1 OR (start_slot < ? AND end_slot > ?))`,
+            [instructorInternalId, classDate, endSlot, startSlot]
+        );
+        external.forEach(e => conflicts.push({
+            kind: 'calendar',
+            message: e.all_day
+                ? `Your calendar has ${e.summary || 'an all-day event'} on ${classDate}.`
+                : `Your calendar has ${e.summary || 'an event'} at ` +
+                  `${slotToLabel(e.start_slot)} – ${slotToLabel(e.end_slot)} that day.`,
+        }));
 
         return conflicts;
     },
@@ -725,6 +742,14 @@ async function loadBusyWindow(instructorId, minDate, maxDate, ignoreRequestId) {
         [instructorId, minDate, maxDate]
     );
     off.forEach(o => busy.offDates.add(toDateKey(new Date(o.unavail_date))));
+
+    // Events from a synced calendar the instructor chose to block with.
+    // An all-day blocking event takes the day out entirely.
+    const external = await calendarBusyIntervals(instructorId, minDate, maxDate);
+    external.forEach(e => {
+        if (e.startSlot === 0 && e.endSlot === 48) busy.offDates.add(e.date);
+        else push(busy.instructorByDate, e.date, [e.startSlot, e.endSlot]);
+    });
 
     return busy;
 }

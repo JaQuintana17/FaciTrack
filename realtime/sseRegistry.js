@@ -22,4 +22,17 @@ function pushToUser(userId, eventName, payload) {
     }
 }
 
-module.exports = { addClient, removeClient, pushToUser };
+/**
+ * Send to every connected client, whoever they are.
+ *
+ * Presence is the case for this: when someone walks into a room, every open
+ * dean board and availability page wants to know, not one particular user.
+ */
+function broadcast(eventName, payload) {
+    const data = `event: ${eventName}\ndata: ${JSON.stringify(payload)}\n\n`;
+    for (const set of clients.values()) {
+        for (const res of set) res.write(data);
+    }
+}
+
+module.exports = { addClient, removeClient, pushToUser, broadcast };

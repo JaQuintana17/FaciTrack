@@ -1,26 +1,64 @@
 <%- include('../../partials/header') %>
 <link rel="stylesheet" href="/css/instructor/dashboard.css?v=<%= Date.now() %>">
 <style>
-    .avail-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:1rem; }
-    .avail-card { background:#fff; border:1px solid var(--gray-200); border-radius:var(--radius-lg); box-shadow:var(--shadow-sm); overflow:hidden; display:flex; flex-direction:column; transition:transform .2s,box-shadow .2s; }
+    .avail-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:1rem; }
+    .avail-card { background:#fff; border:1px solid var(--gray-200); border-radius:var(--radius-lg); box-shadow:var(--shadow-sm); overflow:hidden; display:flex; flex-direction:column; transition:transform .2s,box-shadow .2s,border-color .2s; }
     .avail-card:hover { transform:translateY(-3px); box-shadow:var(--shadow-md); }
+    .avail-card.in-room { border-color:rgba(22,163,74,.35); }
+    .avail-card[hidden] { display:none !important; }
     .avail-photo { width:100%; aspect-ratio:1/1; background:linear-gradient(135deg,#e8eef5,#d0dce8); display:flex; align-items:center; justify-content:center; position:relative; flex-shrink:0; }
     .avail-photo svg { width:42%; height:42%; color:#a0b4c8; }
+    .avail-photo img { width:100%; height:100%; object-fit:cover; }
     .avail-status-dot { position:absolute; bottom:8px; right:8px; width:16px; height:16px; border-radius:50%; border:2.5px solid white; box-shadow:0 1px 4px rgba(0,0,0,.2); }
-    .avail-status-dot.in  { background:#16a34a; }
-    .avail-status-dot.out { background:#9ca3af; }
+    .avail-status-dot.in-room     { background:#16a34a; }
+    .avail-status-dot.out-of-room { background:#9ca3af; }
+    .avail-status-dot.unknown     { background:#cbd5e1; }
     .avail-info { padding:.75rem .875rem; display:flex; flex-direction:column; gap:.375rem; }
     .avail-name { font-weight:700; font-size:.875rem; color:var(--gray-900); margin:0; line-height:1.3; }
     .avail-position { font-size:.6875rem; color:var(--gray-500); margin:0; }
-    .avail-badge { display:inline-flex; align-items:center; gap:.3rem; padding:3px 10px; border-radius:var(--radius-full); font-size:.6875rem; font-weight:700; letter-spacing:.4px; text-transform:uppercase; align-self:flex-start; }
-    .avail-badge.in  { background:#f0fdf4; color:#16a34a; border:1px solid #bbf7d0; }
-    .avail-badge.out { background:var(--gray-100); color:var(--gray-400); border:1px solid var(--gray-200); }
-    .live-pill { display:inline-flex; align-items:center; gap:6px; background:#f0fdf4; color:#16a34a; border:1px solid #bbf7d0; border-radius:var(--radius-full); padding:5px 14px; font-size:.78rem; font-weight:700; letter-spacing:.5px; }
-    .live-dot { width:7px; height:7px; background:#16a34a; border-radius:50%; animation:blink 1.5s infinite; }
+    .avail-office { font-size:.6875rem; color:var(--gray-400); margin:0; display:flex; align-items:center; gap:.25rem; }
+
+    /* Two independent signals, never merged into one verdict */
+    .avail-badge { display:inline-flex; align-items:center; gap:.3rem; padding:3px 10px; border-radius:var(--radius-full); font-size:.6875rem; font-weight:700; letter-spacing:.4px; align-self:flex-start; white-space:nowrap; }
+    .avail-badge.available { background:#f0fdf4; color:#16a34a; border:1px solid #bbf7d0; }
+    .avail-badge.dnd       { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; }
+    .avail-badge.travel    { background:#fff7ed; color:#c2410c; border:1px solid #fed7aa; }
+    .avail-badge.leave     { background:#fef2f2; color:#dc2626; border:1px solid #fecaca; }
+    .avail-badge.meeting   { background:#f5f3ff; color:#6d28d9; border:1px solid #ddd6fe; }
+    .avail-badge.none      { background:var(--gray-100); color:var(--gray-500); border:1px solid var(--gray-200); }
+
+    .avail-ble { font-size:.6875rem; margin:0; display:flex; align-items:center; gap:.3rem; }
+    .avail-ble.in-room     { color:#16a34a; font-weight:700; }
+    .avail-ble.out-of-room { color:var(--gray-500); }
+    .avail-ble.unknown     { color:var(--gray-400); font-style:italic; }
+    .avail-ble-dot { width:6px; height:6px; border-radius:50%; background:currentColor; flex-shrink:0; }
+
+    .live-pill { display:inline-flex; align-items:center; gap:6px; border-radius:var(--radius-full); padding:5px 14px; font-size:.78rem; font-weight:700; letter-spacing:.5px; }
+    .live-pill.on  { background:#f0fdf4; color:#16a34a; border:1px solid #bbf7d0; }
+    .live-pill.off { background:var(--gray-100); color:var(--gray-500); border:1px solid var(--gray-200); }
+    .live-dot { width:7px; height:7px; background:currentColor; border-radius:50%; }
+    .live-pill.on .live-dot { animation:blink 1.5s infinite; }
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
 
-    @media (max-width:480px) {
+    .presence-notice { display:flex; align-items:flex-start; gap:.75rem; padding:.875rem 1.125rem; background:#eff6ff; border:1px solid #bfdbfe; border-radius:var(--radius-md); margin-bottom:1rem; }
+    .presence-notice svg { color:#2563eb; flex-shrink:0; margin-top:1px; }
+    .presence-notice p { font-size:.8125rem; color:#1e40af; margin:0; line-height:1.5; }
+
+    .avail-toolbar { display:flex; gap:.625rem; align-items:center; flex-wrap:wrap; }
+    .avail-search-wrap { position:relative; flex:1; min-width:220px; }
+    .avail-search-wrap svg { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--gray-400); pointer-events:none; }
+    .avail-search { width:100%; padding:.6rem 1rem .6rem 2.4rem; border:1.5px solid var(--gray-200); border-radius:var(--radius-md); font-size:.875rem; font-family:var(--font-body); background:#fff; color:var(--gray-800); outline:none; }
+    .avail-search:focus { border-color:var(--primary-blue); }
+    .avail-select { padding:.6rem .875rem; border:1.5px solid var(--gray-200); border-radius:var(--radius-md); font-size:.875rem; font-family:var(--font-body); background:#fff; color:var(--gray-800); outline:none; cursor:pointer; }
+    .avail-count { font-size:.78rem; color:var(--gray-500); font-weight:600; white-space:nowrap; }
+
+    @media (max-width:600px) {
         .avail-grid { grid-template-columns:repeat(2,1fr); }
+        .avail-toolbar { flex-direction:column; align-items:stretch; }
+        .avail-search-wrap, .avail-select { width:100%; }
+        .avail-count { align-self:flex-start; }
+        .presence-notice { padding:.75rem .875rem; }
+        .presence-notice p { font-size:.75rem; }
     }
 </style>
 
@@ -30,55 +68,124 @@
     <main class="instructor-main">
         <div class="main-container">
 
+            <% const initials = n => n.split(/[\s,]+/).filter(Boolean).slice(0, 2).map(p => p[0]).join('').toUpperCase(); %>
+
             <div class="page-header">
                 <div>
                     <h1 class="page-title">Faculty Availability</h1>
+                    <p class="page-subtitle">
+                        <%= faculty.length %> instructor<%= faculty.length === 1 ? '' : 's' %> —
+                        <%= presenceUnavailable ? 'showing self-reported status' : 'live room presence' %>
+                    </p>
                 </div>
                 <div class="header-actions">
-                    <div class="live-pill"><span class="live-dot"></span>LIVE</div>
+                    <%# The pill only claims LIVE when something is actually reporting %>
+                    <div class="live-pill <%= presenceUnavailable ? 'off' : 'on' %>">
+                        <span class="live-dot"></span><%= presenceUnavailable ? 'NOT LIVE' : 'LIVE' %>
+                    </div>
                 </div>
             </div>
 
-            <!-- Content directly visible - no blur needed -->
-            <div id="pageContent">
+            <% if (presenceUnavailable && faculty.length) { %>
+            <div class="presence-notice">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                <p><strong>Room presence is not being tracked yet.</strong> The BLE scanners are not installed, so no one is shown as in or out of their room. The status on each card is what the instructor set themselves, and it is live.</p>
+            </div>
+            <% } %>
 
-
-                <div class="content-card" style="margin-bottom:1rem;">
-                    <div class="card-body" style="padding:.875rem 1.25rem;">
-                        <div style="position:relative;">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--gray-400);pointer-events:none;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                            <input type="text" id="searchInput" placeholder="Search instructor by name..." style="width:100%;padding:.6rem 1rem .6rem 2.4rem;border:1.5px solid var(--gray-200);border-radius:var(--radius-md);font-size:.875rem;font-family:var(--font-body);background:#fff;color:var(--gray-800);outline:none;" oninput="filterFaculty()">
+            <div class="content-card" style="margin-bottom:1rem;">
+                <div class="card-body" style="padding:.875rem 1.25rem;">
+                    <div class="avail-toolbar">
+                        <div class="avail-search-wrap">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                            <input type="search" class="avail-search" id="availSearch" placeholder="Search instructor, position or room…">
                         </div>
-                    </div>
-                </div>
-
-                <!-- Faculty Grid -->
-                <div class="content-card" style="flex:1;min-height:0;">
-                    <div class="card-header">
-                        <h3 class="card-title">CCS Faculty Status</h3>
-                    </div>
-                    <div class="card-body" style="padding:1.25rem;overflow-y:auto;">
-                        <div class="avail-grid" id="availGrid">
-                            <% facultyList.forEach(f => { %>
-                            <% const isIn = f.bleStatus === 'in'; %>
-                            <div class="avail-card" data-name="<%= f.name.toLowerCase() %>">
-                                <div class="avail-photo">
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                                    <span class="avail-status-dot <%= isIn ? 'in' : 'out' %>"></span>
-                                </div>
-                                <div class="avail-info">
-                                    <p class="avail-name"><%= f.name %></p>
-                                    <p class="avail-position"><%= f.position %></p>
-                                    <span class="avail-badge <%= isIn ? 'in' : 'out' %>"><%= isIn ? 'IN' : 'OUT' %></span>
-                                </div>
-                            </div>
+                        <% if (departments.length > 1) { %>
+                        <select class="avail-select" id="availDept">
+                            <option value="all">All Departments</option>
+                            <% departments.forEach(d => { %>
+                            <option value="<%= d %>"><%= d %></option>
                             <% }); %>
-                        </div>
-                        <p id="noResults" style="display:none;text-align:center;padding:2rem;color:var(--gray-400);font-size:.875rem;">No instructor found.</p>
+                        </select>
+                        <% } %>
+                        <select class="avail-select" id="availStatus">
+                            <option value="all">All Status</option>
+                            <option value="available">Available</option>
+                            <option value="dnd">Do Not Disturb</option>
+                            <option value="meeting">In a Meeting</option>
+                            <option value="travel">Official Travel</option>
+                            <option value="leave">On Leave</option>
+                            <option value="none">Not set</option>
+                        </select>
+                        <select class="avail-select" id="availPresence">
+                            <option value="all">Any Presence</option>
+                            <option value="in-room">In Room</option>
+                            <option value="out-of-room">Out of Room</option>
+                            <option value="unknown">Awaiting Data</option>
+                        </select>
+                        <span class="avail-count" id="availCount">—</span>
                     </div>
                 </div>
+            </div>
 
-            </div><!-- end #pageContent -->
+            <div class="content-card">
+                <div class="card-header">
+                    <h3 class="card-title">Faculty Status</h3>
+                </div>
+                <div class="card-body" style="padding:1.25rem;">
+                    <% if (!faculty.length) { %>
+                    <p style="text-align:center;padding:2rem;color:var(--gray-400);font-size:.875rem;margin:0;">
+                        No instructors are registered yet.
+                    </p>
+                    <% } else { %>
+                    <div class="avail-grid" id="availGrid">
+                        <% faculty.forEach(f => { %>
+                        <div class="avail-card <%= f.bleStatus %>"
+                             data-status="<%= f.availability || 'none' %>"
+                             data-presence="<%= f.bleStatus %>"
+                             data-dept="<%= f.department %>"
+                             data-search="<%= [f.name, f.position, f.department, f.officeRoom, f.detectedRoom].filter(Boolean).join(' ').toLowerCase() %>">
+                            <div class="avail-photo">
+                                <% if (f.photo) { %>
+                                    <img src="<%= f.photo %>" alt="<%= f.name %>">
+                                <% } else { %>
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                                <% } %>
+                                <span class="avail-status-dot <%= f.bleStatus %>"
+                                      title="<%= f.bleStatus === 'unknown' ? 'No presence data yet' : (f.bleStatus === 'in-room' ? 'Detected in room' : 'Not detected in room') %>"></span>
+                            </div>
+                            <div class="avail-info">
+                                <p class="avail-name"><%= f.name %></p>
+                                <p class="avail-position"><%= f.position %></p>
+                                <span class="avail-badge <%= f.availability || 'none' %>"><%= f.availabilityLabel %></span>
+
+                                <%# The BLE line stays separate from the badge above so a
+                                    self-reported status is never mistaken for a detection %>
+                                <p class="avail-ble <%= f.bleStatus %>">
+                                    <span class="avail-ble-dot"></span>
+                                    <% if (f.bleStatus === 'in-room') { %>
+                                        In <%= f.detectedRoom || 'room' %><%= f.lastDetected ? ` · ${f.lastDetected}` : '' %>
+                                    <% } else if (f.bleStatus === 'out-of-room') { %>
+                                        Not in room<%= f.lastDetected ? ` · ${f.lastDetected}` : '' %>
+                                    <% } else { %>
+                                        No presence data
+                                    <% } %>
+                                </p>
+
+                                <% if (f.officeRoom) { %>
+                                <p class="avail-office">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                                    <%= f.officeRoom %>
+                                </p>
+                                <% } %>
+                            </div>
+                        </div>
+                        <% }); %>
+                    </div>
+                    <p id="availEmpty" style="display:none;text-align:center;padding:2rem;color:var(--gray-400);font-size:.875rem;">No instructor matches your search.</p>
+                    <% } %>
+                </div>
+            </div>
 
         </div>
     </main>
@@ -86,16 +193,30 @@
 
 <%- include('../../partials/footer') %>
 <%- include('../../partials/script') %>
+<script src="/js/card-filter.js?v=<%= Date.now() %>"></script>
 <script>
-function filterFaculty() {
-    const q = document.getElementById('searchInput').value.toLowerCase().trim();
-    const cards = document.querySelectorAll('#availGrid .avail-card');
-    let visible = 0;
-    cards.forEach(card => {
-        const match = card.dataset.name.includes(q);
-        card.style.display = match ? '' : 'none';
-        if (match) visible++;
+(function () {
+    'use strict';
+    if (!window.CardFilter) return;
+
+    var empty = document.getElementById('availEmpty');
+    var filters = [
+        { selector: '#availStatus', attr: 'status' },
+        { selector: '#availPresence', attr: 'presence' },
+    ];
+    if (document.getElementById('availDept')) {
+        filters.push({ selector: '#availDept', attr: 'dept' });
+    }
+
+    window.CardFilter.create({
+        cardSelector: '.avail-card',
+        search: '#availSearch',
+        filters: filters,
+        count: '#availCount',
+        noun: 'instructor',
+        onFilter: function (visible) {
+            if (empty) empty.style.display = visible.length ? 'none' : 'block';
+        },
     });
-    document.getElementById('noResults').style.display = visible === 0 ? 'block' : 'none';
-}
+}());
 </script>

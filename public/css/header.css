@@ -138,3 +138,43 @@
         font-size: 0.625rem;
     }
 }
+
+/* ── Mobile navigation toggle ──
+   Below 1024px the institution name is dropped and the hamburger takes its
+   place. The button lives here but drives the sidebar's own toggle, so the
+   open/close behaviour stays in one place. */
+.header-menu-toggle {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    flex-shrink: 0;
+    padding: 0;
+    border: 1.5px solid var(--gray-200);
+    border-radius: var(--radius-md, 8px);
+    background: #fff;
+    color: var(--gray-600);
+    cursor: pointer;
+    transition: all .2s ease;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+.header-menu-toggle:hover,
+.header-menu-toggle:focus-visible {
+    border-color: var(--primary-blue);
+    color: var(--primary-blue);
+    background: rgba(10, 61, 98, .05);
+    outline: none;
+}
+
+@media (max-width: 1024px) {
+    .header-institution-name { display: none; }
+
+    .header-menu-toggle:not([hidden]) { display: inline-flex; }
+
+    /* The sidebar's own hamburger would be a second one doing the same job.
+       !important because each role's page stylesheet loads after this file
+       and turns it back on inside its own mobile block. */
+    .sidebar-mobile-toggle { display: none !important; }
+}

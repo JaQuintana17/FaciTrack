@@ -5,8 +5,8 @@ const ConsultationModel = require('../models/ConsultationModel');
 const SlotReservation = require('../models/SlotReservationModel');
 const AuditLogModel = require('../models/AuditLogModel');
 const { buildStudentUser } = require('../utils/sessionUser');
-const { to12Hour } = require('../utils/timeFormat');
-const { isWithinLeadTime, BOOKING_LEAD_TIME_HOURS } = require('../services/scheduling');
+const { to12Hour, timeAgo } = require('../utils/timeFormat');
+const { isWithinLeadTime, bookingLeadTimeHours } = require('../services/scheduling');
 
 /**
  * A non-available availability_status is a "right now" signal, so it only bars
@@ -30,6 +30,23 @@ function getTwoWeekWindow() {
     return { windowStart, windowEnd };
 }
 
+/**
+ * Why a slot cannot be booked, or null when it can.
+ *
+ * Ordered most-specific first: a day the instructor blocked off explains more
+ * than "too soon", and the student only ever sees one reason per slot.
+ */
+function slotReason(sub, { isReservedByOther, roomAvailable, canDoOnline }) {
+    if (sub.dateBlocked) return 'Instructor away';
+    if (sub.statusBlocked) return 'Instructor unavailable today';
+    if (sub.isBooked) return 'Already booked';
+    if (isReservedByOther) return 'Being booked';
+    if (sub.calendarBlocked) return 'Instructor busy';
+    if (sub.tooSoon) return 'Too soon to book';
+    if (!roomAvailable && !canDoOnline) return 'No room or link';
+    return null;
+}
+
 function findNextAvailable(consultationSlots) {
     const now = new Date();
     const todayKey = now.toISOString().split('T')[0];
@@ -38,6 +55,11 @@ function findNextAvailable(consultationSlots) {
     const openSlots = [];
     consultationSlots.forEach(group => {
         group.subSlots.forEach(sub => {
+            // One rule, already decided by slotReason(): if the calendar marks
+            // the slot closed, "next available" must not advertise it. This
+            // previously only looked at booked/reserved, so a day the
+            // instructor had blocked still showed up as the next opening.
+            if (sub.unavailableReason) return;
             if (sub.isBooked || sub.isReservedByOther) return;
             openSlots.push({
                 date: group.date,
@@ -77,6 +99,79 @@ function parseTimeToMins(str) {
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
+// Bookings that have not happened yet and still could
+const LIVE_STATUSES = ['pending', 'confirmed'];
+
+// users.availability_status → what a student should read
+const AVAILABILITY_LABELS = {
+    available: 'Available',
+    dnd: 'Do Not Disturb',
+    travel: 'Official Travel',
+    leave: 'On Leave',
+    meeting: 'In a Meeting',
+};
+
+function dayKey(value) {
+    return String(value).slice(0, 10);
+}
+
+/**
+ * Collapse a student's bookings into one summary per instructor.
+ *
+ * Ordering puts whoever needs attention first: instructors with something
+ * still pending, then anyone with an upcoming consultation, then the rest by
+ * how recently the student saw them. That way the top of the grid is always
+ * the part worth looking at.
+ */
+function groupByInstructor(appointments) {
+    const today = dayKey(new Date().toISOString());
+    const byInstructor = new Map();
+
+    appointments.forEach(apt => {
+        if (!byInstructor.has(apt.instructorId)) {
+            byInstructor.set(apt.instructorId, {
+                instructorId: apt.instructorId,
+                facultyName: apt.facultyName,
+                facultyDisplayName: apt.facultyDisplayName,
+                facultyPhoto: apt.facultyPhoto,
+                position: apt.position,
+                departmentName: apt.departmentName,
+                total: 0,
+                pending: 0,
+                upcoming: 0,
+                completed: 0,
+                nextDate: null,
+                nextSlot: null,
+                lastDate: null,
+            });
+        }
+
+        const row = byInstructor.get(apt.instructorId);
+        const date = dayKey(apt.date);
+        row.total += 1;
+
+        if (apt.status === 'pending') row.pending += 1;
+        if (apt.status === 'completed') row.completed += 1;
+
+        if (LIVE_STATUSES.includes(apt.status) && date >= today) {
+            row.upcoming += 1;
+            // Earliest still-to-come booking is the one worth surfacing
+            if (!row.nextDate || date < row.nextDate) {
+                row.nextDate = date;
+                row.nextSlot = apt.slot;
+            }
+        }
+        if (!row.lastDate || date > row.lastDate) row.lastDate = date;
+    });
+
+    return [...byInstructor.values()].sort((a, b) => {
+        if ((b.pending > 0) - (a.pending > 0)) return (b.pending > 0) - (a.pending > 0);
+        if ((b.upcoming > 0) - (a.upcoming > 0)) return (b.upcoming > 0) - (a.upcoming > 0);
+        if (a.nextDate && b.nextDate && a.nextDate !== b.nextDate) return a.nextDate < b.nextDate ? -1 : 1;
+        return (b.lastDate || '').localeCompare(a.lastDate || '');
+    });
+}
+
 const StudentController = {
 
     async renderDashboardPage(req, res) {
@@ -97,20 +192,34 @@ const StudentController = {
             const endKey = toKey(windowEnd);
 
             const formattedFaculties = await Promise.all(faculties.map(async f => {
-                const grouped = await ConsultationModel.getSlotsByInstructorGrouped(f.instructor_id);
+                // The same query the profile page uses, so the directory's
+                // "next available" cannot advertise a slot the profile then
+                // shows as closed. The previous query knew nothing about
+                // blocked dates, calendar events or lead time.
+                const grouped = await ConsultationModel.getSlotsForStudentView(f.instructor_id);
+                const canDoOnline = !!f.default_meeting_link;
 
             const consultationSlots = grouped
                     .filter(g => g.date >= startKey && g.date <= endKey)
                     .map(g => ({
                         day: g.day,
                         date: g.date,
-                        subSlots: g.subSlots.map(sub => ({
-                            id: sub.id,
-                            timeStart: sub.timeStart,
-                            timeEnd: sub.timeEnd,
-                            isBooked: sub.isBooked,
-                            isReservedByOther: false, // directory-level preview doesn't need per-student reservation state
-                        })),
+                        subSlots: g.subSlots.map(sub => {
+                            const roomAvailable = sub.roomAvailable !== false;
+                            return {
+                                id: sub.id,
+                                timeStart: sub.timeStart,
+                                timeEnd: sub.timeEnd,
+                                isBooked: sub.isBooked,
+                                // A directory preview has no per-student
+                                // reservation state; a held slot still shows as
+                                // the next opening until the hold is booked.
+                                isReservedByOther: false,
+                                unavailableReason: slotReason(sub, {
+                                    isReservedByOther: false, roomAvailable, canDoOnline,
+                                }),
+                            };
+                        }),
                     }));
 
                 const nextAvailable = findNextAvailable(consultationSlots) || 'No upcoming slots';
@@ -143,7 +252,9 @@ const StudentController = {
             if (!faculty) return res.redirect('/student/dashboard');
 
             const { windowStart, windowEnd } = getTwoWeekWindow();
-            const grouped = await ConsultationModel.getBookableSlotsByInstructor(facultyPublicId);
+            // Every published slot, not just the bookable ones — the profile
+            // explains why a slot is closed instead of leaving a gap
+            const grouped = await ConsultationModel.getSlotsForStudentView(facultyPublicId);
             const activeReservations = await SlotReservation.getActiveReservationsForInstructor(facultyPublicId);
             const unavailability = await ConsultationModel.getUnavailability(facultyPublicId);
 
@@ -163,17 +274,26 @@ const StudentController = {
                 .map(g => ({
                     day: g.day,
                     date: g.date,
-                    subSlots: g.subSlots.map(sub => ({
-                        id: sub.id,
-                        timeStart: sub.timeStart,
-                        timeEnd: sub.timeEnd,
-                        isBooked: sub.isBooked,
-                        isReservedByOther: reservedByOther.has(sub.id),
-                        status: sub.status,
+                    subSlots: g.subSlots.map(sub => {
+                        const isReservedByOther = reservedByOther.has(sub.id);
                         // A slot is only truly bookable if at least one mode works
-                        roomAvailable: sub.roomAvailable !== false,
-                        onlineAvailable: canDoOnline,
-                    })),
+                        const roomAvailable = sub.roomAvailable !== false;
+                        return {
+                            id: sub.id,
+                            timeStart: sub.timeStart,
+                            timeEnd: sub.timeEnd,
+                            isBooked: sub.isBooked,
+                            isReservedByOther,
+                            status: sub.status,
+                            roomAvailable,
+                            onlineAvailable: canDoOnline,
+                            // One reason per slot, so the page never has to
+                            // guess why something is closed
+                            unavailableReason: slotReason(sub, {
+                                isReservedByOther, roomAvailable, canDoOnline,
+                            }),
+                        };
+                    }),
                 }));
 
             faculty.nextAvailable = findNextAvailable(consultationSlots);
@@ -189,7 +309,7 @@ const StudentController = {
                 unavailableDates: unavailability.map(u => u.date),
                 windowStart: windowStart.toISOString(),
                 windowEnd: windowEnd.toISOString(),
-                leadTimeHours: BOOKING_LEAD_TIME_HOURS,
+                leadTimeHours: await bookingLeadTimeHours(),
                 canDoOnline,
             });
         } catch (err) {
@@ -223,7 +343,7 @@ const StudentController = {
                 return res.redirect(`/student/faculty/${slotDetails.faculty.id}?bookingError=instructorUnavailable`);
             }
 
-            if (isWithinLeadTime(slotDetails.date, slotDetails.rawStartTime)) {
+            if (isWithinLeadTime(slotDetails.date, slotDetails.rawStartTime, new Date(), await bookingLeadTimeHours())) {
                 return res.redirect(`/student/faculty/${slotDetails.faculty.id}?bookingError=tooSoon`);
             }
 
@@ -266,55 +386,161 @@ const StudentController = {
         }
     },
 
+    /**
+     * The student's own bookings, grouped one card per instructor.
+     *
+     * A flat list grows unreadable after a term or two, so the index shows who
+     * the student has consulted and the detail page shows that instructor's
+     * bookings. Both pages read the same rows through this one mapper, so a
+     * field added here appears in both.
+     */
+    async loadStudentAppointments(studentPublicId) {
+        const user = await UserModel.getUserByPublicId(studentPublicId);
+        const rawAppointments = await AppointmentModel.getAppointmentsByUser(user.internal_id);
+
+        return rawAppointments.map(row => ({
+            id: row.id,
+            status: row.status,
+            instructorId: row.instructor_public_id,
+            facultyName: `${row.last_name}, ${row.first_name}${row.middle_name ? ' ' + row.middle_name : ''}`,
+            facultyDisplayName: `${row.first_name} ${row.last_name}`,
+            facultyPhoto: row.instructor_photo || null,
+            position: row.position,
+            topic: row.topic,
+            mode: row.mode,
+            declineReason: row.decline_reason,
+            departmentName: row.department_name,
+            date: row.consultation_date,
+            rawDate: row.consultation_date,
+            dayOfWeek: row.day_of_the_week,
+            slot: `${to12Hour(row.start_time)} – ${to12Hour(row.end_time)}`,
+            roomNumber: row.room_number,
+            buildingName: row.building_name,
+            notes: row.notes,
+            sectionGroupName: row.section_group_name,
+            courseSubject: row.course_subject,
+            rescheduledToId: row.rescheduled_to_id,
+            rescheduledInfo: row.rescheduled_to_id ? {
+                date: row.rescheduled_date,
+                dayOfWeek: row.rescheduled_day,
+                slot: `${to12Hour(row.rescheduled_start_time)} – ${to12Hour(row.rescheduled_end_time)}`,
+            } : null,
+            rescheduledFromId: row.rescheduled_from_id,
+            rescheduledFromInfo: row.rescheduled_from_id ? {
+                date: row.rescheduled_from_date,
+                dayOfWeek: row.rescheduled_from_day,
+                slot: `${to12Hour(row.rescheduled_from_start_time)} – ${to12Hour(row.rescheduled_from_end_time)}`,
+            } : null,
+        }));
+    },
+
+    /**
+     * The live Faculty Availability board.
+     *
+     * Two independent signals sit on each card: what the instructor set
+     * themselves (real today) and what BLE reports (empty until the scanners
+     * ship). They are shown separately rather than merged, so the board never
+     * claims someone is out of their room when nothing has actually looked.
+     */
+    async renderAvailabilityPage(req, res) {
+        try {
+            const rows = await UserModel.getFacultyPresence();
+
+            const faculty = rows.map(row => {
+                const known = row.is_present !== null && row.is_present !== undefined;
+                return {
+                    id: row.id,
+                    name: row.name,
+                    position: row.position || 'Faculty',
+                    photo: row.profile_picture || null,
+                    department: row.department_name || '',
+                    departmentShort: row.department_short || '',
+                    availability: row.availability_status || null,
+                    availabilityLabel: AVAILABILITY_LABELS[row.availability_status] || 'Not set',
+                    officeRoom: row.office_room_number
+                        ? [row.office_building, row.office_room_number].filter(Boolean).join(', ')
+                        : null,
+                    // 'unknown' is not 'out' — nothing has reported on them yet
+                    bleStatus: known ? (row.is_present ? 'in-room' : 'out-of-room') : 'unknown',
+                    detectedRoom: row.detected_room_number || null,
+                    detectedRoomType: row.detected_room_type || null,
+                    lastDetected: known ? timeAgo(row.presence_updated_at) : null,
+                };
+            });
+
+            const departments = [...new Set(faculty.map(f => f.department).filter(Boolean))].sort();
+
+            res.render('pages/student/availability', {
+                title: 'FaciTrack - Faculty Availability',
+                student: buildStudentUser(req.session),
+                faculty,
+                departments,
+                // Drives both the LIVE pill and the explanatory banner
+                presenceUnavailable: faculty.every(f => f.bleStatus === 'unknown'),
+            });
+        } catch (err) {
+            console.error('[StudentController.renderAvailabilityPage]', err);
+            res.status(500).send('Failed to load faculty availability.');
+        }
+    },
+
     async renderAppointmentsPage(req, res) {
         const student = buildStudentUser(req.session);
 
         try {
-            const studentId = req.session.userId;
-            const user = await UserModel.getUserByPublicId(studentId);
+            const appointments = await StudentController.loadStudentAppointments(req.session.userId);
 
-            const rawAppointments = await AppointmentModel.getAppointmentsByUser(user.internal_id);
-
-            const appointments = rawAppointments.map(row => ({
-                id: row.id,
-                status: row.status,
-                facultyName: `${row.last_name}, ${row.first_name}${row.middle_name ? ' ' + row.middle_name : ''}`,
-                position: row.position,
-                topic: row.topic,
-                mode: row.mode,
-                declineReason: row.decline_reason,
-                departmentName: row.department_name,
-                date: row.consultation_date,
-                rawDate: row.consultation_date,
-                dayOfWeek: row.day_of_the_week,
-                slot: `${to12Hour(row.start_time)} – ${to12Hour(row.end_time)}`,
-                roomNumber: row.room_number,
-                buildingName: row.building_name,
-                notes: row.notes,
-                sectionGroupName: row.section_group_name,
-                courseSubject: row.course_subject,
-                rescheduledToId: row.rescheduled_to_id,
-                rescheduledInfo: row.rescheduled_to_id ? {
-                    date: row.rescheduled_date,
-                    dayOfWeek: row.rescheduled_day,
-                    slot: `${to12Hour(row.rescheduled_start_time)} – ${to12Hour(row.rescheduled_end_time)}`,
-                } : null,
-                rescheduledFromId: row.rescheduled_from_id,
-                rescheduledFromInfo: row.rescheduled_from_id ? {
-                    date: row.rescheduled_from_date,
-                    dayOfWeek: row.rescheduled_from_day,
-                    slot: `${to12Hour(row.rescheduled_from_start_time)} – ${to12Hour(row.rescheduled_from_end_time)}`,
-                } : null,
-            }));
+            // Notification links still point at this page with ?openApt=<id>,
+            // and those URLs are already out in sent emails. Resolve the
+            // booking to its instructor and forward, so old links keep landing
+            // on the right screen rather than on a grid that cannot show them.
+            const openApt = req.query.openApt;
+            if (openApt) {
+                const target = appointments.find(a => String(a.id) === String(openApt));
+                if (target) {
+                    return res.redirect(
+                        `/student/appointments/${encodeURIComponent(target.instructorId)}` +
+                        `?openApt=${encodeURIComponent(openApt)}`
+                    );
+                }
+            }
 
             res.render('pages/student/appointments', {
                 title: 'FaciTrack - My Appointments',
                 student,
                 appointments,
+                instructors: groupByInstructor(appointments),
             });
         } catch (err) {
             console.error('[StudentController.renderAppointmentsPage]', err);
-            res.status(500).send('Failed to load booking form.');
+            res.status(500).send('Failed to load your appointments.');
+        }
+    },
+
+    /** Every booking the student has made with one instructor. */
+    async renderInstructorHistoryPage(req, res) {
+        const student = buildStudentUser(req.session);
+
+        try {
+            const appointments = await StudentController.loadStudentAppointments(req.session.userId);
+            const mine = appointments.filter(a => a.instructorId === req.params.instructorId);
+
+            // Nothing with this instructor is not an error, but there is also
+            // nothing to show — send them back rather than to an empty shell.
+            if (!mine.length) return res.redirect('/student/appointments');
+
+            const [summary] = groupByInstructor(mine);
+
+            res.render('pages/student/appointment-history', {
+                title: `FaciTrack - ${summary.facultyDisplayName}`,
+                student,
+                instructor: summary,
+                appointments: mine,
+                openApt: req.query.openApt || null,
+            });
+        } catch (err) {
+            console.error('[StudentController.renderInstructorHistoryPage]', err);
+            res.status(500).send('Failed to load your appointment history.');
         }
     },
 
@@ -332,11 +558,20 @@ const StudentController = {
                 });
             }
 
-            if (slot && isWithinLeadTime(slot.date, slot.rawStartTime)) {
+            // A calendar sync may have landed while the student sat on the page
+            if (await ConsultationModel.isBlockedByCalendar(slotId)) {
+                return res.status(409).json({
+                    success: false,
+                    reason: 'INSTRUCTOR_UNAVAILABLE',
+                    error: 'The instructor has since blocked that time. Please pick another slot.',
+                });
+            }
+
+            if (slot && isWithinLeadTime(slot.date, slot.rawStartTime, new Date(), await bookingLeadTimeHours())) {
                 return res.status(409).json({
                     success: false,
                     reason: 'TOO_SOON',
-                    error: `Slots starting within ${BOOKING_LEAD_TIME_HOURS} hours can no longer be booked.`,
+                    error: `Slots starting within ${await bookingLeadTimeHours()} hours can no longer be booked.`,
                 });
             }
 
@@ -392,12 +627,19 @@ const StudentController = {
 
             // The slot list already filters these out, but a stale page or a direct
             // POST could still target a slot that is now inside the lead-time window.
-            if (isWithinLeadTime(slotDetails.date, slotDetails.rawStartTime)) {
+            if (isWithinLeadTime(slotDetails.date, slotDetails.rawStartTime, new Date(), await bookingLeadTimeHours())) {
                 return res.redirect(`/student/faculty/${slotDetails.faculty.id}?bookingError=tooSoon`);
             }
 
             if (statusBlocksSlot(slotDetails.faculty.availability_status, slotDetails.date)) {
                 return res.redirect(`/student/faculty/${slotDetails.faculty.id}?bookingError=instructorUnavailable`);
+            }
+
+            // The submit path never checked this, so a calendar event could be
+            // booked straight over — by a stale page, or by a sync or an event
+            // that landed while the student filled in the form.
+            if (await ConsultationModel.isBlockedByCalendar(slotId)) {
+                return res.redirect(`/student/faculty/${slotDetails.faculty.id}?bookingError=instructorBusy`);
             }
 
             // The form disables this, but a stale page could still submit it

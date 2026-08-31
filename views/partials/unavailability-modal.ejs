@@ -65,6 +65,10 @@
 
     <div class="modal-footer" id="unavailFooterForm">
       <button class="btn-modal btn-cancel" type="button" onclick="UnavailModal.close()">Cancel</button>
+      <!-- Shown only when the caller passes skipLabel, so Cancel can mean cancel.
+           Styled apart from Cancel: they sit together and do opposite things. -->
+      <button class="btn-modal btn-skip" type="button" id="unavailSkipBtn"
+              style="display:none;" onclick="UnavailModal.skip()"></button>
       <button class="btn-modal btn-confirm" id="unavailConfirmBtn" type="button"
               style="background:#dc2626;" onclick="UnavailModal.submit()">Block Date</button>
     </div>
@@ -96,6 +100,16 @@
 </div>
 
 <style>
+  /* "Set status only" sits next to Cancel and does the opposite thing, so it
+     reads as a deliberate step forward rather than another way out. */
+  .btn-modal.btn-skip {
+    background: #e8f2ff; color: var(--primary-blue);
+    border: 1.5px solid #bfdbfe;
+  }
+  .btn-modal.btn-skip:hover {
+    background: var(--primary-blue); color: #fff; border-color: var(--primary-blue);
+  }
+
   .unav-prompt {
     display: flex; align-items: flex-start; gap: .55rem;
     padding: .75rem .9rem; margin-bottom: 1rem;

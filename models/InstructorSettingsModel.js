@@ -23,6 +23,9 @@ const TYPE_TO_PREFERENCE = {
     'cancellation': 'notifyCancellations',
     'reminder': 'notifyReminders',
     'alert': 'notifyBleAbsence',
+    // A make-up submission is a new request too — it reaches the dean rather
+    // than the instructor, and Dean > Settings labels it as such.
+    'makeup': 'notifyNewRequests',
 };
 
 const COLUMNS = `notify_new_requests, notify_cancellations, notify_reminders,

@@ -1,0 +1,82 @@
+/* Admin → BLE Devices. Builds on instructor/dashboard.css for the shell. */
+
+/* ── Live indicator ── */
+.bx-live { display: inline-flex; align-items: center; gap: .4rem; font-size: .75rem; font-weight: 700; color: var(--gray-500); background: var(--gray-100); padding: .35rem .7rem; border-radius: 999px; }
+.bx-live-dot { width: 7px; height: 7px; border-radius: 50%; background: #16a34a; animation: bxPulse 2s ease-in-out infinite; }
+@keyframes bxPulse { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }
+/* The badge should not claim to be live once the stream has dropped */
+.bx-live.is-down { color: #92400e; background: #fffbeb; }
+.bx-live.is-down .bx-live-dot { background: #d97706; animation: none; }
+
+/* ── Notes ── */
+.bx-note { display: flex; gap: .6rem; align-items: flex-start; font-size: .78rem; line-height: 1.55; border-radius: var(--radius-md); padding: .75rem .9rem; margin-bottom: 1.25rem; }
+.bx-note.info { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
+.bx-note.warn { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+.bx-note svg { flex-shrink: 0; margin-top: .1rem; }
+.bx-note code { font-family: ui-monospace, "SF Mono", Menlo, monospace; background: rgba(0, 0, 0, .06); padding: .05rem .3rem; border-radius: 4px; }
+
+/* ── Health tiles ── */
+.bx-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.25rem; }
+.bx-stat { background: #fff; border: 1px solid var(--gray-200); border-left: 4px solid var(--gray-300); border-radius: var(--radius-lg); padding: .95rem 1.1rem; }
+.bx-stat.good { border-left-color: #16a34a; }
+.bx-stat.warn { border-left-color: #d97706; }
+.bx-stat.bad  { border-left-color: #dc2626; }
+.bx-stat-label { font-size: .7rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--gray-500); margin: 0; }
+.bx-stat-value { font-size: 1.55rem; font-weight: 800; color: var(--gray-900); margin: .15rem 0; line-height: 1.1; }
+.bx-stat-value span { font-size: .9rem; font-weight: 700; color: var(--gray-400); }
+.bx-stat-sub { font-size: .72rem; color: var(--gray-400); margin: 0; }
+.bx-stat-sub a { color: var(--primary-blue); text-decoration: none; font-weight: 600; }
+.bx-stat-sub a:hover { text-decoration: underline; }
+
+/* ── Tables ── */
+.bx-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.bx-table { width: 100%; border-collapse: collapse; min-width: 780px; }
+.bx-table th { text-align: left; font-size: .68rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--gray-500); padding: .6rem .75rem; border-bottom: 1px solid var(--gray-200); white-space: nowrap; }
+.bx-table td { padding: .6rem .75rem; border-bottom: 1px solid var(--gray-100); font-size: .82rem; color: var(--gray-900); vertical-align: middle; }
+.bx-table tr:last-child td { border-bottom: none; }
+.bx-table tr.unassigned { background: #fffdf5; }
+.bx-table tr.is-offline td { opacity: .6; }
+
+.bx-mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .78rem; color: var(--gray-700); white-space: nowrap; }
+.bx-muted { color: var(--gray-400); font-weight: 500; }
+.bx-sub { display: block; font-size: .7rem; }
+
+/* ── Status pills ── */
+.bx-pill { display: inline-block; font-size: .64rem; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; padding: .15rem .45rem; border-radius: 5px; white-space: nowrap; }
+.bx-pill.ok { background: #dcfce7; color: #15803d; }
+.bx-pill.off { background: var(--gray-100); color: var(--gray-500); }
+.bx-pill.in-room { background: #dbeafe; color: #1e40af; margin-left: .25rem; }
+
+.bx-signal { font-family: ui-monospace, monospace; font-size: .76rem; white-space: nowrap; }
+.bx-signal.strong { color: #16a34a; }
+.bx-signal.weak { color: #d97706; }
+
+/* ── Inputs ── */
+.bx-select { width: 100%; min-width: 165px; padding: .38rem .55rem; border: 1.5px solid var(--gray-200); border-radius: var(--radius-md); font-size: .8rem; font-family: inherit; background: #fff; color: var(--gray-900); }
+.bx-input { width: 100%; min-width: 115px; padding: .38rem .55rem; border: 1.5px solid var(--gray-200); border-radius: var(--radius-md); font-size: .8rem; font-family: inherit; }
+.bx-select:focus, .bx-input:focus { border-color: var(--primary-blue); outline: none; box-shadow: 0 0 0 3px rgba(10, 61, 98, .1); }
+
+.bx-actions { display: flex; gap: .35rem; white-space: nowrap; }
+.bx-btn { padding: .33rem .7rem; border-radius: var(--radius-md); border: 1px solid var(--gray-200); background: #fff; font-size: .75rem; font-weight: 700; font-family: inherit; color: var(--gray-700); cursor: pointer; }
+.bx-btn:hover { background: var(--gray-100); }
+.bx-btn.primary { background: var(--primary-blue); border-color: var(--primary-blue); color: #fff; }
+.bx-btn.primary:hover { background: #083d5e; }
+.bx-btn.danger:hover { background: #fef2f2; border-color: #fecaca; color: #dc2626; }
+
+.bx-range { font-family: ui-monospace, monospace; font-size: .76rem; color: var(--gray-700); white-space: nowrap; }
+.bx-threshold { display: flex; gap: .3rem; align-items: center; }
+.bx-thr-input { min-width: 70px; width: 76px; text-align: center; }
+/* An untuned room shows the global default as placeholder text, so the box is
+   never blank-looking when a value is in fact in force. */
+.bx-thr-input::placeholder { color: var(--gray-400); font-style: italic; }
+
+.bx-empty { text-align: center; padding: 2.5rem 1rem; color: var(--gray-400); font-size: .85rem; margin: 0; }
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+    .bx-stats { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 520px) {
+    .bx-stats { grid-template-columns: 1fr; gap: .6rem; }
+    .bx-table { min-width: 700px; }
+}

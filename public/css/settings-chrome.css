@@ -1,0 +1,100 @@
+/**
+ * Shared chrome for any settings page that tracks unsaved changes:
+ * the per-card "Unsaved" pill, the sticky save bar, and the leave dialog.
+ *
+ * Instructor and Dean settings both use it, so the two pages cannot drift into
+ * looking like different products. Page-specific layout stays in the page.
+ * Pair with /js/settings-tracker.js, which owns the matching behaviour.
+ */
+
+/* ── Per-card unsaved marker ── */
+.unsaved-pill {
+  display: none; align-items: center; gap: .4rem; padding: .25rem .6rem;
+  border-radius: var(--radius-full);
+  background: rgba(10, 61, 98, .08); color: var(--primary-blue);
+  font-size: .68rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .03em; white-space: nowrap;
+}
+.unsaved-pill::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--teal-light); flex-shrink: 0;
+}
+.settings-card.is-dirty .unsaved-pill { display: inline-flex; }
+.settings-card.is-dirty {
+  border-color: var(--teal-light);
+  box-shadow: 0 0 0 3px rgba(30, 136, 229, .10), 0 2px 8px rgba(0, 0, 0, .04);
+}
+.settings-card .card-header {
+  display: flex; align-items: center; justify-content: space-between; gap: .75rem;
+}
+.profile-card-top .unsaved-pill { position: absolute; top: .85rem; right: .85rem; }
+
+/* ── Save bar ──
+   Sticks to the bottom of the scrolling content rather than the viewport, so
+   it never lands on top of the footer. */
+.dirty-bar { position: sticky; bottom: 1rem; z-index: 900; display: none; margin-top: 1.5rem; }
+.dirty-bar.show { display: block; }
+.dirty-bar-inner {
+  display: flex; align-items: center; justify-content: space-between; gap: 1.25rem;
+  padding: .9rem 1.25rem;
+  background: var(--bg-white);
+  border: 1px solid var(--gray-200);
+  border-left: 4px solid var(--teal-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  animation: dirtyBarUp var(--transition-slow) ease-out;
+}
+@keyframes dirtyBarUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
+.dirty-bar-text { font-size: .85rem; font-weight: 700; color: var(--gray-900); margin: 0; }
+.dirty-bar-sub  { font-size: .75rem; color: var(--gray-500); margin: .15rem 0 0; }
+.dirty-bar-actions { display: flex; gap: .6rem; flex-shrink: 0; }
+.dirty-bar button {
+  padding: .625rem 1.5rem; border-radius: var(--radius-md); border: none; cursor: pointer;
+  font-size: .875rem; font-weight: 600; font-family: var(--font-body);
+  transition: all var(--transition-base);
+}
+.dirty-bar button[disabled] { opacity: .6; cursor: progress; }
+.dirty-bar .btn-discard {
+  background: transparent; color: var(--gray-600); border: 1.5px solid var(--gray-300);
+}
+.dirty-bar .btn-discard:hover { background: var(--gray-100); color: var(--gray-800); }
+.dirty-bar .btn-save-all { background: var(--primary-blue); color: #fff; }
+.dirty-bar .btn-save-all:hover {
+  background: var(--primary-dark);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(10, 61, 98, .25);
+}
+
+/* Below 1024px the layout stacks and the window scrolls instead of
+   .instructor-main, so sticky has nothing to stick to — pin it to the viewport. */
+@media (max-width: 1024px) {
+  .dirty-bar { position: fixed; left: 0; right: 0; bottom: 0; margin-top: 0; }
+  .dirty-bar-inner {
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    border-left: 1px solid var(--gray-200);
+    border-top: 4px solid var(--teal-light);
+    box-shadow: 0 -6px 20px rgba(0, 0, 0, .12);
+  }
+  body.has-unsaved .main-container { padding-bottom: 10rem; }
+}
+@media (max-width: 640px) {
+  .dirty-bar-inner { flex-direction: column; align-items: stretch; gap: .75rem; }
+  .dirty-bar-actions button { flex: 1; padding: .625rem .75rem; }
+}
+
+/* ── Leave dialog ── */
+#leaveOverlay .btn-primary { background: var(--primary-blue); color: #fff; }
+#leaveOverlay .btn-primary:hover {
+  background: var(--primary-dark);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(10, 61, 98, .25);
+}
+.leave-modal-actions { display: flex; flex-direction: column; gap: .55rem; margin-top: 1.25rem; }
+.leave-modal-actions button { width: 100%; }
+@media (min-width: 560px) {
+  .leave-modal-actions { flex-direction: row; justify-content: flex-end; }
+  .leave-modal-actions button { width: auto; }
+}

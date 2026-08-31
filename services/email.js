@@ -9,10 +9,11 @@ const nodemailer = require('nodemailer');
 const { deepLink } = require('../utils/deepLink');
 
 // ── Transport ──
-// When EMAIL_ENABLED=true and SMTP credentials are set, sends real emails.
-// Otherwise, logs to console only.
-function createTransport() {
-    if (process.env.EMAIL_ENABLED === 'true' && process.env.SMTP_HOST) {
+// SMTP host, port and credentials stay in .env — they are deployment secrets
+// and have no business in a database or rendered onto a settings form. The
+// administrator controls only the on/off switch, checked in sendEmail().
+function createTransport(enabled) {
+    if (enabled && process.env.SMTP_HOST) {
         return nodemailer.createTransport({
             host:   process.env.SMTP_HOST,
             port:   parseInt(process.env.SMTP_PORT) || 587,
@@ -34,7 +35,16 @@ const FROM_ADDRESS = process.env.EMAIL_FROM || 'FaciTrack <noreply@cspc.edu.ph>'
  * @param {object} opts - { to, subject, html, text }
  */
 async function sendEmail({ to, subject, html, text }) {
-    const transport = createTransport();
+    // Switched off in System Settings behaves exactly like an install with no
+    // SMTP configured: console mode, so nothing silently disappears.
+    let enabled = process.env.EMAIL_ENABLED === 'true';
+    try {
+        enabled = await require('./app-settings').get('email_enabled');
+    } catch (err) {
+        console.error('[Email] Could not read the email setting, using .env:', err.message);
+    }
+
+    const transport = createTransport(enabled);
     if (transport) {
         try {
             const info = await transport.sendMail({ from: FROM_ADDRESS, to, subject, html, text });

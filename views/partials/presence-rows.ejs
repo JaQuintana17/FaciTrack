@@ -1,0 +1,41 @@
+<%# The dean's presence log rows.
+    Kept apart so the page and the live-refresh endpoint render them from the
+    same markup — otherwise a row that arrives over SSE would slowly drift away
+    from one written at page load. Expects: presenceLogs %>
+<% presenceLogs.forEach(log => { %>
+<tr data-event="<%= log.status %>"
+    data-faculty="<%= log.facultyName %>"
+    data-room="<%= log.location %>"
+    data-ts="<%= log.timestamp %>"
+    data-log-id="<%= log.id || '' %>">
+  <td>
+    <div class="event-cell">
+      <span class="event-icon <%= log.status %>">
+        <% if(log.status==='entered'){ %>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+        <% } else { %>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        <% } %>
+      </span>
+      <span style="font-weight:600;font-size:.8125rem;color:<%= log.status==='entered'?'#15803d':'#374151' %>">
+        <%= log.status==='entered'?'Entered':'Exited' %>
+      </span>
+    </div>
+  </td>
+  <td>
+    <div style="display:flex;align-items:center;gap:.5rem">
+      <div class="apt-avatar-xs" style="font-size:.65rem;width:30px;height:30px"><%= log.facultyName.split(' ').map(n=>n[0]).join('').slice(0,2) %></div>
+      <span style="font-size:.8125rem;font-weight:600;color:var(--gray-900)"><%= log.facultyName %></span>
+    </div>
+  </td>
+  <td style="font-size:.8125rem"><%= log.location %></td>
+  <%
+    var _ts = new Date(log.timestamp);
+    var _date = isNaN(_ts) ? log.timestamp : _ts.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    var _time = isNaN(_ts) ? '' : _ts.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  %>
+  <td style="font-size:.8125rem;white-space:nowrap"><%= _date %></td>
+  <td style="font-size:.8125rem;white-space:nowrap"><%= _time %></td>
+  <td><%= log.duration || '—' %></td>
+</tr>
+<% }); %>

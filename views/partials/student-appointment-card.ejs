@@ -1,0 +1,109 @@
+<%#
+  One booking, as the student sees it. Rendered from the instructor history
+  page and anywhere else a single appointment needs showing, so the card only
+  has to be corrected in one place.
+
+  Locals: apt
+%>
+<%# data-search / data-status feed the toolbar on the history page; harmless
+    anywhere else the card is used. %>
+<div class="apt-list-card" data-apt-id="<%= apt.id %>"
+     data-status="<%= apt.status %>"
+     data-search="<%= [apt.topic, apt.courseSubject, apt.sectionGroupName, apt.notes, apt.mode, apt.roomNumber].filter(Boolean).join(' ').toLowerCase() %>">
+    <div class="apt-list-header">
+        <div>
+            <p class="apt-list-faculty"><%= apt.facultyName %></p>
+            <p class="apt-list-position"><%= apt.departmentName %></p>
+        </div>
+        <span class="apt-status-pill apt-status-<%= apt.status %>">
+            <%= apt.status.charAt(0).toUpperCase() + apt.status.slice(1) %>
+        </span>
+    </div>
+    <% if (apt.status === 'rescheduled' && apt.rescheduledInfo) { %>
+    <div class="apt-list-row">
+        <div class="apt-list-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+        </div>
+        <div>
+            <p class="apt-list-label">Rescheduled To</p>
+            <p class="apt-list-value"><%= apt.rescheduledInfo.date %> · <%= apt.rescheduledInfo.slot %></p>
+        </div>
+    </div>
+    <% } %>
+    <div class="apt-list-body">
+        <% if (apt.rescheduledFromId && apt.rescheduledFromInfo) { %>
+        <div class="apt-list-row">
+            <div class="apt-list-icon" style="background:rgba(3,105,161,.08);color:#0369a1;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            </div>
+            <div>
+                <p class="apt-list-label">Rescheduled From</p>
+                <p class="apt-list-value" style="font-weight:400;">Originally <%= new Date(apt.rescheduledFromInfo.date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'Asia/Manila' }) %> · <%= apt.rescheduledFromInfo.slot %></p>
+            </div>
+        </div>
+        <% } %>
+        <div class="apt-list-row">
+            <div class="apt-list-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            </div>
+            <div>
+                <p class="apt-list-label">Topic</p>
+                <p class="apt-list-value"><%= apt.topic %></p>
+            </div>
+        </div>
+        <div class="apt-list-row">
+            <div class="apt-list-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            </div>
+            <div>
+                <p class="apt-list-label">Schedule</p>
+                <p class="apt-list-value"><%= new Date(apt.date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'Asia/Manila' }) %> · <%= apt.slot %></p>
+            </div>
+        </div>
+        <% if (apt.status !== 'declined') { %>
+        <div class="apt-list-row">
+            <div class="apt-list-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+            </div>
+            <div>
+                <p class="apt-list-label">Mode</p>
+                <p class="apt-list-value">
+                    <%= apt.mode %>
+                    <% if (apt.mode === 'Face-to-Face' && apt.roomNumber) { %>
+                        — <%= apt.roomNumber %><% if (apt.buildingName) { %>, <%= apt.buildingName %><% } %>
+                    <% } %>
+                </p>
+            </div>
+        </div>
+        <% } %>
+        <% if (apt.notes && apt.notes.trim() && apt.status !== 'declined') { %>
+        <div class="apt-list-row">
+            <div class="apt-list-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            </div>
+            <div>
+                <p class="apt-list-label">Notes</p>
+                <p class="apt-list-value" style="font-weight:400;"><%= apt.notes %></p>
+            </div>
+        </div>
+        <% } else if (apt.status === 'declined') { %>
+            <div class="apt-list-row">
+            <div class="apt-list-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            </div>
+            <div>
+                <p class="apt-list-label">Reason for declining</p>
+                <p class="apt-list-value" style="font-weight:400;"><%= apt.declineReason %></p>
+            </div>
+        </div>
+        <% } %>
+    </div>
+    <% if (apt.status === 'pending' || apt.status === 'confirmed') { %>
+    <div class="apt-list-actions">
+        <button type="button" class="btn-decline-apt" onclick="showDeclineModal(<%= apt.id %>, '<%= apt.facultyName %>', '<%= apt.date %>', '<%= apt.slot %>')">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+            Cancel Appointment
+        </button>
+    </div>
+    <% } %>
+</div>

@@ -15,6 +15,11 @@ const UnavailModal = (function () {
   let slotCache = null;            // reschedule options, fetched once per open
   let onAffectedStep = false;      // step 2 guards against an accidental dismiss
 
+  // How this run ended, so the page that opened the modal can react to the
+  // difference between "dates blocked" and "changed their mind".
+  let outcome = 'dismissed';       // blocked | skipped | undone | dismissed
+  let host = {};                   // per-open callbacks
+
   const $ = id => document.getElementById(id);
 
   function fmtDate(key) {
@@ -56,6 +61,23 @@ const UnavailModal = (function () {
   function open(prefillDate, options) {
     const opts = options || {};
     onAffectedStep = false;
+    outcome = 'dismissed';
+    host = {
+      onBlocked: opts.onBlocked,
+      onSkipped: opts.onSkipped,
+      onDismissed: opts.onDismissed,
+    };
+
+    // A caller that has something riding on the answer (setting On Leave, say)
+    // offers a way to go ahead without blocking, so closing the modal can mean
+    // "cancel" rather than being an ambiguous third option.
+    const skipBtn = $('unavailSkipBtn');
+    if (opts.skipLabel) {
+      skipBtn.textContent = opts.skipLabel;
+      skipBtn.style.display = '';
+    } else {
+      skipBtn.style.display = 'none';
+    }
     // Reset to step 1
     $('unavailStepForm').style.display = '';
     $('unavailFooterForm').style.display = '';
@@ -140,6 +162,9 @@ const UnavailModal = (function () {
       btn.disabled = false;
       btn.textContent = 'Undo block';
       remaining = 0;
+      // The dates are open again, so this counts as backing out — a caller
+      // waiting on the block must not treat it as confirmed.
+      outcome = 'undone';
       close();
     } catch (err) {
       btn.disabled = false;
@@ -152,11 +177,36 @@ const UnavailModal = (function () {
     onAffectedStep = false;
     $('unavailModal').classList.remove('show');
     document.body.classList.remove('modal-open');
-    // Let the host page refresh once the instructor is done
-    if (blocked.startDate && typeof window.onUnavailabilityChanged === 'function') {
-      window.onUnavailabilityChanged(blocked);
-      blocked = { startDate: null, endDate: null, reason: null };
+
+    // Snapshot and reset first: a callback may reopen the modal
+    const finished = outcome;
+    const range = blocked;
+    const callbacks = host;
+    outcome = 'dismissed';
+    host = {};
+    blocked = { startDate: null, endDate: null, reason: null };
+
+    if (finished === 'blocked' && typeof callbacks.onBlocked === 'function') {
+      callbacks.onBlocked(range);
+    } else if (finished === 'skipped' && typeof callbacks.onSkipped === 'function') {
+      callbacks.onSkipped();
+    } else if (finished !== 'blocked' && finished !== 'skipped' &&
+               typeof callbacks.onDismissed === 'function') {
+      callbacks.onDismissed(finished);
     }
+
+    // Let the host page refresh, but only when the blocked dates really moved
+    if ((finished === 'blocked' || finished === 'undone') &&
+        typeof window.onUnavailabilityChanged === 'function') {
+      window.onUnavailabilityChanged(range);
+    }
+  }
+
+  /** Go ahead without blocking anything. Only offered when a caller asks for it. */
+  function skip() {
+    outcome = 'skipped';
+    blocked = { startDate: null, endDate: null, reason: null };
+    close();
   }
 
   async function submit() {
@@ -187,6 +237,7 @@ const UnavailModal = (function () {
       }
 
       blocked = { startDate: data.startDate, endDate: data.endDate, reason: data.reason };
+      outcome = 'blocked';
 
       if (!data.affectedCount) {
         toast('success', 'Date Blocked', `${rangeLabel(data.startDate, data.endDate)} blocked. No appointments were affected.`);
@@ -408,7 +459,7 @@ const UnavailModal = (function () {
   });
 
   return {
-    open, close, requestClose, submit, pickSlot, confirmReschedule,
+    open, close, requestClose, submit, skip, pickSlot, confirmReschedule,
     declineOne, declineAll, undoBlock,
   };
 })();

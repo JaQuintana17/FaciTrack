@@ -38,23 +38,31 @@
 .preview-overlay.open{display:flex}
 .preview-box{display:flex;flex-direction:column;width:100%;height:100%;overflow:hidden;background:#f0f4f8}
 
-/* ── Top header bar ── */
+/* ── Top header bar ──
+   Overlays the board rather than taking a row from it, and fades out with the
+   close button when the mouse goes still — on a wall display the faces are the
+   point, not the chrome. */
 .fs-header{
+  position:absolute;top:0;left:0;right:0;z-index:2050;
   display:flex;align-items:center;justify-content:space-between;
-  padding:.9rem 1.75rem;background:#fff;
+  padding:.55rem 1.25rem;background:rgba(255,255,255,.96);
+  backdrop-filter:blur(6px);
   border-bottom:1px solid #e2e8f0;flex-shrink:0;
+  transition:opacity .4s ease,transform .4s ease;
 }
-.fs-header-left{display:flex;align-items:center;gap:.875rem}
-.fs-board-title{font-size:1.65rem;font-weight:800;color:#1e293b;margin:0;letter-spacing:.01em}
-.fs-legend{display:flex;align-items:center;gap:1.5rem}
-.fs-legend-item{display:flex;align-items:center;gap:.5rem;font-size:1.15rem;font-weight:600;color:#475569}
-.fs-legend-dot{width:15px;height:15px;border-radius:50%}
+.fs-header.faded{opacity:0;transform:translateY(-100%);pointer-events:none}
+.fs-header-left{display:flex;align-items:center;gap:.625rem;min-width:0}
+.fs-board-title{font-size:1.05rem;font-weight:800;color:#1e293b;margin:0;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fs-board-sub{font-size:.72rem;font-weight:600;color:#64748b;margin:0}
+.fs-legend{display:flex;align-items:center;gap:.875rem}
+.fs-legend-item{display:flex;align-items:center;gap:.35rem;font-size:.78rem;font-weight:600;color:#475569;white-space:nowrap}
+.fs-legend-dot{width:10px;height:10px;border-radius:50%}
 .fs-legend-dot.in{background:#2563eb}
 .fs-legend-dot.out{background:#ef4444}
 /* Clock */
 .fs-clock-wrap{text-align:right}
-.fs-clock{font-size:3.25rem;font-weight:800;color:#1e293b;font-variant-numeric:tabular-nums;line-height:1;letter-spacing:.02em}
-.fs-ampm{font-size:1.4rem;font-weight:700;color:#64748b;margin-left:.35rem}
+.fs-clock{font-size:1.5rem;font-weight:800;color:#1e293b;font-variant-numeric:tabular-nums;line-height:1;letter-spacing:.02em}
+.fs-ampm{font-size:.8rem;font-weight:700;color:#64748b;margin-left:.25rem}
 
 /* ── Floating close ── */
 .fs-close-btn{
@@ -69,7 +77,13 @@
 .fs-close-btn.faded{opacity:0;pointer-events:none}
 
 /* ── Scrollable body ── */
-.fs-body{flex:1;overflow-y:auto;padding:1rem 1.25rem 1rem;background:#f0f4f8}
+/* Top padding clears the overlaid header. When the header fades the board
+   claims the space back, in step with the header's own transition. */
+.fs-body{
+  flex:1;overflow-y:auto;padding:3.75rem 1.25rem 1rem;background:#f0f4f8;
+  transition:padding-top .4s ease;
+}
+.fs-header.faded + .fs-body{padding-top:1rem}
 .fs-body::-webkit-scrollbar{width:5px}
 .fs-body::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
 
@@ -111,10 +125,12 @@
 .fs-card.out .fs-photo svg{color:#94a3b8}
 
 /* ── Name, position, room, time ── */
+/* Never truncated: a monitoring board that abbreviates the one thing it exists
+   to show is worse than a board that wraps onto a second line. */
 .fs-name{
   font-size:.92rem;font-weight:700;text-align:center;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  width:100%;line-height:1.3;margin:0;
+  width:100%;line-height:1.25;margin:0;
+  overflow-wrap:anywhere;hyphens:none;
 }
 .fs-card.in  .fs-name{color:#fff}
 .fs-card.out .fs-name{color:#1e293b}
@@ -128,7 +144,7 @@
 
 .fs-room{
   font-size:.7rem;font-weight:600;text-align:center;margin:0;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;
+  width:100%;overflow-wrap:anywhere;line-height:1.3;
 }
 .fs-card.in  .fs-room{color:rgba(255,255,255,.7)}
 .fs-card.out .fs-room{color:#2563eb}
@@ -224,6 +240,102 @@
 .tbl-btn{padding:.3rem .625rem;border:1.5px solid var(--gray-200);border-radius:6px;background:#fff;font-size:.72rem;font-weight:600;cursor:pointer;font-family:var(--font-body);color:var(--gray-600);transition:all .15s;display:inline-flex;align-items:center;gap:.3rem}
 .tbl-btn:hover{border-color:var(--primary-blue);color:var(--primary-blue)}
 .tbl-btn.danger:hover{border-color:#dc2626;color:#dc2626}
+/* ── Presence with no data behind it ── */
+.fac-card.unknown{border-style:dashed;border-color:var(--gray-300);background:var(--gray-50)}
+.fac-card.unknown .fac-avatar{background:var(--gray-300)}
+.fac-card.unknown .fac-room{color:var(--gray-500)}
+.status-pill.unknown{background:var(--gray-100);color:var(--gray-500)}
+.status-pill.unknown .dot{background:#cbd5e1}
+.presence-notice{display:flex;align-items:flex-start;gap:.75rem;padding:.875rem 1.125rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--radius-md);margin-bottom:1.25rem}
+.presence-notice svg{color:#2563eb;flex-shrink:0;margin-top:1px}
+.presence-notice p{font-size:.8125rem;color:#1e40af;margin:0;line-height:1.5}
+.stat-card-value.muted{color:var(--gray-300)}
+.dean-empty{display:flex;flex-direction:column;align-items:center;gap:.5rem;padding:2rem 1rem;text-align:center}
+.dean-empty svg{color:var(--gray-300)}
+.dean-empty p{font-size:.8125rem;color:var(--gray-500);margin:0;max-width:36ch;line-height:1.5}
+/* Self-reported availability, which is real today */
+.avail-pill{display:inline-flex;align-items:center;gap:.3rem;padding:.2rem .6rem;border-radius:999px;font-size:.68rem;font-weight:700;white-space:nowrap}
+.avail-pill.available{background:rgba(34,197,94,.12);color:#15803d}
+.avail-pill.dnd{background:rgba(220,38,38,.12);color:#b91c1c}
+.avail-pill.travel{background:rgba(234,88,12,.12);color:#c2410c}
+.avail-pill.leave{background:rgba(220,38,38,.1);color:#dc2626}
+.avail-pill.meeting{background:rgba(124,58,237,.12);color:#6d28d9}
+.avail-pill.none{background:var(--gray-100);color:var(--gray-500)}
+/* ── Rooms view ── */
+.room-type-bar{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;margin-bottom:1.25rem}
+.room-type-label{font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-400)}
+.room-type-btns{display:flex;gap:.375rem;flex-wrap:wrap}
+.room-type-btn{display:inline-flex;align-items:center;gap:.4rem;padding:.4rem .875rem;border:1.5px solid var(--gray-200);border-radius:999px;background:#fff;font-size:.78rem;font-weight:600;color:var(--gray-600);cursor:pointer;transition:all .18s;font-family:var(--font-body)}
+.room-type-btn:hover{border-color:var(--primary-blue);color:var(--primary-blue)}
+.room-type-btn.active{background:var(--primary-blue);border-color:var(--primary-blue);color:#fff}
+.room-type-count{background:var(--gray-100);color:var(--gray-600);border-radius:999px;padding:0 .4rem;font-size:.68rem;font-weight:700;min-width:18px;text-align:center}
+.room-type-btn.active .room-type-count{background:rgba(255,255,255,.22);color:#fff}
+
+.room-card{background:#fff;border:1.5px solid var(--gray-200);border-radius:14px;padding:1.1rem 1.25rem;display:flex;flex-direction:column;gap:.75rem;box-shadow:0 2px 8px rgba(0,0,0,.04);transition:all .2s;cursor:pointer}
+.room-card:hover{box-shadow:0 6px 20px rgba(0,0,0,.1);transform:translateY(-2px)}
+.room-card:focus-visible{outline:2px solid var(--primary-blue);outline-offset:2px}
+/* Picked as the room the full-screen board will monitor */
+.room-card.selected{border-color:var(--primary-blue);box-shadow:0 0 0 3px rgba(30,136,229,.18),0 6px 20px rgba(10,61,98,.12)}
+.room-select-hint{display:flex;align-items:center;gap:.3rem;font-size:.68rem;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.04em}
+.room-card.selected .room-select-hint{color:var(--primary-blue)}
+.room-select-banner{display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;padding:.7rem 1rem;background:rgba(10,61,98,.05);border:1px solid rgba(10,61,98,.18);border-radius:var(--radius-md);margin-bottom:1rem}
+.room-select-banner p{margin:0;font-size:.8125rem;color:var(--primary-blue);font-weight:600}
+.room-select-banner button{padding:.35rem .75rem;border:1.5px solid var(--gray-300);border-radius:var(--radius-md);background:#fff;font-size:.75rem;font-weight:600;color:var(--gray-600);cursor:pointer;font-family:var(--font-body)}
+.room-select-banner button:hover{border-color:var(--primary-blue);color:var(--primary-blue)}
+.room-card.occupied{border-color:rgba(37,99,235,.35);background:linear-gradient(135deg,#fff,rgba(37,99,235,.03))}
+.room-card.inactive{opacity:.65;border-style:dashed}
+.room-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem}
+.room-number{font-size:.95rem;font-weight:700;color:var(--gray-900);margin:0 0 .15rem}
+.room-meta{font-size:.75rem;color:var(--gray-500);margin:0}
+.room-type-pill{display:inline-flex;align-items:center;padding:.2rem .6rem;border-radius:999px;font-size:.65rem;font-weight:700;white-space:nowrap;background:var(--gray-100);color:var(--gray-600)}
+.room-type-pill.lecture{background:rgba(37,99,235,.1);color:#1d4ed8}
+.room-type-pill.laboratory{background:rgba(124,58,237,.12);color:#6d28d9}
+.room-type-pill.lounge{background:rgba(234,88,12,.12);color:#c2410c}
+.room-type-pill.office{background:rgba(15,118,110,.12);color:#0f766e}
+.room-type-pill.consultation{background:rgba(34,197,94,.12);color:#15803d}
+.room-occupants{display:flex;flex-direction:column;gap:.4rem;padding-top:.65rem;border-top:1px solid var(--gray-100)}
+.room-occ-label{font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--gray-400);margin:0}
+.room-occ{display:flex;align-items:center;gap:.5rem}
+.room-occ-avatar{width:26px;height:26px;border-radius:50%;background:var(--teal-gradient);color:#fff;display:flex;align-items:center;justify-content:center;font-size:.6rem;font-weight:700;flex-shrink:0}
+.room-occ-name{font-size:.8rem;font-weight:600;color:var(--gray-900);margin:0}
+.room-occ-sub{font-size:.68rem;color:var(--gray-500);margin:0}
+.room-occ-empty{font-size:.76rem;color:var(--gray-400);margin:0;font-style:italic}
+.room-foot{display:flex;align-items:center;justify-content:space-between;gap:.5rem;font-size:.7rem;color:var(--gray-500)}
+.room-ble{display:inline-flex;align-items:center;gap:.3rem;font-weight:700}
+.room-ble.on{color:#15803d}
+.room-ble.off{color:var(--gray-400)}
+.room-ble-dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0}
+
+.fs-card.unknown{background:#fff;border-color:#e2e8f0;border-style:dashed;box-shadow:none}
+.fs-card.unknown .fs-name{color:#64748b}
+.fs-card.unknown .fs-pos,.fs-card.unknown .fs-room,.fs-card.unknown .fs-time{color:#94a3b8}
+/* ── Mobile ── */
+@media (max-width:900px){
+  .fs-grid{grid-template-columns:repeat(4,1fr)}
+  .fs-board-title{font-size:1.25rem}
+  .fs-clock{font-size:2rem}
+  .fs-ampm{font-size:1rem}
+  .fs-legend-item{font-size:.875rem}
+}
+@media (max-width:580px){
+  .page-header .header-actions{width:100%;flex-wrap:wrap;gap:.5rem}
+  .view-toggle{flex:1}
+  .view-btn{flex:1;justify-content:center}
+  .mon-grid{grid-template-columns:1fr}
+  .fs-grid{grid-template-columns:repeat(2,1fr)}
+  .fs-header{flex-direction:column;align-items:flex-start;gap:.5rem;padding:.75rem 1rem}
+  .fs-bottom-bar{flex-direction:column}
+  .fs-bottom-panel:first-child{border-right:none;border-bottom:1px solid #e2e8f0}
+  .detail-grid{grid-template-columns:1fr}
+  .presence-notice{padding:.75rem .875rem}
+  .presence-notice p{font-size:.75rem}
+  /* The directory table scrolls rather than squashing the page */
+  #tableView .card-body{overflow-x:auto}
+  #facultyTable{min-width:640px}
+  .room-type-bar{flex-direction:column;align-items:stretch;gap:.5rem}
+  .room-type-btns{gap:.3rem}
+  .room-type-btn{flex:1;justify-content:center;padding:.4rem .5rem;font-size:.72rem}
+}
 </style>
 
 <div class="instructor-layout">
@@ -231,10 +343,19 @@
   <main class="instructor-main">
     <div class="main-container">
 
+      <%
+        const inRoomFac  = faculty.filter(f => f.bleStatus === 'in-room');
+        const outRoomFac = faculty.filter(f => f.bleStatus === 'out-of-room');
+        const noDataFac  = faculty.filter(f => f.bleStatus === 'unknown');
+        const onTravel   = faculty.filter(f => f.availability === 'travel');
+        const onLeave    = faculty.filter(f => f.availability === 'leave');
+        const initials   = n => n.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase();
+      %>
+
       <div class="page-header">
         <div>
           <h1 class="page-title">Faculty</h1>
-          <p class="page-subtitle">Real-time BLE presence — College of Computer Studies</p>
+          <p class="page-subtitle"><%= dean.department %> — <%= faculty.length %> instructor<%= faculty.length === 1 ? '' : 's' %></p>
         </div>
         <div class="header-actions">
           <div class="view-toggle" id="viewToggle">
@@ -246,11 +367,17 @@
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
               Table
             </button>
+            <button class="view-btn" data-view="rooms" id="btnRooms">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+              Rooms
+            </button>
           </div>
+          <input type="search" id="facSearch" placeholder="Search faculty..." style="padding:.5rem .875rem;border:1.5px solid var(--gray-200);border-radius:var(--radius-md);font-size:.875rem;font-family:var(--font-body);background:#fff;color:var(--gray-800);outline:none;min-width:0">
           <select id="filterStatus" style="padding:.5rem .875rem;border:1.5px solid var(--gray-200);border-radius:var(--radius-md);font-size:.875rem;font-family:var(--font-body);background:#fff;color:var(--gray-800);outline:none;cursor:pointer">
             <option value="all">All Faculty</option>
             <option value="in-room">In Room Only</option>
             <option value="out-of-room">Out of Room Only</option>
+            <option value="unknown">Awaiting Data</option>
           </select>
           <button class="btn-header-action primary" id="btnFullPreview">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
@@ -259,22 +386,37 @@
         </div>
       </div>
 
+      <% if (presenceUnavailable && faculty.length) { %>
+      <div class="presence-notice">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <p><strong>Presence monitoring is not active yet.</strong> No BLE scanner has reported on these instructors, so nobody is listed as in or out of their room. The availability shown below is what each instructor set themselves, and it is live.</p>
+      </div>
+      <% } %>
+
       <!-- Stats -->
       <div class="stats-overview">
         <div class="stat-card-large confirmed">
           <div class="stat-card-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
           <div class="stat-card-content">
             <p class="stat-card-label">Currently In Room</p>
-            <h2 class="stat-card-value"><%= faculty.filter(f=>f.bleStatus==='in-room').length %></h2>
-            <p class="stat-card-sublabel">of <%= faculty.length %> total faculty</p>
+            <h2 class="stat-card-value <%= presenceUnavailable ? 'muted' : '' %>" id="statIn"><%= presenceUnavailable ? '—' : inRoomFac.length %></h2>
+            <p class="stat-card-sublabel"><%= presenceUnavailable ? 'Awaiting BLE data' : `of ${faculty.length} total faculty` %></p>
           </div>
         </div>
         <div class="stat-card-large presence">
           <div class="stat-card-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>
           <div class="stat-card-content">
             <p class="stat-card-label">Out of Room</p>
-            <h2 class="stat-card-value"><%= faculty.filter(f=>f.bleStatus==='out-of-room').length %></h2>
-            <p class="stat-card-sublabel">Not detected</p>
+            <h2 class="stat-card-value <%= presenceUnavailable ? 'muted' : '' %>" id="statOut"><%= presenceUnavailable ? '—' : outRoomFac.length %></h2>
+            <p class="stat-card-sublabel"><%= presenceUnavailable ? 'Awaiting BLE data' : 'Not detected' %></p>
+          </div>
+        </div>
+        <div class="stat-card-large pending">
+          <div class="stat-card-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>
+          <div class="stat-card-content">
+            <p class="stat-card-label">Available Now</p>
+            <h2 class="stat-card-value"><%= faculty.filter(f => f.availability === 'available').length %></h2>
+            <p class="stat-card-sublabel">Self-reported status</p>
           </div>
         </div>
         <div class="stat-card-large workload">
@@ -282,10 +424,23 @@
           <div class="stat-card-content">
             <p class="stat-card-label">Total Faculty</p>
             <h2 class="stat-card-value"><%= faculty.length %></h2>
-            <p class="stat-card-sublabel">Registered in system</p>
+            <p class="stat-card-sublabel">In <%= dean.department %></p>
           </div>
         </div>
       </div>
+
+      <% if (!faculty.length) { %>
+      <div id="cardView">
+        <div class="content-card">
+          <div class="card-body">
+            <div class="dean-empty">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>
+              <p>No instructors are assigned to <%= dean.department %> yet. An administrator adds faculty accounts under Admin &rsaquo; Users.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <% } else { %>
 
       <!-- ── CARD VIEW ── -->
       <div id="cardView">
@@ -293,51 +448,30 @@
           <div class="sec-div">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
             Currently In Room
-            <span class="sec-count" id="inRoomCount"><%= faculty.filter(f=>f.bleStatus==='in-room').length %></span>
+            <span class="sec-count" id="inRoomCount"><%= inRoomFac.length %></span>
           </div>
-          <div class="mon-grid" id="inRoomGrid">
-            <% faculty.filter(f=>f.bleStatus==='in-room').forEach(f => { %>
-            <div class="fac-card in-room" data-status="in-room" data-id="<%= f.id %>" onclick="openDetail(<%= JSON.stringify(f) %>)">
-              <div class="fac-avatar"><%= f.name.split(' ').map(n=>n[0]).join('') %></div>
-              <div class="fac-info">
-                <p class="fac-name"><%= f.name %></p>
-                <p class="fac-pos"><%= f.position %></p>
-                <div class="fac-room">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                  <%= f.officeRoom %>
-                </div>
-                <p class="fac-time">Detected <%= f.bleLastDetected %></p>
-              </div>
-              <span class="status-pill in"><span class="dot"></span>In Room</span>
-            </div>
-            <% }); %>
-          </div>
+          <div class="mon-grid" id="inRoomGrid"></div>
         </div>
 
         <div id="outRoomSection" style="margin-top:.5rem">
           <div class="sec-div">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2.5"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
             Out of Room
-            <span class="sec-count" id="outRoomCount"><%= faculty.filter(f=>f.bleStatus==='out-of-room').length %></span>
+            <span class="sec-count" id="outRoomCount"><%= outRoomFac.length %></span>
           </div>
-          <div class="mon-grid" id="outRoomGrid">
-            <% faculty.filter(f=>f.bleStatus==='out-of-room').forEach(f => { %>
-            <div class="fac-card out-of-room" data-status="out-of-room" data-id="<%= f.id %>" onclick="openDetail(<%= JSON.stringify(f) %>)">
-              <div class="fac-avatar"><%= f.name.split(' ').map(n=>n[0]).join('') %></div>
-              <div class="fac-info">
-                <p class="fac-name"><%= f.name %></p>
-                <p class="fac-pos"><%= f.position %></p>
-                <div class="fac-room">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                  <%= f.officeRoom %>
-                </div>
-                <p class="fac-time">Last seen <%= f.bleLastDetected %></p>
-              </div>
-              <span class="status-pill out"><span class="dot"></span>Out</span>
-            </div>
-            <% }); %>
-          </div>
+          <div class="mon-grid" id="outRoomGrid"></div>
         </div>
+
+        <div id="noDataSection" style="margin-top:.5rem">
+          <div class="sec-div">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            Awaiting Presence Data
+            <span class="sec-count" id="noDataCount"><%= noDataFac.length %></span>
+          </div>
+          <div class="mon-grid" id="noDataGrid"></div>
+        </div>
+
+        <p class="fs-no-results" id="cardNoResults" style="display:none">No instructor matches your search.</p>
       </div>
 
       <!-- ── TABLE VIEW ── -->
@@ -353,48 +487,64 @@
                   <th>Faculty</th>
                   <th>Position</th>
                   <th>Office / Room</th>
-                  <th>BLE Status</th>
-                  <th>Last Detected</th>
+                  <th>Availability</th>
+                  <th>Presence</th>
                   <th>Consultations (Month)</th>
-                  <th>Actions</th>
+                  <th></th>
                 </tr>
               </thead>
-              <tbody id="facultyTbody">
-                <% faculty.forEach(f => { %>
-                <tr data-status="<%= f.bleStatus %>" data-id="<%= f.id %>">
-                  <td>
-                    <div style="display:flex;align-items:center;gap:.75rem">
-                      <div class="apt-avatar-xs"><%= f.name.split(' ').map(n=>n[0]).join('') %></div>
-                      <p style="font-weight:600;font-size:.875rem;color:var(--gray-900);margin:0"><%= f.name %></p>
-                    </div>
-                  </td>
-                  <td style="font-size:.8125rem;color:var(--gray-600)"><%= f.position %></td>
-                  <td style="font-size:.8125rem"><%= f.officeRoom %></td>
-                  <td>
-                    <span class="table-badge <%= f.bleStatus==='in-room'?'confirmed':'declined' %>">
-                      <%= f.bleStatus==='in-room'?'In Room':'Out of Room' %>
-                    </span>
-                  </td>
-                  <td style="font-size:.8125rem;color:var(--gray-500)"><%= f.bleLastDetected %></td>
-                  <td style="font-size:.875rem;font-weight:600;color:var(--gray-900)"><%= f.consultationsThisMonth %></td>
-                  <td>
-                    <div style="display:flex;gap:.375rem">
-                      <button class="tbl-btn" onclick="openDetail(<%= JSON.stringify(f) %>)">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                        View
-                      </button>
-                      <button class="tbl-btn danger" onclick="confirmDelete(<%= f.id %>, '<%= f.name.replace(/'/g, "\\'") %>')">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                        Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                <% }); %>
-              </tbody>
+              <tbody id="facultyTbody"></tbody>
             </table>
           </div>
         </div>
+      </div>
+      <% } %>
+
+      <!-- ── ROOMS VIEW ── -->
+      <%# Who is in which room. The occupant list is driven by faculty_presence,
+          so today every room reads "no one detected" and fills in by itself once
+          the BLE scanners are installed. %>
+      <div id="roomsView" style="display:none">
+        <div class="room-type-bar" id="roomTypeBar">
+          <span class="room-type-label">Room type</span>
+          <div class="room-type-btns">
+            <% const ROOM_TYPES = ['Lecture', 'Laboratory', 'Faculty Lounge', 'Faculty Office', 'Consultation Room']; %>
+            <button type="button" class="room-type-btn active" data-room-type="all">
+              All <span class="room-type-count"><%= rooms.length %></span>
+            </button>
+            <% ROOM_TYPES.forEach(type => { %>
+            <button type="button" class="room-type-btn" data-room-type="<%= type %>">
+              <%= type %> <span class="room-type-count"><%= rooms.filter(r => r.room_type === type).length %></span>
+            </button>
+            <% }); %>
+          </div>
+        </div>
+
+        <% if (presenceUnavailable && rooms.length) { %>
+        <div class="presence-notice">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <p><strong>Occupancy is waiting on the BLE scanners.</strong> Each room below shows who is assigned to it; the "currently inside" list fills in on its own once presence monitoring is live.</p>
+        </div>
+        <% } %>
+
+        <div class="room-select-banner" id="roomSelectBanner" hidden>
+          <p id="roomSelectText"></p>
+          <button type="button" id="roomSelectClear">Monitor all rooms</button>
+        </div>
+
+        <div class="mon-grid" id="roomGrid"></div>
+        <p class="fs-no-results" id="roomNoResults" style="display:none">No room of this type in <%= dean.department %>.</p>
+
+        <% if (!rooms.length) { %>
+        <div class="content-card">
+          <div class="card-body">
+            <div class="dean-empty">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+              <p>No rooms are registered for <%= dean.department %> yet. An administrator adds them under Admin &rsaquo; Rooms.</p>
+            </div>
+          </div>
+        </div>
+        <% } %>
       </div>
 
     </div>
@@ -403,100 +553,87 @@
 
 <!-- ══════════════════════════════════════════
      FULL-SCREEN FACULTY MONITORING BOARD
-     Matches the TV display board in the image
      ══════════════════════════════════════════ -->
 <div class="preview-overlay" id="previewOverlay">
   <div class="preview-box">
 
-    <!-- Floating close button -->
     <button class="fs-close-btn" id="previewClose" title="Exit (Esc)">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     </button>
 
-    <!-- Top header: title left · legend + clock right -->
-    <div class="fs-header">
+    <div class="fs-header" id="fsHeader">
       <div class="fs-header-left">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        <h2 class="fs-board-title">Faculty Monitoring</h2>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2.5" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <div style="min-width:0">
+          <h2 class="fs-board-title" id="fsTitle">Faculty Monitoring</h2>
+          <p class="fs-board-sub" id="fsSubtitle"></p>
+        </div>
       </div>
-      <div style="display:flex;align-items:center;gap:1.5rem">
-        <!-- Legend -->
-        <div class="fs-legend">
+      <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+        <div class="fs-legend" id="fsLegend">
           <div class="fs-legend-item"><span class="fs-legend-dot in"></span> In</div>
           <div class="fs-legend-item"><span class="fs-legend-dot out"></span> Out</div>
         </div>
-        <!-- Clock -->
         <div class="fs-clock-wrap">
           <span class="fs-clock" id="fsClock">--:--</span><span class="fs-ampm" id="fsAmpm"></span>
         </div>
       </div>
     </div>
 
-    <!-- Scrollable board body — faculty cards only, ON TRAVEL is outside/below -->
     <div class="fs-body" id="fsBody">
 
-      <%
-        const inRoomFac  = faculty.filter(f => f.bleStatus === 'in-room');
-        const outRoomFac = faculty.filter(f => f.bleStatus === 'out-of-room');
-      %>
+      <% if (presenceUnavailable && faculty.length) { %>
+      <p class="fs-no-results" id="fsPresenceNote" style="padding:.5rem 0 1rem">Presence monitoring is not active yet — these are the department's instructors and their self-reported availability.</p>
+      <% } %>
 
-      <!-- All faculty in one dense wrap grid: IN cards first (blue), then OUT (white) -->
-      <div class="fs-grid" id="fsGrid">
+      <%# Rendered by JS so the board can follow the room selected on the Rooms
+          view; see renderBoard(). %>
+      <div class="fs-grid" id="fsGrid"></div>
 
-        <!-- IN cards -->
-        <% inRoomFac.forEach(function(f){ %>
-        <div class="fs-card in" data-name="<%= f.name.toLowerCase() %>">
-          <div class="fs-photo">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-          </div>
-          <p class="fs-name"><%= f.name %></p>
-          <p class="fs-pos"><%= f.position %></p>
-          <p class="fs-room"><%= f.officeRoom %></p>
-          <p class="fs-time"><%= f.bleLastDetected %></p>
-        </div>
-        <% }); %>
-
-        <!-- OUT cards -->
-        <% outRoomFac.forEach(function(f){ %>
-        <div class="fs-card out" data-name="<%= f.name.toLowerCase() %>">
-          <div class="fs-photo">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-          </div>
-          <p class="fs-name"><%= f.name %></p>
-          <p class="fs-pos"><%= f.position %></p>
-          <p class="fs-room"><%= f.officeRoom %></p>
-          <p class="fs-time">No Logs</p>
-        </div>
-        <% }); %>
-
-      </div>
+      <% if (!faculty.length) { %>
+      <p class="fs-no-results">No faculty in this department yet.</p>
+      <% } %>
 
       <p class="fs-no-results" id="fsNoResults" style="display:none">No instructor found.</p>
 
     </div>
 
-    <!-- Bottom bar: In Travel (orange) | In Leave (red) — always pinned at very bottom -->
+    <!-- Bottom bar: driven by each instructor's own availability status -->
     <div class="fs-bottom-bar">
 
-      <!-- In Travel — left half -->
       <div class="fs-bottom-panel">
         <div class="fs-bottom-panel-hdr travel">
           <span class="fs-bottom-dot travel"></span>
-          In Travel
+          On Official Travel
         </div>
         <div class="fs-bottom-grid" id="fsTravelGrid">
+          <% if (!onTravel.length) { %>
           <p class="fs-bottom-empty">No employees on travel</p>
+          <% } %>
+          <% onTravel.forEach(function(f){ %>
+          <div class="fs-mini-card travel">
+            <div class="fs-mini-photo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+            <div><p class="fs-mini-name"><%= f.name %></p><p class="fs-mini-sub"><%= f.position %></p></div>
+          </div>
+          <% }); %>
         </div>
       </div>
 
-      <!-- In Leave — right half -->
       <div class="fs-bottom-panel">
         <div class="fs-bottom-panel-hdr leave">
           <span class="fs-bottom-dot leave"></span>
-          In Leave
+          On Leave
         </div>
         <div class="fs-bottom-grid" id="fsLeaveGrid">
+          <% if (!onLeave.length) { %>
           <p class="fs-bottom-empty">No employees on leave</p>
+          <% } %>
+          <% onLeave.forEach(function(f){ %>
+          <div class="fs-mini-card leave">
+            <div class="fs-mini-photo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+            <div><p class="fs-mini-name"><%= f.name %></p><p class="fs-mini-sub"><%= f.position %></p></div>
+          </div>
+          <% }); %>
         </div>
       </div>
 
@@ -524,19 +661,23 @@
         <p id="detailDept"></p>
       </div>
       <div class="detail-item">
-        <label>BLE Status</label>
-        <p id="detailBle"></p>
+        <label>Availability</label>
+        <p id="detailAvail"></p>
       </div>
       <div class="detail-item full">
         <label>Office / Room</label>
         <p id="detailRoom"></p>
       </div>
       <div class="detail-item">
+        <label>Presence</label>
+        <p id="detailBle"></p>
+      </div>
+      <div class="detail-item">
         <label>Last Detected</label>
         <p id="detailLastSeen"></p>
       </div>
       <div class="detail-item">
-        <label>Hours This Month</label>
+        <label>Consultation Hours</label>
         <p id="detailHours"></p>
       </div>
       <div class="detail-item">
@@ -549,27 +690,7 @@
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn-modal-danger" id="detailDeleteBtn">Delete Instructor</button>
       <button class="btn-modal-cancel" onclick="closeModal('detailModal')">Close</button>
-    </div>
-  </div>
-</div>
-
-<!-- ── Delete Confirm Modal ── -->
-<div class="modal-overlay" id="deleteModal">
-  <div class="modal-box" style="max-width:400px">
-    <div class="modal-header">
-      <h3 class="modal-title">Remove Instructor</h3>
-      <button class="modal-close-btn" onclick="closeModal('deleteModal')">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
-    </div>
-    <div class="modal-body">
-      <p style="font-size:.9rem;color:var(--gray-700);margin:0">Are you sure you want to remove <strong id="deleteTargetName"></strong> from the faculty list? This action cannot be undone.</p>
-    </div>
-    <div class="modal-footer">
-      <button class="btn-modal-cancel" onclick="closeModal('deleteModal')">Cancel</button>
-      <button class="btn-modal-danger" id="btnConfirmDelete">Remove</button>
     </div>
   </div>
 </div>
@@ -582,211 +703,406 @@
 (function(){
   'use strict';
 
-  // ── In-memory faculty store (seeded from server) ──
+  // Server-rendered roster. Read-only: adding and removing faculty is an
+  // administrator action under Admin > Users, not something this page fakes.
   var facultyData = <%- JSON.stringify(faculty) %>;
-  var nextId = facultyData.length ? Math.max.apply(null, facultyData.map(function(f){ return f.id; })) + 1 : 1;
-  var pendingDeleteId = null;
-  var currentView = 'cards';
+  var roomData = <%- JSON.stringify(rooms) %>;
 
-  // ── Toast ──
-  function toast(type, title, msg){
-    var c = document.getElementById('toastContainer');
-    var t = document.createElement('div');
-    t.className = 'toast ' + type;
-    t.innerHTML = '<div class="toast-content"><p class="toast-title">' + title + '</p><p class="toast-message">' + msg + '</p></div>';
-    c.appendChild(t);
-    setTimeout(function(){ t.style.opacity = '0'; setTimeout(function(){ t.remove(); }, 300); }, 4000);
-  }
-
-  // ── Modal helpers ──
-  window.closeModal = function(id){
-    document.getElementById(id).classList.remove('open');
+  var AVAIL_LABELS = {
+    available:'Available', dnd:'Do Not Disturb', travel:'Official Travel',
+    leave:'On Leave', meeting:'In a Meeting'
   };
-  function openModal(id){
-    document.getElementById(id).classList.add('open');
-  }
 
-  // ── Initials ──
+  function esc(s){
+    return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
   function initials(name){
-    return name.split(' ').map(function(n){ return n[0]; }).join('').slice(0, 2).toUpperCase();
+    return String(name || '').split(' ').map(function(n){ return n[0]; }).join('').slice(0,2).toUpperCase();
+  }
+  function availPill(f){
+    var key = f.availability || 'none';
+    return '<span class="avail-pill ' + esc(key) + '">' + esc(f.availabilityLabel || 'Not set') + '</span>';
   }
 
-  // ── Render faculty lists ──
+  window.closeModal = function(id){ document.getElementById(id).classList.remove('open'); };
+  function openModal(id){ document.getElementById(id).classList.add('open'); }
+
+  // ── Filtering ──
+  function currentList(){
+    var status = document.getElementById('filterStatus').value;
+    var q = (document.getElementById('facSearch').value || '').toLowerCase().trim();
+    return facultyData.filter(function(f){
+      if (status !== 'all' && f.bleStatus !== status) return false;
+      if (q && f.name.toLowerCase().indexOf(q) === -1 && String(f.position).toLowerCase().indexOf(q) === -1) return false;
+      return true;
+    });
+  }
+
+  var SECTIONS = [
+    { status:'in-room',     section:'inRoomSection', grid:'inRoomGrid', count:'inRoomCount', pill:'in',      label:'In Room', time:'Detected ' },
+    { status:'out-of-room', section:'outRoomSection',grid:'outRoomGrid',count:'outRoomCount',pill:'out',     label:'Out',     time:'Last seen ' },
+    { status:'unknown',     section:'noDataSection', grid:'noDataGrid', count:'noDataCount', pill:'unknown', label:'No data', time:'' }
+  ];
+
   function render(){
-    var filterVal = document.getElementById('filterStatus').value;
-    var inRoom  = facultyData.filter(function(f){ return f.bleStatus === 'in-room'; });
-    var outRoom = facultyData.filter(function(f){ return f.bleStatus === 'out-of-room'; });
+    // The card and table sections only exist when the department has faculty
+    if (!document.getElementById('facultyTbody')) return;
+    var list = currentList();
 
-    // Update counts
-    document.getElementById('inRoomCount').textContent  = inRoom.length;
-    document.getElementById('outRoomCount').textContent = outRoom.length;
+    SECTIONS.forEach(function(sec){
+      var group = list.filter(function(f){ return f.bleStatus === sec.status; });
+      document.getElementById(sec.count).textContent = group.length;
+      // A section with nothing in it is noise, so it comes out of the flow
+      document.getElementById(sec.section).style.display = group.length ? '' : 'none';
+      renderCards(sec, group);
+    });
 
-    // Card view
-    renderCardSection('inRoomGrid',  inRoom,  'in-room');
-    renderCardSection('outRoomGrid', outRoom, 'out-of-room');
-
-    // Section visibility
-    document.getElementById('inRoomSection').style.display  = (filterVal === 'all' || filterVal === 'in-room')    ? '' : 'none';
-    document.getElementById('outRoomSection').style.display = (filterVal === 'all' || filterVal === 'out-of-room') ? '' : 'none';
-
-    // Table view
-    renderTable(filterVal);
+    document.getElementById('cardNoResults').style.display = list.length ? 'none' : 'block';
+    renderTable(list);
   }
 
-  function renderCardSection(gridId, list, statusClass){
-    var grid = document.getElementById(gridId);
+  function renderCards(sec, list){
+    var grid = document.getElementById(sec.grid);
     grid.innerHTML = '';
     list.forEach(function(f){
       var card = document.createElement('div');
-      card.className = 'fac-card ' + statusClass;
-      card.dataset.status = statusClass;
+      card.className = 'fac-card ' + sec.status;
+      card.dataset.status = sec.status;
       card.dataset.id = f.id;
-      var pillClass = statusClass === 'in-room' ? 'in' : 'out';
-      var pillLabel = statusClass === 'in-room' ? 'In Room' : 'Out';
-      var timeLabel = statusClass === 'in-room' ? 'Detected ' : 'Last seen ';
       card.innerHTML =
         '<div class="fac-avatar">' + initials(f.name) + '</div>' +
         '<div class="fac-info">' +
           '<p class="fac-name">' + esc(f.name) + '</p>' +
           '<p class="fac-pos">' + esc(f.position) + '</p>' +
           '<div class="fac-room"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>' + esc(f.officeRoom) + '</div>' +
-          '<p class="fac-time">' + timeLabel + esc(f.bleLastDetected) + '</p>' +
+          '<p class="fac-time">' + (f.bleLastDetected ? esc(sec.time + f.bleLastDetected) : availPill(f)) + '</p>' +
         '</div>' +
-        '<span class="status-pill ' + pillClass + '"><span class="dot"></span>' + pillLabel + '</span>';
+        '<span class="status-pill ' + sec.pill + '"><span class="dot"></span>' + sec.label + '</span>';
       card.addEventListener('click', function(){ openDetail(f); });
       grid.appendChild(card);
     });
   }
 
-  function renderTable(filterVal){
+  function renderTable(list){
     var tbody = document.getElementById('facultyTbody');
+    if (!tbody) return;
     tbody.innerHTML = '';
-    var list = filterVal === 'all' ? facultyData : facultyData.filter(function(f){ return f.bleStatus === filterVal; });
     list.forEach(function(f){
       var tr = document.createElement('tr');
       tr.dataset.status = f.bleStatus;
       tr.dataset.id = f.id;
-      var badgeClass = f.bleStatus === 'in-room' ? 'confirmed' : 'declined';
-      var badgeLabel = f.bleStatus === 'in-room' ? 'In Room' : 'Out of Room';
+      var badge = f.bleStatus === 'in-room'  ? '<span class="table-badge confirmed">In Room</span>'
+                : f.bleStatus === 'out-of-room' ? '<span class="table-badge declined">Out of Room</span>'
+                : '<span class="table-badge">No data</span>';
       tr.innerHTML =
         '<td><div style="display:flex;align-items:center;gap:.75rem"><div class="apt-avatar-xs">' + initials(f.name) + '</div><p style="font-weight:600;font-size:.875rem;color:var(--gray-900);margin:0">' + esc(f.name) + '</p></div></td>' +
         '<td style="font-size:.8125rem;color:var(--gray-600)">' + esc(f.position) + '</td>' +
         '<td style="font-size:.8125rem">' + esc(f.officeRoom) + '</td>' +
-        '<td><span class="table-badge ' + badgeClass + '">' + badgeLabel + '</span></td>' +
-        '<td style="font-size:.8125rem;color:var(--gray-500)">' + esc(f.bleLastDetected) + '</td>' +
+        '<td>' + availPill(f) + '</td>' +
+        '<td>' + badge + '</td>' +
         '<td style="font-size:.875rem;font-weight:600;color:var(--gray-900)">' + f.consultationsThisMonth + '</td>' +
-        '<td><div style="display:flex;gap:.375rem">' +
-          '<button class="tbl-btn" data-view-id="' + f.id + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> View</button>' +
-          '<button class="tbl-btn danger" data-del-id="' + f.id + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg> Delete</button>' +
-        '</div></td>';
+        '<td><button class="tbl-btn" data-view-id="' + esc(f.id) + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> View</button></td>';
       tbody.appendChild(tr);
     });
 
-    // Bind table buttons
     tbody.querySelectorAll('[data-view-id]').forEach(function(btn){
       btn.addEventListener('click', function(){
-        var f = facultyData.find(function(x){ return x.id == btn.dataset.viewId; });
-        if(f) openDetail(f);
+        var f = facultyData.find(function(x){ return x.id === btn.dataset.viewId; });
+        if (f) openDetail(f);
       });
     });
-    tbody.querySelectorAll('[data-del-id]').forEach(function(btn){
-      btn.addEventListener('click', function(){
-        var f = facultyData.find(function(x){ return x.id == btn.dataset.delId; });
-        if(f) confirmDelete(f.id, f.name);
-      });
-    });
-  }
-
-  function esc(s){
-    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
   // ── Detail modal ──
   window.openDetail = function(f){
-    document.getElementById('detailAvatar').textContent = initials(f.name);
-    document.getElementById('detailName').textContent   = f.name;
-    document.getElementById('detailPos').textContent    = f.position;
-    document.getElementById('detailDept').textContent   = f.department;
-    document.getElementById('detailRoom').textContent   = f.officeRoom;
-    document.getElementById('detailLastSeen').textContent = f.bleLastDetected;
-    document.getElementById('detailHours').textContent  = f.hoursThisMonth + 'h';
+    document.getElementById('detailAvatar').textContent  = initials(f.name);
+    document.getElementById('detailName').textContent    = f.name;
+    document.getElementById('detailPos').textContent     = f.position;
+    document.getElementById('detailDept').textContent    = f.department || '—';
+    document.getElementById('detailRoom').textContent    = f.officeRoom;
+    document.getElementById('detailAvail').innerHTML     = availPill(f);
+    document.getElementById('detailLastSeen').textContent = f.bleLastDetected || 'Never detected';
+    document.getElementById('detailHours').textContent   = f.hoursThisMonth + 'h';
     document.getElementById('detailConsult').textContent = f.consultationsThisMonth;
-    document.getElementById('detailAvg').textContent    = f.avgDuration || '—';
-    var bleEl = document.getElementById('detailBle');
-    bleEl.innerHTML = f.bleStatus === 'in-room'
-      ? '<span class="table-badge confirmed">In Room</span>'
-      : '<span class="table-badge declined">Out of Room</span>';
-    document.getElementById('detailDeleteBtn').onclick = function(){
-      closeModal('detailModal');
-      confirmDelete(f.id, f.name);
-    };
+    document.getElementById('detailAvg').textContent     = f.avgDuration || '—';
+    document.getElementById('detailBle').innerHTML =
+      f.bleStatus === 'in-room'     ? '<span class="table-badge confirmed">In Room</span>' :
+      f.bleStatus === 'out-of-room' ? '<span class="table-badge declined">Out of Room</span>' :
+                                      '<span class="table-badge">Awaiting BLE data</span>';
     openModal('detailModal');
   };
 
-  // ── Delete ──
-  window.confirmDelete = function(id, name){
-    pendingDeleteId = id;
-    document.getElementById('deleteTargetName').textContent = name;
-    openModal('deleteModal');
+  // ── Rooms view ──────────────────────────────────────────────────────────
+  // Type -> the pill's modifier class
+  var ROOM_TYPE_CLASS = {
+    'Lecture': 'lecture',
+    'Laboratory': 'laboratory',
+    'Faculty Lounge': 'lounge',
+    'Faculty Office': 'office',
+    'Consultation Room': 'consultation',
   };
+  var roomTypeFilter = 'all';
 
-  document.getElementById('btnConfirmDelete').addEventListener('click', function(){
-    if(pendingDeleteId === null) return;
-    facultyData = facultyData.filter(function(f){ return f.id !== pendingDeleteId; });
-    pendingDeleteId = null;
-    closeModal('deleteModal');
-    render();
-    toast('success', 'Removed', 'Instructor removed from the faculty list.');
+  /**
+   * Instructors BLE currently reports inside a room. Empty until the scanners
+   * are installed — the room card says so rather than implying the room is empty.
+   */
+  function occupantsOf(room) {
+    return facultyData.filter(function(f){
+      return f.bleStatus === 'in-room' && String(f.detectedRoomId) === String(room.id);
+    });
+  }
+
+  /** Faculty whose base office this room is — known without any BLE at all. */
+  function assignedTo(room) {
+    return facultyData.filter(function(f){ return String(f.baseRoomId) === String(room.id); });
+  }
+
+  function renderRooms(){
+    var grid = document.getElementById('roomGrid');
+    if (!grid) return;
+    var q = (document.getElementById('facSearch').value || '').toLowerCase().trim();
+
+    var list = roomData.filter(function(r){
+      if (roomTypeFilter !== 'all' && r.room_type !== roomTypeFilter) return false;
+      if (!q) return true;
+      // Searching for a person should surface the room they are in
+      var people = occupantsOf(r).concat(assignedTo(r))
+        .map(function(f){ return f.name.toLowerCase(); }).join(' ');
+      return (r.room_number || '').toLowerCase().indexOf(q) !== -1 ||
+             (r.room_type || '').toLowerCase().indexOf(q) !== -1 ||
+             people.indexOf(q) !== -1;
+    });
+
+    grid.innerHTML = '';
+    document.getElementById('roomNoResults').style.display = list.length ? 'none' : 'block';
+
+    list.forEach(function(r){
+      var inside = occupantsOf(r);
+      var assigned = assignedTo(r);
+
+      var card = document.createElement('div');
+      card.className = 'room-card' +
+        (inside.length ? ' occupied' : '') +
+        (r.status === 'Inactive' ? ' inactive' : '');
+
+      var occupantHtml;
+      if (inside.length) {
+        occupantHtml = inside.map(function(f){
+          return '<div class="room-occ">' +
+              '<div class="room-occ-avatar">' + initials(f.name) + '</div>' +
+              '<div><p class="room-occ-name">' + esc(f.name) + '</p>' +
+              '<p class="room-occ-sub">' + esc(f.bleLastDetected || 'just now') + '</p></div>' +
+            '</div>';
+        }).join('');
+      } else if (assigned.length) {
+        occupantHtml = '<p class="room-occ-empty">No one detected — assigned to ' +
+          assigned.map(function(f){ return esc(f.name); }).join(', ') + '</p>';
+      } else {
+        occupantHtml = '<p class="room-occ-empty">No one detected</p>';
+      }
+
+      card.innerHTML =
+        '<div class="room-card-head">' +
+          '<div>' +
+            '<p class="room-number">' + esc(r.room_number) + '</p>' +
+            '<p class="room-meta">' + (r.capacity ? 'Capacity ' + esc(r.capacity) : 'Capacity not set') + '</p>' +
+          '</div>' +
+          '<span class="room-type-pill ' + (ROOM_TYPE_CLASS[r.room_type] || '') + '">' + esc(r.room_type) + '</span>' +
+        '</div>' +
+        '<div class="room-occupants">' +
+          '<p class="room-occ-label">Currently inside' + (inside.length ? ' (' + inside.length + ')' : '') + '</p>' +
+          occupantHtml +
+        '</div>' +
+        '<div class="room-foot">' +
+          '<span class="room-ble ' + (r.is_ble_scanner_installed ? 'on' : 'off') + '">' +
+            '<span class="room-ble-dot"></span>' +
+            (r.is_ble_scanner_installed ? 'BLE scanner installed' : 'No scanner') +
+          '</span>' +
+          '<span class="room-select-hint">' +
+            (String(selectedRoomId) === String(r.id) ? 'Monitoring' : 'Monitor') +
+          '</span>' +
+        '</div>';
+
+      if (String(selectedRoomId) === String(r.id)) card.classList.add('selected');
+
+      // A second click picks the room the full-screen board will follow;
+      // clicking the selected one again goes back to the whole department.
+      card.tabIndex = 0;
+      card.addEventListener('click', function(){ toggleRoom(r.id); });
+      card.addEventListener('keydown', function(e){
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleRoom(r.id); }
+      });
+
+      grid.appendChild(card);
+    });
+  }
+
+  /** Which room the full-screen board is pinned to, or null for everyone. */
+  var selectedRoomId = null;
+
+  function selectedRoom(){
+    return roomData.find(function(r){ return String(r.id) === String(selectedRoomId); }) || null;
+  }
+
+  function toggleRoom(id){
+    selectedRoomId = String(selectedRoomId) === String(id) ? null : id;
+    renderRooms();
+    syncRoomBanner();
+    renderBoard();
+  }
+
+  function syncRoomBanner(){
+    var banner = document.getElementById('roomSelectBanner');
+    if (!banner) return;
+    var room = selectedRoom();
+    banner.hidden = !room;
+    if (room) {
+      document.getElementById('roomSelectText').textContent =
+        'Full screen will monitor ' + room.room_number + ' — only instructors detected inside are shown.';
+    }
+  }
+
+  document.querySelectorAll('.room-type-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('.room-type-btn').forEach(function(b){ b.classList.remove('active'); });
+      btn.classList.add('active');
+      roomTypeFilter = btn.dataset.roomType;
+      renderRooms();
+    });
   });
 
   // ── View toggle ──
-  document.getElementById('btnCards').addEventListener('click', function(){
-    currentView = 'cards';
-    document.getElementById('cardView').style.display = '';
-    document.getElementById('tableView').style.display = 'none';
-    document.getElementById('btnCards').classList.add('active');
-    document.getElementById('btnTable').classList.remove('active');
-  });
-  document.getElementById('btnTable').addEventListener('click', function(){
-    currentView = 'table';
-    document.getElementById('cardView').style.display = 'none';
-    document.getElementById('tableView').style.display = '';
-    document.getElementById('btnTable').classList.add('active');
-    document.getElementById('btnCards').classList.remove('active');
-    render();
-  });
-
-  // ── Status filter ──
-  document.getElementById('filterStatus').addEventListener('change', function(){ render(); });
-
-  // ── Full screen ──
-  var fadeTimer = null;
-  var closeBtn = document.getElementById('previewClose');
-
-  function showCloseBtn(){
-    closeBtn.classList.remove('faded');
-    clearTimeout(fadeTimer);
-    fadeTimer = setTimeout(function(){ closeBtn.classList.add('faded'); }, 3000);
+  // Cards stays the default, so nothing changes for anyone not looking for rooms
+  function showView(name){
+    var views = { cards: 'cardView', table: 'tableView', rooms: 'roomsView' };
+    var buttons = { cards: 'btnCards', table: 'btnTable', rooms: 'btnRooms' };
+    Object.keys(views).forEach(function(key){
+      var el = document.getElementById(views[key]);
+      if (el) el.style.display = key === name ? '' : 'none';
+      document.getElementById(buttons[key]).classList.toggle('active', key === name);
+    });
+    // The status filter has no meaning over rooms
+    document.getElementById('filterStatus').style.display = name === 'rooms' ? 'none' : '';
+    document.getElementById('facSearch').placeholder =
+      name === 'rooms' ? 'Search rooms or faculty...' : 'Search faculty...';
+    if (name === 'rooms') renderRooms();
   }
 
-  // Live clock — 12-hour format with AM/PM like the image
+  document.getElementById('btnCards').addEventListener('click', function(){ showView('cards'); });
+  document.getElementById('btnTable').addEventListener('click', function(){ showView('table'); });
+  document.getElementById('btnRooms').addEventListener('click', function(){ showView('rooms'); });
+
+  document.getElementById('filterStatus').addEventListener('change', render);
+  document.getElementById('facSearch').addEventListener('input', function(){
+    render();
+    renderRooms();
+  });
+
+  // ── Full screen board ──
+  var fadeTimer = null;
+  var closeBtn = document.getElementById('previewClose');
+  var fsHeader = document.getElementById('fsHeader');
+  var clockInterval = null;
+
+  /** The chrome follows the mouse: visible while it moves, gone once it stops. */
+  function showChrome(){
+    closeBtn.classList.remove('faded');
+    fsHeader.classList.remove('faded');
+    clearTimeout(fadeTimer);
+    fadeTimer = setTimeout(function(){
+      closeBtn.classList.add('faded');
+      fsHeader.classList.add('faded');
+    }, 3000);
+  }
+
+  /**
+   * Draws the board.
+   *
+   * With a room selected it shows only who BLE reports inside it — anyone who
+   * leaves drops off the board, which is the point of pinning a room. With no
+   * room selected it lists every instructor with their current room, and
+   * nothing is abbreviated.
+   */
+  function renderBoard(){
+    var grid = document.getElementById('fsGrid');
+    if (!grid) return;
+
+    var room = selectedRoom();
+    var list = room
+      ? facultyData.filter(function(f){
+          return f.bleStatus === 'in-room' && String(f.detectedRoomId) === String(room.id);
+        })
+      : facultyData.slice().sort(function(a, b){
+          // In-room first so a wall display leads with who is actually around
+          var rank = { 'in-room': 0, 'out-of-room': 1, 'unknown': 2 };
+          return (rank[a.bleStatus] - rank[b.bleStatus]) || a.name.localeCompare(b.name);
+        });
+
+    document.getElementById('fsTitle').textContent = room ? room.room_number : 'Faculty Monitoring';
+    document.getElementById('fsSubtitle').textContent = room
+      ? room.room_type + ' · ' + list.length + ' inside'
+      : facultyData.length + ' instructor' + (facultyData.length === 1 ? '' : 's');
+    // The In/Out key means nothing on a board showing only people who are in
+    document.getElementById('fsLegend').style.display = room ? 'none' : '';
+
+    var note = document.getElementById('fsPresenceNote');
+    if (note) note.style.display = room ? 'none' : '';
+
+    grid.innerHTML = '';
+    list.forEach(function(f){
+      var cls = f.bleStatus === 'in-room' ? 'in' : (f.bleStatus === 'out-of-room' ? 'out' : 'unknown');
+      var card = document.createElement('div');
+      card.className = 'fs-card ' + cls;
+      card.dataset.name = f.name.toLowerCase();
+
+      // Current room, said plainly — never the office standing in for a detection
+      var whereText = f.bleStatus === 'in-room'
+        ? (f.detectedRoom || 'In a room')
+        : (f.bleStatus === 'out-of-room' ? 'Not in a room' : 'No presence data');
+
+      card.innerHTML =
+        '<div class="fs-photo">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>' +
+        '</div>' +
+        '<p class="fs-name">' + esc(f.name) + '</p>' +
+        '<p class="fs-room">' + esc(room ? (f.bleLastDetected || 'just now') : whereText) + '</p>';
+
+      grid.appendChild(card);
+    });
+
+    var empty = document.getElementById('fsNoResults');
+    if (empty) {
+      empty.style.display = list.length ? 'none' : 'block';
+      empty.textContent = room
+        ? 'No one is currently detected in ' + room.room_number + '.'
+        : 'No instructor found.';
+    }
+  }
+
+  document.getElementById('roomSelectClear').addEventListener('click', function(){
+    selectedRoomId = null;
+    renderRooms();
+    syncRoomBanner();
+    renderBoard();
+  });
+
   function updateBoardClock(){
     var now = new Date();
     var h = now.getHours();
-    var m = now.getMinutes().toString().padStart(2,'0');
+    var m = String(now.getMinutes()).padStart(2,'0');
     var ampm = h >= 12 ? 'PM' : 'AM';
     h = h % 12 || 12;
-    var clockEl = document.getElementById('fsClock');
-    var ampmEl  = document.getElementById('fsAmpm');
-    if(clockEl) clockEl.textContent = h.toString().padStart(2,'0') + ':' + m;
-    if(ampmEl)  ampmEl.textContent  = ampm;
+    document.getElementById('fsClock').textContent = String(h).padStart(2,'0') + ':' + m;
+    document.getElementById('fsAmpm').textContent  = ampm;
   }
-  var clockInterval = null;
 
   function openPreview(){
+    // Redraw on open so the board reflects whichever room is selected now
+    renderBoard();
     document.getElementById('previewOverlay').classList.add('open');
     document.body.style.overflow = 'hidden';
-    showCloseBtn();
+    showChrome();
     updateBoardClock();
     clockInterval = setInterval(updateBoardClock, 1000);
   }
@@ -794,36 +1110,23 @@
     document.getElementById('previewOverlay').classList.remove('open');
     document.body.style.overflow = '';
     clearTimeout(fadeTimer);
-    if(clockInterval){ clearInterval(clockInterval); clockInterval = null; }
+    if (clockInterval){ clearInterval(clockInterval); clockInterval = null; }
   }
 
-  // Show close button on mouse move inside overlay
-  document.getElementById('previewOverlay').addEventListener('mousemove', showCloseBtn);
-  document.getElementById('previewOverlay').addEventListener('touchstart', showCloseBtn);
-
-  // Search — filter cards in the single grid
-  document.getElementById('fsSearch') && document.getElementById('fsSearch').addEventListener('input', function(){
-    var q = this.value.toLowerCase().trim();
-    var cards = document.querySelectorAll('#fsGrid .fs-card');
-    var visible = 0;
-    cards.forEach(function(card){
-      var match = card.dataset.name.includes(q);
-      card.style.display = match ? '' : 'none';
-      if(match) visible++;
-    });
-    document.getElementById('fsNoResults').style.display = visible === 0 ? 'block' : 'none';
-  });
-
+  document.getElementById('previewOverlay').addEventListener('mousemove', showChrome);
+  document.getElementById('previewOverlay').addEventListener('touchstart', showChrome);
   document.getElementById('btnFullPreview').addEventListener('click', openPreview);
-  document.getElementById('previewClose').addEventListener('click', closePreview);
-  document.addEventListener('keydown', function(e){ if(e.key === 'Escape'){ closePreview(); closeModal('detailModal'); closeModal('deleteModal'); } });
-
-  // Close modals on overlay click
-  ['detailModal','deleteModal'].forEach(function(id){
-    document.getElementById(id).addEventListener('click', function(e){ if(e.target === this) closeModal(id); });
+  closeBtn.addEventListener('click', closePreview);
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape'){ closePreview(); closeModal('detailModal'); }
+  });
+  document.getElementById('detailModal').addEventListener('click', function(e){
+    if (e.target === this) closeModal('detailModal');
   });
 
-  // Initial render
   render();
+  renderRooms();
+  syncRoomBanner();
+  renderBoard();
 }());
 </script>

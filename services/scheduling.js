@@ -56,28 +56,58 @@ function bookingConflictsWithBlock(booking, block, blockDateKey) {
 }
 
 
+// ── What counts as a slot being taken ──
+//
+// Cancelled, declined and rescheduled appointments release their slot: a
+// rescheduled booking has already moved somewhere else, so the original hour
+// is free again. Everything else still holds it.
+//
+// This list must be the ONLY answer to "is this slot taken?". The booking
+// calendar and the create path used to define it differently — the calendar
+// offered a slot whose appointment had been rescheduled, then the submit
+// refused it as already booked.
+const SLOT_HOLDING_STATUSES = ['pending', 'confirmed', 'completed'];
+
+/** The same list as a SQL fragment, for embedding in an IN (...) clause. */
+const SLOT_HOLDING_SQL = SLOT_HOLDING_STATUSES.map(s => `'${s}'`).join(', ');
+
+// A narrower question, and a different one: which bookings are still live —
+// awaiting an answer or due to happen — so can be cancelled, declined or
+// rescheduled. A completed consultation holds its slot but is not live: it
+// already happened and must never be declined out from under the student.
+const LIVE_APPOINTMENT_STATUSES = ['pending', 'confirmed'];
+const LIVE_APPOINTMENT_SQL = LIVE_APPOINTMENT_STATUSES.map(s => `'${s}'`).join(', ');
+
 // ── Booking lead time ──
 // Students may book same-day, but not a slot starting within this many hours.
-// Override with BOOKING_LEAD_TIME_HOURS in .env.
+// The administrator sets this in System Settings; .env is the fallback for an
+// install that has never opened that page.
 const BOOKING_LEAD_TIME_HOURS = Number(process.env.BOOKING_LEAD_TIME_HOURS) || 4;
 
+/** The configured lead time. Async because the stored value wins over .env. */
+async function bookingLeadTimeHours() {
+  const settings = require('./app-settings');
+  return settings.get('booking_lead_time_hours');
+}
+
 /** Earliest instant a slot may start and still be bookable. */
-function earliestBookableStart(now = new Date()) {
-  return new Date(now.getTime() + BOOKING_LEAD_TIME_HOURS * 60 * 60 * 1000);
+function earliestBookableStart(now = new Date(), leadHours = BOOKING_LEAD_TIME_HOURS) {
+  return new Date(now.getTime() + leadHours * 60 * 60 * 1000);
 }
 
 /**
  * True when a slot starts too soon to book.
  * @param {string} dateKey   YYYY-MM-DD
  * @param {string} startTime HH:MM or HH:MM:SS (24h)
+ * @param {number} leadHours defaults to the .env value; pass the configured one
  */
-function isWithinLeadTime(dateKey, startTime, now = new Date()) {
+function isWithinLeadTime(dateKey, startTime, now = new Date(), leadHours = BOOKING_LEAD_TIME_HOURS) {
   const mins = toMinutesOfDay(startTime);
   if (mins === null) return false;
   const parts = String(dateKey).slice(0, 10).split("-").map(Number);
   if (parts.length !== 3 || parts.some(isNaN)) return false;
   const slotStart = new Date(parts[0], parts[1] - 1, parts[2], Math.floor(mins / 60), mins % 60, 0, 0);
-  return slotStart < earliestBookableStart(now);
+  return slotStart < earliestBookableStart(now, leadHours);
 }
 
 /**
@@ -102,7 +132,12 @@ module.exports = {
   getBlockDateKeys,
   parseTimeToMinutes,
   bookingConflictsWithBlock,
+  SLOT_HOLDING_STATUSES,
+  SLOT_HOLDING_SQL,
+  LIVE_APPOINTMENT_STATUSES,
+  LIVE_APPOINTMENT_SQL,
   BOOKING_LEAD_TIME_HOURS,
+  bookingLeadTimeHours,
   earliestBookableStart,
   isWithinLeadTime,
   toMinutesOfDay

@@ -169,6 +169,39 @@
 .toast.info{background:linear-gradient(135deg,#2563eb,#1d4ed8)}
 @keyframes toastIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 
+/* Import preview — a long list, so the box is capped and only the body scrolls */
+.imp-box{max-width:620px;display:flex;flex-direction:column;max-height:calc(100vh - 2rem);max-height:calc(100dvh - 2rem)}
+.imp-box .mo-head,.imp-box .mo-foot{flex-shrink:0}
+.imp-body{overflow-y:auto;-webkit-overflow-scrolling:touch;min-height:0}
+.imp-loading{padding:2rem 0;text-align:center;color:#64748b;font-size:.85rem}
+.imp-summary{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;border-radius:10px;padding:.7rem .9rem;font-size:.8rem;font-weight:600;margin-bottom:1rem}
+.imp-section{margin-bottom:1.15rem}
+.imp-section h4{font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:#475569;margin:0 0 .3rem}
+.imp-count{color:#94a3b8;font-weight:600}
+.imp-hint{font-size:.75rem;color:#64748b;margin:0 0 .5rem}
+.imp-list{border:1px solid #e2e8f0;border-radius:10px;max-height:15rem;overflow-y:auto}
+.imp-row{display:flex;gap:.6rem;align-items:baseline;padding:.5rem .75rem;font-size:.78rem;border-bottom:1px solid #f1f5f9}
+.imp-row:last-child{border-bottom:none}
+.imp-row .imp-when{flex:0 0 10.5rem;color:#64748b;font-variant-numeric:tabular-nums;white-space:nowrap}
+.imp-row .imp-what{flex:1;min-width:0;color:#0f172a}
+.imp-row .imp-what small{display:block;color:#94a3b8;font-weight:500}
+.imp-list-muted .imp-row .imp-what{color:#64748b}
+.imp-tag{font-size:.62rem;font-weight:800;text-transform:uppercase;padding:.12rem .4rem;border-radius:5px;background:#f1f5f9;color:#64748b;white-space:nowrap}
+.imp-tag.overload{background:#fef3c7;color:#92400e}
+.imp-tag.lab{background:#fef9c3;color:#854d0e}
+.imp-maprow{display:grid;grid-template-columns:1fr 1fr;gap:.35rem .5rem;align-items:center;margin-bottom:.45rem}
+.imp-maprow code{font-size:.78rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:7px;padding:.4rem .55rem;color:#0f172a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.imp-maprow code em{font-style:normal;color:#94a3b8;font-size:.68rem;margin-left:.35rem}
+.imp-maprow select{width:100%;padding:.4rem .55rem;border:1.5px solid #e2e8f0;border-radius:7px;font-size:.78rem;font-family:inherit;background:#fff;color:#0f172a}
+.imp-maphint{grid-column:1/-1;font-size:.7rem;color:#92400e;margin:-.1rem 0 .25rem}
+.imp-warn{margin:0;padding-left:1.1rem;font-size:.76rem;color:#92400e}
+.imp-warn li{margin-bottom:.2rem}
+.imp-radio{display:flex;gap:.55rem;align-items:flex-start;padding:.55rem .7rem;border:1.5px solid #e2e8f0;border-radius:9px;margin-bottom:.4rem;cursor:pointer;font-size:.8rem}
+.imp-radio:has(input:checked){border-color:#2563eb;background:#eff6ff}
+.imp-radio input{margin-top:.15rem;flex-shrink:0}
+.imp-radio small{display:block;color:#64748b;font-weight:500;font-size:.72rem}
+.imp-error{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:10px;padding:.75rem .9rem;font-size:.8rem;font-weight:600}
+
 @media(max-width:768px){
   .wl-summary{grid-template-columns:repeat(2,1fr)}
   .cal-wrap{
@@ -184,6 +217,10 @@
 }
 @media(max-width:480px){
   .mo-row{grid-template-columns:1fr}
+  .imp-maprow{grid-template-columns:1fr;gap:.3rem}
+  .imp-row{flex-wrap:wrap;gap:.15rem .5rem}
+  .imp-row .imp-when{flex:0 0 100%;font-size:.72rem}
+  .imp-list{max-height:12rem}
   .cal-wrap{
     margin:0 -1.25rem;
     padding:0 0.5rem;
@@ -205,7 +242,12 @@
           <h1 class="page-title">Workload Schedule</h1>
           <p class="page-subtitle">Drag on any day column to create a class block</p>
         </div>
-        <div class="header-actions" style="display:flex;gap:.75rem;align-items:center">
+        <div class="header-actions" style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap">
+          <button class="btn-header-action" id="btnImportWorkload" style="height:36px;padding:0 1rem;font-size:.75rem;display:flex;align-items:center;gap:.4rem">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Import
+          </button>
+          <input type="file" id="importFileInput" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
           <div style="position:relative;display:inline-block">
             <button class="btn-header-action primary" id="btnExportWorkload" style="height:36px;padding:0 1rem;font-size:.75rem;display:flex;align-items:center;gap:.4rem">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
@@ -401,6 +443,69 @@
     <div class="mo-foot">
       <button class="btn btn-ghost" id="exportCancel">Cancel</button>
       <button class="btn btn-primary" id="exportConfirm">Continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- Import preview — nothing is written until this is confirmed -->
+<div class="mo" id="importModal">
+  <div class="mo-box imp-box">
+    <div class="mo-head">
+      <div style="flex:1;min-width:0">
+        <h3>Import Workload</h3>
+        <p class="mo-meta" id="impMeta">Reading file…</p>
+      </div>
+      <button class="mo-close" id="impClose">×</button>
+    </div>
+
+    <div class="mo-body imp-body">
+      <div id="impLoading" class="imp-loading">Reading your workload form…</div>
+
+      <div id="impResult" hidden>
+        <div class="imp-summary" id="impSummary"></div>
+
+        <!-- Only shown when a room on the form is not recognised -->
+        <section class="imp-section" id="impRoomsSection" hidden>
+          <h4>Match rooms</h4>
+          <p class="imp-hint">These room names are not in the system yet. Pick the matching room, or leave a block without one.</p>
+          <div id="impRooms"></div>
+        </section>
+
+        <section class="imp-section">
+          <h4>Classes found <span class="imp-count" id="impBlockCount"></span></h4>
+          <div class="imp-list" id="impBlocks"></div>
+        </section>
+
+        <section class="imp-section" id="impSkippedSection" hidden>
+          <h4>Not imported <span class="imp-count" id="impSkippedCount"></span></h4>
+          <p class="imp-hint">These cells are on the form but are not teaching blocks.</p>
+          <div class="imp-list imp-list-muted" id="impSkipped"></div>
+        </section>
+
+        <section class="imp-section" id="impWarnSection" hidden>
+          <h4>Warnings</h4>
+          <ul class="imp-warn" id="impWarnings"></ul>
+        </section>
+
+        <section class="imp-section">
+          <h4>Apply to my schedule</h4>
+          <label class="imp-radio">
+            <input type="radio" name="impMode" value="replace" checked>
+            <span><strong>Replace</strong><small id="impReplaceHint">Clear my current blocks first</small></span>
+          </label>
+          <label class="imp-radio">
+            <input type="radio" name="impMode" value="merge">
+            <span><strong>Merge</strong><small>Keep what I have and add these on top</small></span>
+          </label>
+        </section>
+      </div>
+
+      <div id="impError" class="imp-error" hidden></div>
+    </div>
+
+    <div class="mo-foot">
+      <button class="btn btn-ghost" id="impCancel">Cancel</button>
+      <button class="btn btn-primary" id="impConfirm" disabled>Import</button>
     </div>
   </div>
 </div>
