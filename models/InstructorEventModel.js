@@ -81,8 +81,7 @@ const InstructorEventModel = {
             `UPDATE instructor_events e
                JOIN users u ON e.instructor_id = u.id
                 SET e.kind = ?, e.title = ?, e.notes = ?, e.event_date = ?,
-                    e.start_slot = ?, e.end_slot = ?, e.all_day = ?, e.blocks = ?,
-                    e.done = ?
+                    e.start_slot = ?, e.end_slot = ?, e.all_day = ?, e.blocks = ?
               WHERE e.id = ? AND u.public_id = ?`,
             [
                 data.kind, data.title, data.notes || null, data.eventDate,
@@ -90,21 +89,8 @@ const InstructorEventModel = {
                 data.allDay ? null : data.endSlot,
                 data.allDay ? 1 : 0,
                 data.blocks ? 1 : 0,
-                data.done ? 1 : 0,
                 id, instructorPublicId,
             ]
-        );
-        return result.affectedRows > 0;
-    },
-
-    /** Tick a task off without opening the editor. */
-    async setDone(id, instructorPublicId, done) {
-        const [result] = await pool.execute(
-            `UPDATE instructor_events e
-               JOIN users u ON e.instructor_id = u.id
-                SET e.done = ?
-              WHERE e.id = ? AND u.public_id = ? AND e.kind = 'task'`,
-            [done ? 1 : 0, id, instructorPublicId]
         );
         return result.affectedRows > 0;
     },

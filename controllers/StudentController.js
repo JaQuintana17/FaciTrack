@@ -4,6 +4,7 @@ const AppointmentModel = require('../models/AppointmentModel');
 const ConsultationModel = require('../models/ConsultationModel');
 const SlotReservation = require('../models/SlotReservationModel');
 const AuditLogModel = require('../models/AuditLogModel');
+const StudentSettingsModel = require('../models/StudentSettingsModel');
 const { buildStudentUser } = require('../utils/sessionUser');
 const { to12Hour, timeAgo } = require('../utils/timeFormat');
 const { isWithinLeadTime, bookingLeadTimeHours } = require('../services/scheduling');
@@ -103,13 +104,10 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 const LIVE_STATUSES = ['pending', 'confirmed'];
 
 // users.availability_status → what a student should read
-const AVAILABILITY_LABELS = {
-    available: 'Available',
-    dnd: 'Do Not Disturb',
-    travel: 'Official Travel',
-    leave: 'On Leave',
-    meeting: 'In a Meeting',
-};
+// Shared with the dean's reports and the lounge board — see utils/availability.js.
+const { AVAILABILITY_LABELS, loungePresence } = require('../utils/availability');
+const PresenceModel = require('../models/PresenceModel');
+const appSettings = require('../services/app-settings');
 
 function dayKey(value) {
     return String(value).slice(0, 10);
@@ -197,7 +195,7 @@ const StudentController = {
                 // shows as closed. The previous query knew nothing about
                 // blocked dates, calendar events or lead time.
                 const grouped = await ConsultationModel.getSlotsForStudentView(f.instructor_id);
-                const canDoOnline = !!f.default_meeting_link;
+                const canDoOnline = !!(f.default_meeting_link || f.google_connected);
 
             const consultationSlots = grouped
                     .filter(g => g.date >= startKey && g.date <= endKey)
@@ -227,16 +225,26 @@ const StudentController = {
                 return { ...f, nextAvailable };
             }));
 
+            // Settings > "Start in my department" chooses the opening filter
+            // only; the directory still lists everyone and every department
+            // stays selectable.
+            const prefs = await StudentSettingsModel.getByPublicId(studentId);
+            const defaultDeptId = prefs.directoryOwnDept && user?.department_id
+                ? user.department_id
+                : null;
+
             res.render('pages/student/dashboard', {
                 title: 'FaciTrack - Faculty Directory',
                 student: student,
                 appointmentCount: appointmentCount,
                 departments: departments,
                 facultyList: formattedFaculties,
+                defaultDeptId,
             });
         } catch (err) {
             console.error('[StudentController.renderDashboardPage]', err);
-            res.status(500).send('Failed to load dashboard.');
+            // Rendered by the error page rather than written as bare text.
+            throw err;
         }
     },
 
@@ -266,8 +274,9 @@ const StudentController = {
                 activeReservations.filter(r => r.student_id !== studentId).map(r => r.slot_id)
             );
 
-            // Online is only offerable once the instructor has saved a meeting link
-            const canDoOnline = !!faculty.default_meeting_link;
+            // Online is offerable once the instructor has somewhere to host it:
+            // a connected Google Calendar, or a saved personal room link.
+            const canDoOnline = !!(faculty.default_meeting_link || faculty.google_connected);
 
             const consultationSlots = grouped
                 .filter(g => g.date >= startKey && g.date <= endKey)
@@ -314,7 +323,8 @@ const StudentController = {
             });
         } catch (err) {
             console.error('[StudentController.renderFacultyConsultationPage]', err);
-            res.status(500).send('Failed to load faculty schedule.');
+            // Rendered by the error page rather than written as bare text.
+            throw err;
         }
     },
 
@@ -335,7 +345,7 @@ const StudentController = {
             }
 
             // No room free and no meeting link — there is no way to hold this consultation
-            if (!slotDetails.roomAvailable && !slotDetails.faculty.default_meeting_link) {
+            if (!slotDetails.roomAvailable && !slotDetails.faculty.online_ready) {
                 return res.redirect(`/student/faculty/${slotDetails.faculty.id}?bookingError=noModeAvailable`);
             }
 
@@ -365,7 +375,7 @@ const StudentController = {
             res.render('pages/student/book', {
                 // Disable modes the instructor cannot actually honour
                 roomAvailable: slotDetails.roomAvailable,
-                canDoOnline: !!slotDetails.faculty.default_meeting_link,
+                canDoOnline: !!slotDetails.faculty.online_ready,
                 title: 'FaciTrack - Book Appointment',
                 student,
                 faculty: slotDetails.faculty,
@@ -382,7 +392,8 @@ const StudentController = {
             });
         } catch (err) {
             console.error('[StudentController.renderFacultyFormConsultationPage]', err);
-            res.status(500).send('Failed to load booking form.');
+            // Rendered by the error page rather than written as bare text.
+            throw err;
         }
     },
 
@@ -408,6 +419,7 @@ const StudentController = {
             position: row.position,
             topic: row.topic,
             mode: row.mode,
+            meetingLink: row.meeting_link || null,
             declineReason: row.decline_reason,
             departmentName: row.department_name,
             date: row.consultation_date,
@@ -435,7 +447,7 @@ const StudentController = {
     },
 
     /**
-     * The live Faculty Availability board.
+     * The Faculty Lounge board students see.
      *
      * Two independent signals sit on each card: what the instructor set
      * themselves (real today) and what BLE reports (empty until the scanners
@@ -444,10 +456,34 @@ const StudentController = {
      */
     async renderAvailabilityPage(req, res) {
         try {
-            const rows = await UserModel.getFacultyPresence();
+            // The page reports who is in or out of a department's Faculty
+            // Lounge, so it has nothing to say until the student has a
+            // department. Render the page and explain, rather than redirecting
+            // — a saved link should tell you why it is empty, not bounce you.
+            const me = await UserModel.getUserByPublicId(req.session.userId);
+            if (!me?.department_id) {
+                return res.render('pages/student/availability', {
+                    title: 'FaciTrack - Faculty Lounge',
+                    student: buildStudentUser(req.session),
+                    faculty: [],
+                    departments: [],
+                    presenceUnavailable: true,
+                    departmentMissing: true,
+                    loungeCovered: false,
+                    loungeNotice: null,
+                });
+            }
+
+            // This page answers one question — is this instructor at the
+            // Faculty Lounge — so it needs to know whether anything is
+            // watching the lounge before it is entitled to answer at all.
+            const staleAfter = await appSettings.get('presence_scanner_offline_after_sec');
+            const [rows, coverage] = await Promise.all([
+                UserModel.getFacultyPresence(),
+                PresenceModel.loungeCoverage(staleAfter),
+            ]);
 
             const faculty = rows.map(row => {
-                const known = row.is_present !== null && row.is_present !== undefined;
                 return {
                     id: row.id,
                     name: row.name,
@@ -460,27 +496,37 @@ const StudentController = {
                     officeRoom: row.office_room_number
                         ? [row.office_building, row.office_room_number].filter(Boolean).join(', ')
                         : null,
-                    // 'unknown' is not 'out' — nothing has reported on them yet
-                    bleStatus: known ? (row.is_present ? 'in-room' : 'out-of-room') : 'unknown',
+                    // Scoped to the lounge, not the building: somebody detected
+                    // in a laboratory is confidently not at the lounge, and
+                    // 'unknown' still means nothing has reported on them at all.
+                    bleStatus: loungePresence(row, { covered: coverage.covered }),
                     detectedRoom: row.detected_room_number || null,
                     detectedRoomType: row.detected_room_type || null,
-                    lastDetected: known ? timeAgo(row.presence_updated_at) : null,
+                    lastDetected: row.presence_updated_at ? timeAgo(row.presence_updated_at) : null,
                 };
             });
 
             const departments = [...new Set(faculty.map(f => f.department).filter(Boolean))].sort();
 
             res.render('pages/student/availability', {
-                title: 'FaciTrack - Faculty Availability',
+                title: 'FaciTrack - Faculty Lounge',
+                loungeCovered: coverage.covered,
+                loungeNotice: coverage.covered
+                    ? null
+                    : (coverage.installed
+                        ? 'The Faculty Lounge scanner is not reporting, so lounge presence is out of date.'
+                        : 'No scanner is installed in the Faculty Lounge yet, so nobody can be shown as in or out of it. The status on each card is what the instructor set themselves, and it is live.'),
                 student: buildStudentUser(req.session),
                 faculty,
                 departments,
                 // Drives both the LIVE pill and the explanatory banner
                 presenceUnavailable: faculty.every(f => f.bleStatus === 'unknown'),
+                departmentMissing: false,
             });
         } catch (err) {
             console.error('[StudentController.renderAvailabilityPage]', err);
-            res.status(500).send('Failed to load faculty availability.');
+            // Rendered by the error page rather than written as bare text.
+            throw err;
         }
     },
 
@@ -513,7 +559,8 @@ const StudentController = {
             });
         } catch (err) {
             console.error('[StudentController.renderAppointmentsPage]', err);
-            res.status(500).send('Failed to load your appointments.');
+            // Rendered by the error page rather than written as bare text.
+            throw err;
         }
     },
 
@@ -540,7 +587,8 @@ const StudentController = {
             });
         } catch (err) {
             console.error('[StudentController.renderInstructorHistoryPage]', err);
-            res.status(500).send('Failed to load your appointment history.');
+            // Rendered by the error page rather than written as bare text.
+            throw err;
         }
     },
 
@@ -643,7 +691,7 @@ const StudentController = {
             }
 
             // The form disables this, but a stale page could still submit it
-            if (consultType === 'Online' && !slotDetails.faculty.default_meeting_link) {
+            if (consultType === 'Online' && !slotDetails.faculty.online_ready) {
                 return res.redirect(`/student/faculty/${slotDetails.faculty.id}?bookingError=noMeetingLink`);
             }
 
@@ -763,7 +811,80 @@ const StudentController = {
             console.error('Error cancelling slot:', error);
             res.redirect('back');
         }
-    }
+    },
+
+    /* ── Settings ─────────────────────────────────────────────────────────── */
+
+    async renderSettingsPage(req, res) {
+        try {
+            const studentId = req.session.userId;
+            const user = await UserModel.getUserByPublicId(studentId);
+            const [departments, settings, appointmentCount] = await Promise.all([
+                DepartmentModel.getDepartments(),
+                StudentSettingsModel.getByPublicId(studentId),
+                AppointmentModel.getStudentCount(user?.internal_id),
+            ]);
+
+            res.render('pages/student/settings', {
+                title: 'FaciTrack - Settings',
+                student: buildStudentUser(req.session),
+                appointmentCount,
+                departments,
+                settings,
+                departmentId: user?.department_id ?? null,
+            });
+        } catch (err) {
+            console.error('[StudentController.renderSettingsPage]', err);
+            // Rendered by the error page rather than written as bare text.
+            throw err;
+        }
+    },
+
+    /**
+     * Save department and directory preference together — the page presents
+     * them as one form, and the toggle is meaningless without the department.
+     */
+    async updateSettings(req, res) {
+        try {
+            const studentId = req.session.userId;
+            const { departmentId, directoryOwnDept } = req.body;
+
+            let deptId = null;
+            if (departmentId !== undefined && departmentId !== null && departmentId !== '') {
+                deptId = Number(departmentId);
+                if (!Number.isInteger(deptId)) {
+                    return res.status(422).json({ success: false, error: 'Pick a department from the list.' });
+                }
+                const departments = await DepartmentModel.getDepartments();
+                if (!departments.some(d => Number(d.id) === deptId)) {
+                    return res.status(422).json({ success: false, error: 'That department no longer exists.' });
+                }
+            }
+
+            // Turning the toggle on without a department would silently do
+            // nothing on the directory, so say so rather than saving a no-op.
+            if (directoryOwnDept && deptId === null) {
+                return res.status(422).json({
+                    success: false,
+                    error: 'Choose your department first — there is nothing to start the directory on.',
+                });
+            }
+
+            await StudentSettingsModel.setDepartment(studentId, deptId);
+            const saved = await StudentSettingsModel.save(studentId, {
+                directoryOwnDept: Boolean(directoryOwnDept),
+            });
+            if (!saved) return res.status(404).json({ success: false, error: 'Account not found.' });
+
+            // The sidebar and other pages read the department from the session.
+            req.session.departmentId = deptId;
+
+            res.json({ success: true });
+        } catch (err) {
+            console.error('[StudentController.updateSettings]', err);
+            res.status(500).json({ success: false, error: 'Could not save your settings.' });
+        }
+    },
 };
 
 module.exports = StudentController;

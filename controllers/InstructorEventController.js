@@ -59,8 +59,6 @@ function parseBody(body) {
             // A task defaults to not blocking: it is usually a reminder to
             // oneself, not a reason students cannot book.
             blocks: body.blocks === undefined ? kind === 'event' : Boolean(body.blocks),
-            // Only meaningful for a task; an event is never "done"
-            done: kind === 'task' ? Boolean(body.done) : false,
         },
     };
 }
@@ -79,7 +77,6 @@ function toClient(row) {
         endTime: row.all_day ? null : InstructorEventModel.slotToTime(row.end_slot),
         allDay: Boolean(row.all_day),
         blocks: Boolean(row.blocks),
-        done: Boolean(row.done),
     };
 }
 
@@ -171,18 +168,6 @@ const InstructorEventController = {
         } catch (err) {
             console.error('[InstructorEventController.update]', err);
             res.status(500).json({ success: false, error: 'Failed to save.' });
-        }
-    },
-
-    async toggleDone(req, res) {
-        try {
-            const ok = await InstructorEventModel.setDone(
-                req.params.id, req.session.userId, Boolean(req.body.done));
-            if (!ok) return res.status(404).json({ success: false, error: 'Task not found.' });
-            res.json({ success: true });
-        } catch (err) {
-            console.error('[InstructorEventController.toggleDone]', err);
-            res.status(500).json({ success: false, error: 'Failed to update the task.' });
         }
     },
 

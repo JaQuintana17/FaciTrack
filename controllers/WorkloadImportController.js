@@ -1,8 +1,10 @@
 const path = require('path');
 const RoomModel = require('../models/RoomModel');
 const { parseWorkloadDocx } = require('../services/workload-import');
+const { parseWorkloadPdf } = require('../services/workload-import-pdf');
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const PDF_MIME = 'application/pdf';
 
 const ROMAN = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7, VIII: 8, IX: 9, X: 10, XI: 11, XII: 12 };
 
@@ -117,17 +119,24 @@ const WorkloadImportController = {
             return res.status(400).json({ success: false, error: 'No file was uploaded.' });
         }
 
+        // Same form either way — the two readers differ only in how they recover
+        // the cells, and both hand back the identical preview shape.
         const ext = path.extname(req.file.originalname || '').toLowerCase();
-        if (req.file.mimetype !== DOCX_MIME && ext !== '.docx') {
+        const isDocx = req.file.mimetype === DOCX_MIME || ext === '.docx';
+        const isPdf = req.file.mimetype === PDF_MIME || ext === '.pdf';
+
+        if (!isDocx && !isPdf) {
             return res.status(415).json({
                 success: false,
-                error: 'Only Word (.docx) workload forms can be imported. Save the file as .docx and try again.',
+                error: 'Only Word (.docx) or PDF workload forms can be imported.',
             });
         }
 
         let parsed;
         try {
-            parsed = await parseWorkloadDocx(req.file.buffer);
+            parsed = isPdf
+                ? await parseWorkloadPdf(req.file.buffer)
+                : await parseWorkloadDocx(req.file.buffer);
         } catch (err) {
             // Everything thrown by the parser is written for the instructor to read.
             return res.status(422).json({ success: false, error: err.message });

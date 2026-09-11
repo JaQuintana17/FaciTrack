@@ -23,7 +23,7 @@ const RoomModel = {
             params.push(filters.roomType);
         }
 
-        const allowedOrderColumns = ['room_number', 'room_type', 'status', 'created_at'];
+        const allowedOrderColumns = ['room_number', 'floor_number', 'room_type', 'status', 'created_at'];
         const allowedDirs = ['ASC', 'DESC'];
 
         if (orderBy && allowedOrderColumns.includes(orderBy)) {
@@ -53,11 +53,12 @@ const RoomModel = {
     },
 
     async insertRoomByAdmin(newRoom) {
-        let query = `INSERT INTO rooms (room_number, department_id, room_type, assigned_faculty, is_ble_scanner_installed, status, capacity) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?)`;
+        let query = `INSERT INTO rooms (room_number, floor_number, department_id, room_type, assigned_faculty, is_ble_scanner_installed, status, capacity)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
 
         const [result] = await pool.execute(query, [
             newRoom.roomNumber,
+            newRoom.floorNumber,
             newRoom.department,
             newRoom.roomType,
             newRoom.assignedFaculty || null,
@@ -70,18 +71,20 @@ const RoomModel = {
     },
 
     async updateRoom(roomId, data) {
-        let query = `UPDATE rooms 
-                    SET room_number = ?, 
-                    department_id = ?, 
-                    room_type = ?, 
-                    assigned_faculty = ?, 
-                    is_ble_scanner_installed = ?, 
+        let query = `UPDATE rooms
+                    SET room_number = ?,
+                    floor_number = ?,
+                    department_id = ?,
+                    room_type = ?,
+                    assigned_faculty = ?,
+                    is_ble_scanner_installed = ?,
                     status = ?,
                     capacity = ?
                     WHERE id = ?`;
 
         const [result] = await pool.execute(query, [
             data.roomNumber,
+            data.floorNumber,
             data.department,
             data.roomType,
             data.assignedFaculty ?? null,

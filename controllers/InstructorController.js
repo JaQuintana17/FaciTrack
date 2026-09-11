@@ -5,6 +5,8 @@ const UserModel = require('../models/UserModel');
 const AuditLogModel = require('../models/AuditLogModel');
 const NotificationModel = require('../models/NotificationModel');
 const InstructorSettingsModel = require('../models/InstructorSettingsModel');
+const GoogleAccountModel = require('../models/GoogleAccountModel');
+const CalendarModel = require('../models/CalendarModel');
 const bcrypt = require('bcrypt');
 const { to12Hour } = require('../utils/timeFormat');
 const { buildInstructorUser } = require('../utils/sessionUser');
@@ -82,6 +84,7 @@ function mapAppointmentRow(row) {
         studentId: row.student_number,
         topic: row.topic,
         mode: row.mode,
+        meetingLink: row.meeting_link || null,
         date: row.consultation_date,
         dayOfWeek: row.day_of_the_week,
         time: `${to12Hour(row.start_time)} – ${to12Hour(row.end_time)}`,
@@ -120,6 +123,10 @@ const InstructorController = {
                         timeEnd: sub.timeEnd,
                         status: sub.status,
                         isBooked: sub.isBooked,
+                        // The schedule page opens this booking directly rather
+                        // than dropping the instructor on the appointments list
+                        // to hunt for it.
+                        appointmentId: sub.appointmentId,
                         maxCapacity: group.subSlots.length,
                         bookedCount: group.subSlots.filter(s => s.isBooked).length,
                     });
@@ -136,7 +143,8 @@ const InstructorController = {
             });
         } catch (err) {
             console.error('[InstructorController.renderConsultationPage]', err);
-            res.status(500).send('Failed to load schedule page.');
+            // Rendered by the error page rather than written as bare text.
+            throw err;
         }
     },
 
@@ -413,18 +421,33 @@ const InstructorController = {
             instructor.availabilityStatus = me?.availability_status || 'available';
             instructor.defaultMeetingLink = me?.default_meeting_link || '';
             instructor.middleName = me?.middle_name || '';
+            // Prefer the stored photo over the session copy: the row is already
+            // loaded here, and an admin changing it should not wait for a
+            // re-login to become visible.
+            if (me) instructor.profilePhoto = me.profile_picture || null;
 
             const settings = await InstructorSettingsModel.getByPublicId(req.session.userId);
+            const googleCalendar = await GoogleAccountModel.statusForPublicId(req.session.userId);
+            // The same connection also reads the instructor's own events back,
+            // so the card shows one state for both halves.
+            googleCalendar.sync = googleCalendar.connected
+                ? await CalendarModel.getGoogleConnection(req.session.userId)
+                : null;
 
             res.render('pages/instructor/settings', {
                 title: 'FaciTrack - Settings',
                 instructor,
                 pendingCount,
                 settings,
+                googleCalendar,
+                // Result of a round-trip to Google's consent screen, so the
+                // page can say what happened instead of silently reloading.
+                googleNotice: req.query.googleConnected ? 'connected' : (req.query.googleError || null),
             });
         } catch (err) {
             console.error('[InstructorController.renderSettingsPage]', err);
-            res.status(500).send('Failed to load settings.');
+            // Rendered by the error page rather than written as bare text.
+            throw err;
         }
     },
 
@@ -758,7 +781,8 @@ const InstructorController = {
             });
         } catch (err) {
             console.error('[InstructorController.renderDashboardPage]', err);
-            res.status(500).send('Failed to load dashboard.');
+            // Rendered by the error page rather than written as bare text.
+            throw err;
         }
     },
 
@@ -778,7 +802,8 @@ const InstructorController = {
             });
         } catch (err) {
             console.error('[InstructorController.renderAppointmentsPage]', err);
-            res.status(500).send('Failed to load appointments.');
+            // Rendered by the error page rather than written as bare text.
+            throw err;
         }
     },
 
@@ -871,7 +896,10 @@ const InstructorController = {
                 console.error('[AuditLog] Failed to log appointment:', err);
             }
 
-            res.json({ success: true });
+            // The Meet is minted by the approval itself, so hand it back: the
+            // page updates the appointment in place and would otherwise keep
+            // showing no link until the next full load.
+            res.json({ success: true, meetingLink: result.meetingLink || null });
         } catch (err) {
             console.error('[InstructorController.approveAppointment]', err);
             res.status(500).json({ success: false, error: 'Failed to approve appointment.' });
@@ -1054,7 +1082,8 @@ const InstructorController = {
             });
         } catch (err) {
             console.error('[InstructorController.renderReportsPage]', err);
-            res.status(500).send('Failed to load schedule page.');
+            // Rendered by the error page rather than written as bare text.
+            throw err;
         }
     },
 };

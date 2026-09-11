@@ -1,5 +1,7 @@
 const pool = require('../configs/db');
 const WorkloadModel = require('../models/WorkloadModel');
+const AuditLogModel = require('../models/AuditLogModel');
+const UserModel = require('../models/UserModel');
 const RoomModel = require('../models/RoomModel');
 const { buildInstructorUser } = require('../utils/sessionUser')
 

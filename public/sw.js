@@ -1,5 +1,97 @@
-// Bump this whenever sw.js changes so the activate handler clears stale caches.
-const CACHE_NAME = 'facitrack-v4';
+// Bump these whenever sw.js changes so the activate handler clears stale caches.
+const CACHE_NAME = 'facitrack-v6';
+
+/**
+ * Rendered pages live apart from static assets, because they are the only
+ * cached thing that belongs to one person. Signing out drops this whole cache
+ * in one call; the CSS and images are nobody's secret and stay put.
+ */
+const PAGE_CACHE = 'facitrack-pages-v6';
+
+// Where the signed-in session was last seen. Kept in PAGE_CACHE so that
+// clearing the pages clears the pointer to them too.
+const HOME_KEY = '/__facitrack-home';
+
+// Reached by opening the app: neither is worth restoring, and both are proof
+// of a signed-out session when the server answers them with a page.
+const SIGNED_OUT_PATHS = ['/', '/login'];
+
+const HOME_PATH = /^\/(student|instructor|dean|admin)\/dashboard\/?$/;
+
+async function rememberHome(path) {
+    const cache = await caches.open(PAGE_CACHE);
+    await cache.put(HOME_KEY, new Response(path, { headers: { 'Content-Type': 'text/plain' } }));
+}
+
+async function readHome() {
+    const cache = await caches.open(PAGE_CACHE);
+    const stored = await cache.match(HOME_KEY);
+    return stored ? (await stored.text()).trim() : null;
+}
+
+/**
+ * Pages, network-first.
+ *
+ * Offline, opening the app asks for "/" — and what is cached under "/" is the
+ * landing page, saved the last time it was visited signed out. Falling back to
+ * it made a working session look like a logged-out one. So an offline "/" is
+ * sent to whichever dashboard the session was last on instead, as a redirect
+ * rather than a swap, so the address and every relative link on the page stay
+ * consistent with what is being shown.
+ *
+ * Being "signed in" offline is only ever a view of the last page fetched. The
+ * data is as old as the last time the device had a connection, and anything
+ * the page tries to do will fail until it is back.
+ */
+async function handleNavigation(request) {
+    const url = new URL(request.url);
+    const signedOutPath = SIGNED_OUT_PATHS.includes(url.pathname);
+
+    try {
+        const response = await fetch(request);
+
+        // Everything here is bookkeeping for the next visit. It must never be
+        // able to fail the response the reader is waiting on: a rejected
+        // promise handed to respondWith() is shown as a network error, so a
+        // storage problem would present as "this site can't be reached" on a
+        // page the server answered perfectly well.
+        if (response.ok) {
+            try {
+                // A rendered page for "/" or "/login" is the server saying
+                // nobody is signed in — the redirect for a live session never
+                // arrives here with ok set. Whatever the previous session left
+                // behind goes now, so the next person to open this device
+                // offline cannot read it.
+                if (signedOutPath) await caches.delete(PAGE_CACHE);
+                else if (HOME_PATH.test(url.pathname)) await rememberHome(url.pathname);
+
+                // Only GET can be stored — Cache.put() rejects anything else,
+                // and a submitted form is a navigation as much as a link is.
+                // Signing in as an admin is the case that finds this: the
+                // password step answers with a page (the code prompt) instead
+                // of a redirect, so it is the one POST that gets this far ok.
+                if (request.method === 'GET') {
+                    const cache = await caches.open(PAGE_CACHE);
+                    await cache.put(request, response.clone());
+                }
+            } catch (err) {
+                console.warn('[SW] Could not cache', url.pathname, err.message);
+            }
+        }
+        return response;
+    } catch (err) {
+        if (signedOutPath) {
+            const home = await readHome();
+            if (home && await caches.match(home)) {
+                return Response.redirect(new URL(home, self.location.origin).toString(), 302);
+            }
+        }
+
+        const cached = await caches.match(request);
+        if (cached) return cached;
+        throw err;
+    }
+}
 
 // Assets to pre-cache on install
 const PRECACHE_ASSETS = [
@@ -15,6 +107,8 @@ const PRECACHE_ASSETS = [
     '/js/instructor-dashboard.js',
 
     '/images/FaciTrack-logo.png',
+    '/images/icon-192.png',
+    '/images/icon-maskable-192.png',
     '/manifest.json'
 ];
 
@@ -31,7 +125,8 @@ self.addEventListener('activate', (event) => {
     event.waitUntil(
         caches.keys().then((keys) =>
             Promise.all(
-                keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
+                keys.filter((key) => key !== CACHE_NAME && key !== PAGE_CACHE)
+                    .map((key) => caches.delete(key))
             )
         )
     );
@@ -83,19 +178,9 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // Navigation requests (HTML pages) — network first, fallback to cache
+    // Navigation requests (HTML pages)
     if (request.mode === 'navigate') {
-        event.respondWith(
-            fetch(request)
-                .then((response) => {
-                    if (response.ok) {
-                        const clone = response.clone();
-                        caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-                    }
-                    return response;
-                })
-                .catch(() => caches.match(request))
-        );
+        event.respondWith(handleNavigation(request));
         return;
     }
 });
@@ -113,8 +198,10 @@ self.addEventListener('push', (event) => {
     event.waitUntil(
         self.registration.showNotification(data.title || 'FaciTrack', {
             body: data.body || '',
-            icon: '/images/FaciTrack-logo.png',
-            badge: '/images/FaciTrack-logo.png',
+            // A notification icon renders small — the 844 KB source was being
+            // downloaded in full to fill a 48px badge.
+            icon: '/images/icon-192.png',
+            badge: '/images/icon-maskable-192.png',
             // Same tag replaces an older notification for the same appointment
             // rather than stacking duplicates.
             tag: data.tag || 'facitrack',

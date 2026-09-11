@@ -212,6 +212,16 @@
         <div class="pop-row"><span class="pop-lbl">When</span><span class="pop-val" id="popWhen">—</span></div>
         <div class="pop-row"><span class="pop-lbl">Duration</span><span class="pop-val" id="popDuration">—</span></div>
         <div class="pop-divider"></div>
+        <%# Only filled for an online consultation. The instructor had no way to
+            see the link their own booking was given — not even to check one had
+            been created. %>
+        <div class="pop-row" id="popLinkRow" hidden>
+          <span class="pop-lbl">Meeting link</span>
+          <span class="pop-val pop-link-val">
+            <a id="popLink" href="#" target="_blank" rel="noopener noreferrer">—</a>
+            <button type="button" class="pop-link-copy" id="popLinkCopy">Copy</button>
+          </span>
+        </div>
         <div class="pop-row"><span class="pop-lbl">Topic</span><span class="pop-val" id="popTopic">—</span></div>
         <div class="pop-row"><span class="pop-lbl">Notes</span><span class="pop-val" id="popNotes">—</span></div>
     </div>
@@ -268,7 +278,7 @@
                     at once. Every student is notified, and the slots are locked in.
                 </p>
                 <ul class="apt-approve-list" id="approveAllList"></ul>
-                <p class="apt-approve-warn">This cannot be undone in bulk — you would have to cancel each one individually.</p>
+                <p class="apt-approve-warn">This cannot be undone once — you would have to cancel each one individually.</p>
             </div>
             <div id="approveAllResult" hidden></div>
         </div>
@@ -336,11 +346,6 @@
                 <span>Block consultations during this time</span>
             </label>
             <p class="ev-hint" id="eventBlocksHint"></p>
-
-            <label class="ev-check" id="eventDoneRow" hidden>
-                <input type="checkbox" id="eventDone">
-                <span>Mark this task done</span>
-            </label>
 
             <div class="ev-conflicts" id="eventConflicts" hidden></div>
             <p class="ev-error" id="eventError" hidden></p>
@@ -605,7 +610,6 @@ window.onUnavailabilityChanged = function () {
 .apt-cal-own:hover { background: rgba(10, 61, 98, .14); }
 .apt-cal-own.blocks { border-left-color: #7c3aed; color: #6d28d9; background: rgba(124, 58, 237, .08); }
 .apt-cal-own.task { border-left-style: dotted; }
-.apt-cal-own.done { text-decoration: line-through; opacity: .6; }
 
 /* ── Own entries in the mobile day panel ── */
 .day-panel-subhead {
@@ -614,7 +618,6 @@ window.onUnavailabilityChanged = function () {
     padding: .75rem .25rem .35rem; border-top: 1px solid var(--gray-100); margin-top: .5rem;
 }
 .day-panel-own { display: flex; align-items: center; gap: .6rem; padding: .55rem .25rem; }
-.day-panel-own.done .day-panel-name { text-decoration: line-through; opacity: .6; }
 .day-panel-own-dot {
     width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
     background: var(--primary-blue);

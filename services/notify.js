@@ -17,8 +17,6 @@ const InstructorSettingsModel = require('../models/InstructorSettingsModel');
 const emailService = require('./email');
 const push = require('./push');
 
-const BASE_URL = process.env.APP_BASE_URL || 'http://localhost:3000';
-
 // Where tapping a notification lands — shared with the email service so the
 // two cannot drift apart. See utils/deepLink.js.
 const { deepLink } = require('../utils/deepLink');

@@ -1,7 +1,9 @@
 const cron = require('node-cron');
+const PresenceModel = require('../models/PresenceModel');
 const AppointmentModel = require('../models/AppointmentModel');
 const NotificationModel = require('../models/NotificationModel');
 const { formatFullDate, to12Hour } = require('../utils/timeFormat');
+const { notifyUser } = require('../services/notify');
 
 // How long to wait before chasing the same unclosed consultation again
 const COMPLETION_NUDGE_EVERY_HOURS = Number(process.env.COMPLETION_NUDGE_EVERY_HOURS) || 24;
@@ -84,6 +86,50 @@ async function sendPendingRequestNudges() {
 }
 
 /**
+ * Tell the dean about requests the instructor has left unanswered.
+ *
+ * The instructor nudges above repeat, but repeating at someone who is not
+ * responding is the definition of the problem. Past the escalation threshold
+ * the dean is told once — through notifyUser, so it reaches the bell, the
+ * device as a push, and email if that is switched on — and the request then
+ * shows in their Unanswered Requests report until it is answered.
+ */
+async function escalateUnansweredToDean() {
+    const afterHours = await appSettings.get('pending_escalate_hours');
+    const overdue = await AppointmentModel.getPendingAppointmentsForEscalation(afterHours);
+
+    for (const apt of overdue) {
+        const dateLabel = formatFullDate(apt.consultation_date);
+        const timeLabel = to12Hour(apt.start_time);
+        const instructor = `${apt.instructor_first_name} ${apt.instructor_last_name}`;
+        const student = `${apt.student_first_name} ${apt.student_last_name}`;
+
+        await notifyUser(
+            apt.dean_id,
+            'alert',
+            `${instructor} has not answered ${student}'s consultation request for ${dateLabel} at ${timeLabel}. It has been waiting over ${afterHours} hours.`,
+            apt.id,
+            {
+                pushTitle: 'Consultation Request Unanswered',
+                email: {
+                    heading: 'Unanswered Consultation Request',
+                    status: 'reminder',
+                    message: `A booking request has been waiting more than <strong>${afterHours} hours</strong> without a response.`,
+                    details: [
+                        { label: 'Instructor', value: instructor },
+                        { label: 'Student', value: student },
+                        { label: 'Date', value: dateLabel },
+                        { label: 'Time', value: timeLabel },
+                    ],
+                },
+            }
+        );
+
+        await AppointmentModel.markDeanEscalated(apt.id);
+    }
+}
+
+/**
  * Chase instructors whose upcoming online consultations still have no meeting
  * link. The student sees "link coming soon" until this is resolved.
  */
@@ -124,6 +170,11 @@ function startReminderJob() {
             console.error('[ReminderJob] Pending-request nudges failed:', err);
         }
         try {
+            await escalateUnansweredToDean();
+        } catch (err) {
+            console.error('[ReminderJob] Dean escalation failed:', err);
+        }
+        try {
             await sendCompletionNudges();
         } catch (err) {
             console.error('[ReminderJob] Completion nudges failed:', err);
@@ -133,6 +184,23 @@ function startReminderJob() {
         } catch (err) {
             console.error('[ReminderJob] Missing-link nudges failed:', err);
         }
+        try {
+            // Tags a discovery window let in that nobody went on to assign.
+            // Assigned tags are never touched, however long they have been
+            // silent: a flat battery must not unbind an instructor.
+            const removed = await PresenceModel.pruneUnassigned({ olderThanDays: 7 });
+            if (removed) console.log('[ReminderJob] Pruned ' + removed + ' unclaimed BLE tag(s).');
+        } catch (err) {
+            console.error('[ReminderJob] Beacon prune failed:', err);
+        }
+        try {
+            // Signal history is a rolling window for tuning a threshold, not a
+            // record worth keeping — a week is more than any calibration needs.
+            const dropped = await PresenceModel.pruneSamples({ olderThanDays: 7 });
+            if (dropped) console.log('[ReminderJob] Pruned ' + dropped + ' signal sample(s).');
+        } catch (err) {
+            console.error('[ReminderJob] Signal sample prune failed:', err);
+        }
     });
 }
 
@@ -141,3 +209,4 @@ module.exports.sendUpcomingReminders = sendUpcomingReminders;
 module.exports.sendCompletionNudges = sendCompletionNudges;
 module.exports.sendMissingLinkNudges = sendMissingLinkNudges;
 module.exports.sendPendingRequestNudges = sendPendingRequestNudges;
+module.exports.escalateUnansweredToDean = escalateUnansweredToDean;

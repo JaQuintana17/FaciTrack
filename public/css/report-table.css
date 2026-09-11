@@ -77,3 +77,113 @@
   .report-notice { padding: .75rem .875rem; }
   .report-notice p { font-size: .75rem; }
 }
+
+/* ── Report picker ──
+   The dean's page carries three reports. Stacked, they make the page long
+   enough that reaching the third means scrolling past two full tables, so one
+   is shown at a time and this chooses which. */
+.report-picker {
+    display: flex;
+    gap: .5rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.25rem;
+}
+
+.report-pick {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    padding: .55rem 1rem;
+    border: 1.5px solid var(--gray-200);
+    border-radius: var(--radius-md);
+    background: #fff;
+    color: var(--gray-600);
+    font-family: var(--font-body);
+    font-size: .8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-base);
+}
+
+.report-pick:hover { border-color: var(--primary-blue); color: var(--primary-blue); }
+
+.report-pick.active {
+    border-color: var(--primary-blue);
+    background: var(--primary-blue);
+    color: #fff;
+}
+
+/* The row count, so the dean can see where the data is before opening one */
+.report-pick-count {
+    font-size: .6875rem;
+    font-weight: 700;
+    padding: .1rem .4rem;
+    border-radius: 20px;
+    background: var(--gray-100);
+    color: var(--gray-600);
+}
+
+.report-pick.active .report-pick-count {
+    background: rgba(255, 255, 255, .22);
+    color: #fff;
+}
+
+@media (max-width: 560px) {
+    .report-picker { flex-direction: column; }
+    .report-pick { justify-content: space-between; width: 100%; }
+}
+
+/* ── Unanswered requests: the one report that can demand action ── */
+.report-pick.alert { border-color: #fecaca; }
+.report-pick-count.alert {
+    background: #dc2626;
+    color: #fff;
+}
+
+.report-alert {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.25rem;
+    padding: .75rem .9rem;
+    border-radius: var(--radius-md, 8px);
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    color: #92400e;
+    font-size: .82rem;
+    line-height: 1.5;
+}
+.report-alert svg { flex-shrink: 0; }
+.report-alert span { flex: 1; min-width: 0; }
+.report-alert-go {
+    flex-shrink: 0;
+    padding: .35rem .8rem;
+    border-radius: var(--radius-md, 8px);
+    border: 1.5px solid #92400e;
+    background: transparent;
+    color: #92400e;
+    font-family: inherit;
+    font-size: .75rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+.report-alert-go:hover { background: rgba(146, 64, 14, .08); }
+
+/* How long a row has been waiting — the column the eye should land on */
+.wait-pill {
+    display: inline-block;
+    padding: .18rem .5rem;
+    border-radius: 999px;
+    font-size: .7rem;
+    font-weight: 700;
+    background: var(--gray-100, #f3f4f6);
+    color: var(--gray-600, #4b5563);
+    white-space: nowrap;
+}
+.wait-pill.stale { background: #fef2f2; color: #b91c1c; }
+
+@media (max-width: 520px) {
+    .report-alert { align-items: flex-start; }
+    .report-alert-go { width: 100%; }
+}

@@ -10,6 +10,10 @@
     <title>FaciTrack - Smart Campus Innovation</title>
     <link rel="manifest" href="/manifest.json">
     <link rel="icon" href="/images/FaciTrack-logo.png" type="image/png">
+    <%# iOS ignores the manifest's icons and reads this instead. It also has no
+        maskable concept, so it gets the opaque one — a transparent icon would
+        come out black on the home screen. %>
+    <link rel="apple-touch-icon" href="/images/icon-maskable-192.png">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -57,7 +61,6 @@
                         <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                     </svg>
                 </button>
-                <span class="header-institution-name">Camarines Sur Polytechnic Colleges</span>
             </div>
         </div>
     </header>

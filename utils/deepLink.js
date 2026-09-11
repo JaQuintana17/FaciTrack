@@ -26,8 +26,13 @@ const MAKEUP_BY_ROLE = {
 function deepLink(appointmentId, role, type) {
     if (type === 'makeup') return MAKEUP_BY_ROLE[role] || null;
 
+    // A dean has no appointments page, but they are told about bookings that
+    // have gone unanswered — and the report listing those is where that
+    // notification should land.
+    if (role === 'Dean') return appointmentId ? '/dean/reports' : null;
+
     const path = APPOINTMENTS_BY_ROLE[role];
-    if (!path) return null;   // deans and admins have no appointments page
+    if (!path) return null;   // admins have no appointments page
     return appointmentId ? `${path}?openApt=${encodeURIComponent(appointmentId)}` : path;
 }
 

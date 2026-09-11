@@ -58,7 +58,7 @@
                     </div>
                     <div class="stat-card-content">
                         <p class="stat-card-label">Faculty In Room</p>
-                        <h2 class="stat-card-value <%= presenceUnavailable ? 'muted' : '' %>"><%= presenceUnavailable ? '—' : inRoom.length %></h2>
+                        <h2 class="stat-card-value <%= presenceUnavailable ? 'muted' : '' %>" id="tileInRoom"><%= presenceUnavailable ? '—' : inRoom.length %></h2>
                         <p class="stat-card-sublabel"><%= presenceUnavailable ? 'Awaiting BLE data' : `of ${faculty.length} total faculty` %></p>
                     </div>
                 </div>
@@ -88,7 +88,7 @@
                     </div>
                     <div class="stat-card-content">
                         <p class="stat-card-label"><%= presenceUnavailable ? 'Total Faculty' : 'Out of Room' %></p>
-                        <h2 class="stat-card-value"><%= presenceUnavailable ? faculty.length : outRoom.length %></h2>
+                        <h2 class="stat-card-value" id="tileOutRoom"><%= presenceUnavailable ? faculty.length : outRoom.length %></h2>
                         <p class="stat-card-sublabel"><%= presenceUnavailable ? `In ${dean.department}` : 'Currently undetected' %></p>
                     </div>
                 </div>
@@ -125,9 +125,11 @@
                                 </div>
                                 <div>
                                     <% if (f.bleStatus === 'unknown') { %>
-                                    <span class="table-badge" title="No BLE scanner has reported on this faculty member">No data</span>
+                                    <span class="table-badge" data-presence-badge="<%= f.id %>"
+                                          title="No BLE scanner has reported on this faculty member">No data</span>
                                     <% } else { %>
-                                    <span class="table-badge <%= f.bleStatus === 'in-room' ? 'confirmed' : 'declined' %>">
+                                    <span class="table-badge <%= f.bleStatus === 'in-room' ? 'confirmed' : 'declined' %>"
+                                          data-presence-badge="<%= f.id %>">
                                         <%= f.bleStatus === 'in-room' ? 'In Room' : 'Out' %>
                                     </span>
                                     <% } %>
@@ -252,3 +254,44 @@
 <div class="toast-container" id="toastContainer"></div>
 <%- include('../../partials/footer') %>
 <%- include('../../partials/script') %>
+<script src="/js/realtime.js?v=<%= Date.now() %>"></script>
+<script src="/js/presence-live.js?v=<%= Date.now() %>"></script>
+<script>
+/* Presence on this page is two tiles and a badge per person. Both have to move
+   together — a tile saying three are in while four badges read In Room is
+   worse than either being stale on its own. */
+(function () {
+    'use strict';
+    if (!window.PresenceLive) return;
+
+    var LABEL = { 'in-room': 'In Room', 'out-of-room': 'Out', unknown: 'No data' };
+    var CLASS = { 'in-room': 'confirmed', 'out-of-room': 'declined', unknown: '' };
+
+    window.PresenceLive.onUpdate(function (faculty) {
+        var counts = { 'in-room': 0, 'out-of-room': 0, unknown: 0 };
+
+        faculty.forEach(function (f) {
+            counts[f.presence] = (counts[f.presence] || 0) + 1;
+
+            var badge = document.querySelector('[data-presence-badge="' + f.id + '"]');
+            if (!badge) return;
+            badge.className = 'table-badge ' + CLASS[f.presence];
+            badge.textContent = LABEL[f.presence];
+            if (f.presence === 'unknown') {
+                badge.title = 'No BLE scanner has reported on this faculty member';
+            } else {
+                badge.removeAttribute('title');
+            }
+        });
+
+        // Only touch a tile the server actually filled with a number: it shows
+        // a dash when no scanner has ever reported, and replacing that with 0
+        // would claim knowledge the system does not have.
+        var inTile = document.getElementById('tileInRoom');
+        if (inTile && inTile.textContent.trim() !== '—') inTile.textContent = counts['in-room'];
+
+        var outTile = document.getElementById('tileOutRoom');
+        if (outTile) outTile.textContent = counts['out-of-room'];
+    });
+}());
+</script>

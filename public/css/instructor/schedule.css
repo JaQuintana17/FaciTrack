@@ -877,3 +877,49 @@
 }
 
 @media (max-width:900px){.gcal-body{grid-template-columns:1fr}.mini-cal{border-right:none;border-bottom:1px solid var(--gray-100);padding-right:0;padding-bottom:1rem}}
+
+/* A booked sub-slot opens its appointment, so it has to look tappable */
+.dsp-subslot-card.clickable { cursor: pointer; }
+.dsp-subslot-card.clickable:hover {
+    border-color: var(--primary-blue, #0A3D62);
+    box-shadow: 0 2px 8px rgba(10, 61, 98, 0.12);
+}
+.dsp-subslot-card.clickable:focus-visible {
+    outline: 2px solid var(--primary-blue, #0A3D62);
+    outline-offset: 2px;
+}
+/* The button is decoration now — the card behind it takes the click */
+.dsp-subslot-card.clickable .dsp-subslot-search-btn { pointer-events: none; }
+
+/* ── Week strip: square is a floor, not a fixed size ──
+   Every cell was pinned to an exact square with aspect-ratio, but a day that
+   also carries a "3 slots" badge needs more room than one: measured 87px of
+   content inside a 72px box at 393px wide. The cell does not clip, so the
+   badge and the Add button drew outside its own rounded border.
+
+   Height now follows content, with the old square kept as a minimum. The row
+   is a single flex line (a grid row at desktop widths), so every cell still
+   matches the tallest one and the strip stays even.
+
+   Spill before this, by viewport: 15px @393, 11px @520, 10px @640, 2px @1280. */
+.week-day {
+    aspect-ratio: auto;
+    height: auto;
+    min-height: 100px;
+}
+
+@media (max-width: 640px) {
+    .week-day {
+        aspect-ratio: auto !important;
+        height: auto !important;
+        min-height: 84px !important;
+    }
+}
+
+@media (max-width: 520px) {
+    .week-day { min-height: 78px !important; }
+}
+
+@media (max-width: 420px) {
+    .week-day { min-height: 70px !important; }
+}

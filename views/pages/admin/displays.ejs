@@ -1,0 +1,151 @@
+<%- include('../../partials/header') %>
+<link rel="stylesheet" href="/css/instructor/dashboard.css?v=<%= Date.now() %>">
+<link rel="stylesheet" href="/css/report-table.css?v=<%= Date.now() %>">
+
+<style>
+  .dsp-approve-card { max-width: 640px; }
+  .dsp-approve-row { display: grid; grid-template-columns: 9em 1fr; gap: .75rem; align-items: end; }
+  .dsp-field { display: flex; flex-direction: column; gap: .3rem; }
+  .dsp-field label { font-size: .78rem; font-weight: 700; color: var(--gray-600); }
+  .dsp-field input, .dsp-field select {
+    padding: .6rem .75rem; border: 1.5px solid var(--gray-300); border-radius: var(--radius-md);
+    font-size: .875rem; font-family: var(--font-body); color: var(--gray-800); background: #fff;
+  }
+  #dspCode {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 1.1rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+  }
+  .dsp-approve-actions { margin-top: 1rem; display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
+  .dsp-msg { font-size: .82rem; line-height: 1.5; margin: 0; }
+  .dsp-msg.ok  { color: #15803d; }
+  .dsp-msg.bad { color: #b91c1c; }
+
+  .dsp-pill {
+    display: inline-block; padding: .18rem .6rem; border-radius: 999px;
+    font-size: .7rem; font-weight: 800; text-transform: uppercase; letter-spacing: .03em;
+  }
+  .dsp-pill.pending  { background: #fef3c7; color: #b45309; }
+  .dsp-pill.approved { background: #dcfce7; color: #15803d; }
+  .dsp-pill.revoked  { background: #f1f5f9; color: #64748b; }
+  .dsp-code-cell { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 700; }
+  .dsp-ua { font-size: .72rem; color: var(--gray-500); display: block; max-width: 22ch;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dsp-act {
+    padding: .3rem .7rem; border-radius: var(--radius-md); border: 1.5px solid var(--gray-300);
+    background: #fff; font-size: .75rem; font-weight: 700; cursor: pointer;
+    font-family: var(--font-body); color: var(--gray-700);
+  }
+  .dsp-act.danger:hover { border-color: #dc2626; color: #dc2626; }
+
+  @media (max-width: 560px) {
+    .dsp-approve-row { grid-template-columns: 1fr; }
+    .dsp-approve-actions .btn-header-action { width: 100%; justify-content: center; }
+  }
+</style>
+
+<div class="instructor-layout">
+  <%- include('../../partials/admin-sidebar', { activePage: 'displays' }) %>
+
+  <main class="instructor-main">
+    <div class="main-container">
+
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Displays</h1>
+          <p class="page-subtitle">
+            Screens allowed to show a Faculty Lounge board. A screen shows nothing
+            until it is approved here.
+          </p>
+        </div>
+      </div>
+
+      <!-- Approve by code -->
+      <div class="content-card dsp-approve-card">
+        <div class="card-header"><h3 class="card-title">Activate a display</h3></div>
+        <div class="card-body">
+          <p class="settings-description" style="margin-bottom:1rem;">
+            Open <code>/display</code> on the screen. It will show a six-character
+            code — enter it here and choose which lounge it is outside of.
+          </p>
+
+          <div class="dsp-approve-row">
+            <div class="dsp-field">
+              <label for="dspCode">Code</label>
+              <input type="text" id="dspCode" maxlength="6" placeholder="ABC123" autocomplete="off">
+            </div>
+            <div class="dsp-field">
+              <label for="dspDept">Faculty Lounge</label>
+              <select id="dspDept">
+                <% departments.forEach(d => { %>
+                  <option value="<%= d.id %>"><%= d.short_name %> — <%= d.full_name %></option>
+                <% }); %>
+              </select>
+            </div>
+          </div>
+
+          <div class="dsp-field" style="margin-top:.75rem;">
+            <label for="dspLabel">Label <span style="font-weight:400;color:var(--gray-400)">(optional)</span></label>
+            <input type="text" id="dspLabel" maxlength="120" placeholder="e.g. Outside CCS Faculty Lounge">
+          </div>
+
+          <div class="dsp-approve-actions">
+            <button type="button" class="btn-header-action primary" id="dspApprove">Approve display</button>
+            <p class="dsp-msg" id="dspMsg"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Registered screens -->
+      <div class="content-card report-table" style="margin-top:1.5rem;">
+        <div class="card-header"><h3 class="card-title">Registered screens</h3></div>
+        <div class="card-body">
+          <% if (!devices.length) { %>
+            <p class="settings-description">
+              No screen has asked to be activated yet. Open <code>/display</code>
+              on the panel to register it.
+            </p>
+          <% } else { %>
+          <div style="overflow-x:auto;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Status</th><th>Code</th><th>Display</th>
+                  <th>Faculty Lounge</th><th>Last seen</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <% devices.forEach(dev => { %>
+                <tr data-device="<%= dev.id %>">
+                  <td><span class="dsp-pill <%= dev.status %>"><%= dev.status %></span></td>
+                  <td class="dsp-code-cell"><%= dev.pairing_code || '—' %></td>
+                  <td>
+                    <strong><%= dev.label || 'Unnamed screen' %></strong>
+                    <span class="dsp-ua" title="<%= dev.user_agent || '' %>"><%= dev.user_agent || 'Unknown device' %></span>
+                  </td>
+                  <td><%= dev.department_short || '—' %></td>
+                  <td style="white-space:nowrap"><%= dev.lastSeenLabel %></td>
+                  <td style="text-align:right;white-space:nowrap">
+                    <% if (dev.status === 'approved') { %>
+                      <button type="button" class="dsp-act danger" data-revoke="<%= dev.id %>">Revoke</button>
+                    <% } else { %>
+                      <button type="button" class="dsp-act danger" data-forget="<%= dev.id %>">Forget</button>
+                    <% } %>
+                  </td>
+                </tr>
+                <% }); %>
+              </tbody>
+            </table>
+          </div>
+          <% } %>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<%- include('../../partials/footer') %>
+<%- include('../../partials/script') %>
+<script src="/js/admin-displays.js?v=<%= Date.now() %>"></script>

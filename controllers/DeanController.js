@@ -2,7 +2,8 @@ const DeanModel = require('../models/DeanModel');
 const MakeupRequestModel = require('../models/MakeupRequestModel');
 const NotificationModel = require('../models/NotificationModel');
 const InstructorSettingsModel = require('../models/InstructorSettingsModel');
-const { timeAgo } = require('../utils/timeFormat');
+const { timeAgo, to12Hour, formatFullDate } = require('../utils/timeFormat');
+const appSettings = require('../services/app-settings');
 
 /**
  * The Dean module's read side.
@@ -14,13 +15,8 @@ const { timeAgo } = require('../utils/timeFormat');
  */
 
 // users.availability_status → what the monitoring board calls it
-const AVAILABILITY_LABELS = {
-    available: 'Available',
-    dnd: 'Do Not Disturb',
-    travel: 'Official Travel',
-    leave: 'On Leave',
-    meeting: 'In a Meeting',
-};
+// Shared with the dean's reports and the lounge board — see utils/availability.js.
+const { AVAILABILITY_LABELS } = require('../utils/availability');
 
 function toDateKey(d) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -121,6 +117,34 @@ function makeupRow(row) {
     };
 }
 
+/**
+ * A booking request nobody has answered.
+ *
+ * waitingHours is kept alongside the human label so the table can sort and
+ * filter on it — "3 days" does not order correctly as text.
+ */
+function unansweredRow(row) {
+    const hours = Number(row.waiting_hours) || 0;
+    return {
+        id: row.id,
+        instructorName: row.instructor_name,
+        studentName: row.student_name,
+        studentNumber: row.student_number || '—',
+        topic: row.topic || '—',
+        mode: row.mode,
+        date: dateKey(row.consultation_date),
+        dateLabel: formatFullDate(row.consultation_date),
+        timeLabel: `${to12Hour(row.start_time)} – ${to12Hour(row.end_time)}`,
+        requestedAt: row.created_at ? timeAgo(row.created_at) : '—',
+        waitingHours: hours,
+        waitingLabel: hours < 24
+            ? `${hours}h`
+            : `${Math.floor(hours / 24)}d ${hours % 24}h`,
+        // Past the escalation threshold — the row the dean is meant to notice.
+        stale: Boolean(Number(row.is_stale)),
+    };
+}
+
 function presenceRow(row) {
     return {
         id: row.id,
@@ -159,7 +183,9 @@ function formatDuration(minutes) {
 async function loadDepartment(deanPublicId) {
     const { since, until } = monthWindow();
 
-    const [dean, facultyRows, presenceRows, makeupRows, notifications] = await Promise.all([
+    const staleHours = await appSettings.get('pending_escalate_hours');
+
+    const [dean, facultyRows, presenceRows, makeupRows, notifications, unansweredRows] = await Promise.all([
         DeanModel.getDean(deanPublicId),
         DeanModel.getFaculty(deanPublicId, { since, until }),
         DeanModel.getPresenceHistory(deanPublicId),
@@ -168,11 +194,16 @@ async function loadDepartment(deanPublicId) {
             return [];
         }),
         NotificationModel.getForUser(deanPublicId).catch(() => []),
+        DeanModel.getUnansweredRequests(deanPublicId, { staleHours }).catch(err => {
+            console.error('[Dean] Could not load unanswered requests:', err.message);
+            return [];
+        }),
     ]);
 
     const faculty = facultyRows.map(facultyRow);
     const presenceLogs = presenceRows.map(presenceRow);
     const makeupRequests = makeupRows.map(makeupRow);
+    const unansweredRequests = unansweredRows.map(unansweredRow);
 
     return {
         dean: {
@@ -190,6 +221,12 @@ async function loadDepartment(deanPublicId) {
         recentActivity: presenceLogs.slice(0, 6),
         makeupRequests,
         pendingMakeupCount: makeupRequests.filter(r => r.status === 'pending').length,
+        unansweredRequests,
+        // Only the overdue ones drive the alert. Every pending request would
+        // count a booking made ten minutes ago, which no instructor has had a
+        // chance to answer yet — an alarm nobody could ever clear.
+        unansweredStaleCount: unansweredRequests.filter(r => r.stale).length,
+        unansweredStaleHours: staleHours,
         notifications,
         // True while no scanner has ever reported, so the pages can explain
         // themselves instead of showing convincing-looking zeroes.
@@ -207,7 +244,8 @@ const DeanController = {
             });
         } catch (err) {
             console.error('[DeanController.renderDashboard]', err);
-            res.status(500).send('Failed to load the page.');
+            // Rendered by the error page rather than written as bare text.
+            throw err;
         }
     },
 
@@ -230,7 +268,8 @@ const DeanController = {
             });
         } catch (err) {
             console.error('[DeanController.renderFaculty]', err);
-            res.status(500).send('Failed to load the page.');
+            // Rendered by the error page rather than written as bare text.
+            throw err;
         }
     },
 
@@ -242,7 +281,8 @@ const DeanController = {
             });
         } catch (err) {
             console.error('[DeanController.renderPresence]', err);
-            res.status(500).send('Failed to load the page.');
+            // Rendered by the error page rather than written as bare text.
+            throw err;
         }
     },
 
@@ -271,6 +311,10 @@ const DeanController = {
             res.render('partials/presence-rows', { presenceLogs: rows.map(presenceRow) });
         } catch (err) {
             console.error('[DeanController.getPresenceRows]', err);
+            // The one place that must NOT reach the error page: this returns
+            // table rows for a live refresh, so an error document here would
+            // be spliced into a <tbody>. Answer with nothing and leave the
+            // rows already on screen alone.
             res.status(500).send('');
         }
     },
@@ -283,7 +327,8 @@ const DeanController = {
             });
         } catch (err) {
             console.error('[DeanController.renderReports]', err);
-            res.status(500).send('Failed to load the page.');
+            // Rendered by the error page rather than written as bare text.
+            throw err;
         }
     },
 
@@ -300,7 +345,8 @@ const DeanController = {
             });
         } catch (err) {
             console.error('[DeanController.renderSettings]', err);
-            res.status(500).send('Failed to load the page.');
+            // Rendered by the error page rather than written as bare text.
+            throw err;
         }
     },
 
@@ -322,7 +368,8 @@ const DeanController = {
             });
         } catch (err) {
             console.error('[DeanController.renderBuilding]', err);
-            res.status(500).send('Failed to load the page.');
+            // Rendered by the error page rather than written as bare text.
+            throw err;
         }
     },
 };

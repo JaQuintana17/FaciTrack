@@ -1,8 +1,13 @@
 <aside class="dean-sidebar instructor-sidebar">
     <div class="sidebar-header">
         <div class="instructor-profile-mini">
-            <div class="profile-avatar-mini" id="deanSidebarAvatar">
-                <span class="avatar-initials"><%= dean.name.split(' ').map(n => n[0]).join('') %></span>
+            <% const sidebarInitials = dean.name.split(' ').map(n => n[0]).join(''); %>
+            <div class="profile-avatar-mini" id="deanSidebarAvatar" data-initials="<%= sidebarInitials %>">
+                <% if (dean.profilePhoto) { %>
+                    <img src="<%= dean.profilePhoto %>" alt="<%= dean.name %>" class="avatar-img">
+                <% } else { %>
+                    <span class="avatar-initials"><%= sidebarInitials %></span>
+                <% } %>
             </div>
             <div class="profile-info-mini">
                 <h3 class="profile-name-mini"><%= dean.name %></h3>
@@ -194,6 +199,14 @@
     </div>
 </div>
 
+<%# Carries the hamburger's click handler, plus the tap-outside and tap-a-nav-item
+    closers. The instructor and student sidebars already include it; without it the
+    dean's toggle button renders but nothing listens to it. %>
+<%- include('./sidebar') %>
+
+<%# The dean uploads from the settings page, not from here, but the module has
+    to be loaded before dean-settings.js runs. %>
+<script src="/js/avatar-upload.js"></script>
 <script>
 (function() {
     // ── Notifications panel (same logic as instructor) ──

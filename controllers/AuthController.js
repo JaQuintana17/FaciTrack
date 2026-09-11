@@ -9,6 +9,15 @@ const LOGIN_TITLE = 'FaciTrack - Faculty Appointment & Monitoring System';
 // Roles that must clear a second factor before a session is created
 const OTP_REQUIRED_ROLES = ['Admin'];
 
+// Where a signed-in user belongs. One map, because three different pages now
+// answer "are you already logged in?" and they must all answer the same way.
+const HOME_BY_ROLE = {
+    'Student':    '/student/dashboard',
+    'Admin':      '/admin/dashboard',
+    'Dean':       '/dean/dashboard',
+    'Instructor': '/instructor/dashboard',
+};
+
 /** Default render state for the login page. */
 function loginView(overrides = {}) {
     return {
@@ -24,21 +33,59 @@ function loginView(overrides = {}) {
 
 const AuthController = {
 
+    /**
+     * The signed-in home for this session, or null if there isn't one.
+     *
+     * Returning null for an unrecognised role matters: redirectByRole falls
+     * back to /login, and /login asks this same question, so a session holding
+     * a role no longer in the map would have bounced between the two forever.
+     */
+    homeFor(session) {
+        if (!session?.userId) return null;
+        return HOME_BY_ROLE[session.role] || null;
+    },
+
+    /**
+     * Public landing page.
+     *
+     * A live session skips it. The PWA's start_url is "/", so closing the app
+     * and reopening it landed on the marketing page even when the session was
+     * still good — and the Login button there only bounced to the dashboard
+     * anyway, making the landing page a detour rather than a destination.
+     *
+     * Navigation requests are network-first in the service worker, so this
+     * redirect runs on reopen whenever the device is online. Offline, the
+     * cached page is still served, which is the right trade: something to look
+     * at beats a connection error.
+     */
+    renderLanding(req, res) {
+        const home = AuthController.homeFor(req.session);
+        if (home) return res.redirect(home);
+
+        res.render('pages/index', {
+            title: 'FaciTrack - Login',
+            error: null,
+        });
+    },
+
     renderLogin(req, res) {
         const errorMessages = {
             'authentication_failed': 'Authentication failed. Please try again.',
             'no_email': 'Google did not return an email address for that account.',
             'domain_not_allowed': 'Only CSPC institutional email accounts are allowed.',
             'faculty_not_registered': 'Faculty account not found. Please contact the administrator.',
-            'account_inactive': 'Your account is inactive. Please contact the administrator.'
+            'account_inactive': 'Your account is inactive. Please contact the administrator.',
+            'oauth_expired': 'That Google sign-in link had already been used or expired. Please try again.',
+            'oauth_cancelled': 'Google sign-in was cancelled.',
+            'oauth_misconfigured': 'Google sign-in is not set up correctly for this site. Please contact the administrator.',
         };
         const errorParam = req.query.error;
         const errorMessage = errorParam ? errorMessages[errorParam] || 'An error occurred. Please try again.' : null;
 
-        // Redirect if already logged in
-        if (req.session.userId) {
-            return AuthController.redirectByRole(res, req.session.role);
-        }
+        // Already signed in — nothing to log into
+        const home = AuthController.homeFor(req.session);
+        if (home) return res.redirect(home);
+
         res.render('pages/login', loginView({ error: errorMessage }));
     },
 
@@ -46,10 +93,14 @@ const AuthController = {
         try {
             const { email, password } = req.body;
 
+            // Every failure below hands the typed address back, so a mistyped
+            // password does not also cost the instructor their email. Only the
+            // password is ever cleared.
             // Basic validation
             if (!email || !password) {
                 return res.render('pages/login', loginView({
                     error: 'Email and password are required.',
+                    email,
                 }));
             }
 
@@ -58,6 +109,7 @@ const AuthController = {
             if (!user) {
                 return res.render('pages/login', loginView({
                     error: 'Invalid email or password.',
+                    email,
                 }));
             }
 
@@ -65,6 +117,7 @@ const AuthController = {
             if (user.status !== 'Active') {
                 return res.render('pages/login', loginView({
                     error: 'Your account is inactive. Please contact the administrator.',
+                    email,
                 }));
             }
 
@@ -73,6 +126,7 @@ const AuthController = {
             if (!match) {
                 return res.render('pages/login', loginView({
                     error: 'Invalid email or password.',
+                    email,
                 }));
             }
 
@@ -88,6 +142,7 @@ const AuthController = {
             console.error('[AuthController.login]', err);
             res.render('pages/login', loginView({
                 error: 'Something went wrong. Please try again.',
+                email: req.body?.email || '',
             }));
         }
     },
@@ -242,13 +297,7 @@ const AuthController = {
     },
 
     redirectByRole(res, role) {
-        const destinations = {
-            'Student': '/student/dashboard',
-            'Admin': '/admin/dashboard',
-            'Dean': '/dean/dashboard',
-            'Instructor': '/instructor/dashboard',
-        };
-        res.redirect(destinations[role] || '/login');
+        res.redirect(HOME_BY_ROLE[role] || '/login');
     },
 
     async handleGoogleCallback(req, res) {

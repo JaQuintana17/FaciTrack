@@ -125,50 +125,6 @@
             <% } %>
             </div>
 
-            <%# Students have no settings page, so the subscribe link lives with
-                the appointments it publishes. Only worth showing once there is
-                something to subscribe to. %>
-            <% if (instructors.length) { %>
-            <div class="content-card feed-card" data-feed-card="/student">
-                <div class="card-header">
-                    <h3 class="card-title">Add to My Calendar</h3>
-                </div>
-                <div class="card-body">
-                    <p class="feed-desc">
-                        Subscribe Google Calendar or Apple Calendar to this link and your
-                        consultations appear there automatically, with the instructor, topic,
-                        room or meeting link and the full duration.
-                    </p>
-                    <div class="feed-row">
-                        <input type="text" class="feed-url" id="feedUrl" readonly
-                               value="Generating…" aria-label="Calendar subscription link">
-                        <button type="button" class="feed-copy" id="feedCopy">Copy</button>
-                    </div>
-                    <p class="feed-status" id="feedStatus" hidden></p>
-                    <div class="feed-actions">
-                        <a class="feed-btn" id="feedGoogle" href="#" target="_blank" rel="noopener">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                            Add to Google Calendar
-                        </a>
-                        <a class="feed-btn" id="feedApple" href="#">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                            Add to Apple Calendar
-                        </a>
-                    </div>
-                    <details class="feed-help">
-                        <summary>How often does it update?</summary>
-                        <div>
-                            <p>Your calendar app decides. Apple can check every 5 minutes; Google
-                            is often several hours behind. Booking confirmations still reach you
-                            by email straight away.</p>
-                            <p class="feed-warn">Keep this link private — anyone who has it can
-                            read your appointment schedule.
-                            <button type="button" class="feed-rotate" id="feedRotate">Regenerate link</button></p>
-                        </div>
-                    </details>
-                </div>
-            </div>
-            <% } %>
 
             <!-- Calendar View Container — every instructor, so it stays here -->
             <div id="calendarViewContainer" class="calendar-container">
@@ -217,4 +173,3 @@
 </script>
 <script src="/js/card-filter.js?v=<%= Date.now() %>"></script>
 <script src="/js/student-appointments.js?v=<%= Date.now() %>"></script>
-<script src="/js/calendar-feed-link.js?v=<%= Date.now() %>"></script>

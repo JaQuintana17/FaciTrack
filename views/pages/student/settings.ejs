@@ -1,0 +1,160 @@
+<%- include('../../partials/header') %>
+<link rel="stylesheet" href="/css/instructor/dashboard.css?v=<%= Date.now() %>">
+<link rel="stylesheet" href="/css/settings-chrome.css?v=<%= Date.now() %>">
+<style>
+  .settings-stack { display:flex; flex-direction:column; gap:1.5rem; max-width:720px; }
+
+  /* Device notifications — same shape as the instructor page */
+  .push-row { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; }
+  .push-copy { min-width:0; }
+  .push-title { font-size:.875rem; font-weight:700; color:var(--gray-900); margin:0 0 .2rem; }
+  .push-desc { font-size:.8rem; color:var(--gray-600); line-height:1.6; margin:0; }
+  .push-msg { display:none; font-size:.78rem; margin:.7rem 0 0; }
+  .push-test {
+    margin-top:.8rem; background:none; border:none; padding:0; cursor:pointer;
+    font-size:.78rem; font-weight:600; color:var(--primary-blue);
+    text-decoration:underline; font-family:var(--font-body);
+  }
+  .push-row .toggle-switch { flex-shrink:0; }
+
+  .toggle-switch { position:relative; width:44px; height:24px; flex-shrink:0; }
+  .toggle-switch input { opacity:0; width:0; height:0; position:absolute; }
+  .toggle-slider { position:absolute; cursor:pointer; inset:0; background:var(--gray-300); border-radius:24px; transition:.3s; }
+  .toggle-slider:before { content:''; position:absolute; width:18px; height:18px; left:3px; bottom:3px; background:#fff; border-radius:50%; transition:.3s; box-shadow:0 1px 4px rgba(0,0,0,.2); }
+  input:checked + .toggle-slider { background:var(--primary-blue); }
+  input:checked + .toggle-slider:before { transform:translateX(20px); }
+  input:disabled + .toggle-slider { opacity:.5; cursor:not-allowed; }
+
+  .field-hint { font-size:.75rem; color:var(--gray-500); margin:.35rem 0 0; line-height:1.5; }
+  .modal-input, .modal-select {
+    width:100%; padding:.625rem .875rem; border:1.5px solid var(--gray-300);
+    border-radius:var(--radius-md); font-size:.875rem; font-family:var(--font-body);
+    color:var(--gray-800); background:#fff;
+  }
+</style>
+
+<div class="instructor-layout">
+  <%- include('../../partials/student-sidebar', { activePage: 'settings', appointmentCount: appointmentCount }) %>
+
+  <main class="instructor-main">
+    <div class="main-container">
+
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Settings</h1>
+          <p class="page-subtitle">Notifications and how the faculty directory opens</p>
+        </div>
+      </div>
+
+      <div class="settings-stack">
+
+        <!-- Device notifications: this drives the browser's push subscription,
+             so it is per-device and not part of the saved form. -->
+        <div class="content-card">
+          <div class="card-header">
+            <h3 class="card-title">Device Notifications</h3>
+          </div>
+          <div class="card-body">
+            <div class="push-row">
+              <div class="push-copy">
+                <p class="push-title">Notify me on this device</p>
+                <p class="push-desc">
+                  Get appointment approvals, declines and reminders as notifications on this
+                  device, even when FaciTrack is closed. Turn this on for each device you use.
+                </p>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="pushToggle" disabled data-no-track>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <p id="pushMsg" class="push-msg"></p>
+            <button type="button" id="pushTestBtn" class="push-test" style="display:none;">Send a test notification</button>
+          </div>
+        </div>
+
+        <!-- Department + directory preference: one form, saved together -->
+        <div class="content-card settings-card" data-card="directory">
+          <div class="card-header">
+            <h3 class="card-title">Faculty Directory</h3>
+            <span class="unsaved-pill">Unsaved</span>
+          </div>
+          <div class="card-body">
+
+            <div class="form-group">
+              <label class="modal-label" for="deptSelect">My department</label>
+              <select id="deptSelect" class="modal-select">
+                <option value="">Not set</option>
+                <% departments.forEach(function (d) { %>
+                  <option value="<%= d.id %>" <%= String(departmentId) === String(d.id) ? 'selected' : '' %>>
+                    <%= d.full_name %>
+                  </option>
+                <% }); %>
+              </select>
+              <p class="field-hint">Used to decide which department the directory opens on.</p>
+            </div>
+
+            <div class="push-row" style="margin-top:1.25rem;">
+              <div class="push-copy">
+                <p class="push-title">Start in my department</p>
+                <p class="push-desc">
+                  Open the faculty directory already filtered to your department. You can still
+                  switch to any other department, or back to All — this only sets the starting point.
+                </p>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="ownDeptToggle" <%= settings.directoryOwnDept ? 'checked' : '' %>>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+
+            <p id="dirMsg" class="push-msg"></p>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Unsaved-changes bar, same chrome as the other settings pages -->
+      <div class="dirty-bar" id="dirtyBar">
+        <div class="dirty-bar-inner">
+          <div>
+            <p class="dirty-bar-text" id="dirtyBarText">You have unsaved changes.</p>
+            <p class="dirty-bar-sub">They will be lost if you leave this page.</p>
+          </div>
+          <div class="dirty-bar-actions">
+            <button type="button" class="btn-discard" id="btnDiscardAll">Discard</button>
+            <button type="button" class="btn-save-all" id="btnSaveAll">Save all changes</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<!-- Leave confirmation, for in-app navigation -->
+<div class="modal-overlay" id="leaveOverlay">
+  <div class="modal-content" style="max-width:420px;">
+    <div class="modal-header">
+      <h3 class="modal-title">Unsaved changes</h3>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:.875rem;color:var(--gray-600);line-height:1.65;margin:0;" id="leaveBody">
+        You have unsaved changes on this page. What would you like to do?
+      </p>
+      <div class="leave-modal-actions">
+        <button type="button" class="btn-modal btn-cancel" id="leaveStay">Stay on page</button>
+        <button type="button" class="btn-modal btn-cancel" id="leaveDiscard">Leave without saving</button>
+        <button type="button" class="btn-modal btn-primary" id="leaveSave">Save &amp; leave</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<%- include('../../partials/footer') %>
+<%- include('../../partials/script') %>
+<script src="/js/push-subscribe.js"></script>
+<script src="/js/settings-tracker.js?v=<%= Date.now() %>"></script>
+<script src="/js/student-settings.js?v=<%= Date.now() %>"></script>

@@ -72,24 +72,53 @@
 
             <div class="page-header">
                 <div>
-                    <h1 class="page-title">Faculty Availability</h1>
+                    <h1 class="page-title">Faculty Lounge</h1>
                     <p class="page-subtitle">
-                        <%= faculty.length %> instructor<%= faculty.length === 1 ? '' : 's' %> —
-                        <%= presenceUnavailable ? 'showing self-reported status' : 'live room presence' %>
+                        <% if (departmentMissing) { %>
+                            Set your department to see who is in
+                        <% } else { %>
+                            <%= faculty.length %> instructor<%= faculty.length === 1 ? '' : 's' %> —
+                            <%= loungeCovered ? 'live lounge presence' : 'showing self-reported status' %>
+                        <% } %>
                     </p>
                 </div>
+                <% if (!departmentMissing) { %>
                 <div class="header-actions">
                     <%# The pill only claims LIVE when something is actually reporting %>
-                    <div class="live-pill <%= presenceUnavailable ? 'off' : 'on' %>">
-                        <span class="live-dot"></span><%= presenceUnavailable ? 'NOT LIVE' : 'LIVE' %>
+                    <div class="live-pill <%= loungeCovered ? 'on' : 'off' %>">
+                        <span class="live-dot"></span><%= loungeCovered ? 'LIVE' : 'NOT LIVE' %>
                     </div>
                 </div>
+                <% } %>
             </div>
 
-            <% if (presenceUnavailable && faculty.length) { %>
+<% if (departmentMissing) { %>
+            <%# Reached by a saved link or a stale tab — the sidebar hides the
+                entry until a department is set. Say why rather than showing an
+                empty list that looks like nobody is in. %>
+            <div class="content-card">
+                <div class="card-body" style="text-align:center;padding:3rem 1.5rem;">
+                    <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto 1rem;display:block;color:var(--gray-300);"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                    <h3 style="font-size:1rem;color:var(--gray-800);margin:0 0 .5rem;">Choose your department first</h3>
+                    <p style="font-size:.875rem;color:var(--gray-500);line-height:1.65;margin:0 auto 1.25rem;max-width:32rem;">
+                        This page shows which instructors are in or out of their department's
+                        Faculty Lounge. Until your department is set there is no lounge to watch.
+                    </p>
+                    <a href="/student/settings" class="btn-primary" style="display:inline-flex;align-items:center;gap:.4rem;padding:.6rem 1.1rem;border-radius:var(--radius-md);text-decoration:none;font-size:.875rem;font-weight:600;">
+                        Go to Settings
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                    </a>
+                </div>
+            </div>
+<% } else { %>
+
+            <%# In and Out on this page mean the Faculty Lounge specifically.
+                When nothing is watching one, every card reads "No data" — which
+                looks broken unless the page says why. %>
+            <% if (loungeNotice && faculty.length) { %>
             <div class="presence-notice">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                <p><strong>Room presence is not being tracked yet.</strong> The BLE scanners are not installed, so no one is shown as in or out of their room. The status on each card is what the instructor set themselves, and it is live.</p>
+                <p><strong>Lounge presence is not available.</strong> <%= loungeNotice %></p>
             </div>
             <% } %>
 
@@ -118,9 +147,9 @@
                             <option value="none">Not set</option>
                         </select>
                         <select class="avail-select" id="availPresence">
-                            <option value="all">Any Presence</option>
-                            <option value="in-room">In Room</option>
-                            <option value="out-of-room">Out of Room</option>
+                            <option value="all">Anywhere</option>
+                            <option value="in-room">At the lounge</option>
+                            <option value="out-of-room">Not at the lounge</option>
                             <option value="unknown">Awaiting Data</option>
                         </select>
                         <span class="avail-count" id="availCount">—</span>
@@ -141,10 +170,11 @@
                     <div class="avail-grid" id="availGrid">
                         <% faculty.forEach(f => { %>
                         <div class="avail-card <%= f.bleStatus %>"
+                             data-instructor="<%= f.id %>"
                              data-status="<%= f.availability || 'none' %>"
                              data-presence="<%= f.bleStatus %>"
                              data-dept="<%= f.department %>"
-                             data-search="<%= [f.name, f.position, f.department, f.officeRoom, f.detectedRoom].filter(Boolean).join(' ').toLowerCase() %>">
+                             data-search="<%= [f.name, f.position, f.department, f.officeRoom].filter(Boolean).join(' ').toLowerCase() %>">
                             <div class="avail-photo">
                                 <% if (f.photo) { %>
                                     <img src="<%= f.photo %>" alt="<%= f.name %>">
@@ -152,7 +182,7 @@
                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                                 <% } %>
                                 <span class="avail-status-dot <%= f.bleStatus %>"
-                                      title="<%= f.bleStatus === 'unknown' ? 'No presence data yet' : (f.bleStatus === 'in-room' ? 'Detected in room' : 'Not detected in room') %>"></span>
+                                      title="<%= f.bleStatus === 'unknown' ? 'No lounge presence data' : (f.bleStatus === 'in-room' ? 'At the Faculty Lounge' : 'Not at the Faculty Lounge') %>"></span>
                             </div>
                             <div class="avail-info">
                                 <p class="avail-name"><%= f.name %></p>
@@ -164,11 +194,11 @@
                                 <p class="avail-ble <%= f.bleStatus %>">
                                     <span class="avail-ble-dot"></span>
                                     <% if (f.bleStatus === 'in-room') { %>
-                                        In <%= f.detectedRoom || 'room' %><%= f.lastDetected ? ` · ${f.lastDetected}` : '' %>
+                                        At the Faculty Lounge<%= f.lastDetected ? ` · ${f.lastDetected}` : '' %>
                                     <% } else if (f.bleStatus === 'out-of-room') { %>
-                                        Not in room<%= f.lastDetected ? ` · ${f.lastDetected}` : '' %>
+                                        Not at the lounge<%= f.lastDetected ? ` · ${f.lastDetected}` : '' %>
                                     <% } else { %>
-                                        No presence data
+                                        No lounge presence data
                                     <% } %>
                                 </p>
 
@@ -186,6 +216,7 @@
                     <% } %>
                 </div>
             </div>
+<% } %>
 
         </div>
     </main>
@@ -193,11 +224,15 @@
 
 <%- include('../../partials/footer') %>
 <%- include('../../partials/script') %>
+<script src="/js/realtime.js?v=<%= Date.now() %>"></script>
+<script src="/js/presence-live.js?v=<%= Date.now() %>"></script>
 <script src="/js/card-filter.js?v=<%= Date.now() %>"></script>
 <script>
 (function () {
     'use strict';
     if (!window.CardFilter) return;
+    // No toolbar when the page is showing the "set your department" state.
+    if (!document.getElementById('availSearch')) return;
 
     var empty = document.getElementById('availEmpty');
     var filters = [
@@ -208,7 +243,7 @@
         filters.push({ selector: '#availDept', attr: 'dept' });
     }
 
-    window.CardFilter.create({
+    var filter = window.CardFilter.create({
         cardSelector: '.avail-card',
         search: '#availSearch',
         filters: filters,
@@ -218,5 +253,76 @@
             if (empty) empty.style.display = visible.length ? 'none' : 'block';
         },
     });
+
+    /* ── Live presence ──
+       This page is the one people leave open, so a card that was accurate at
+       load and never again is the most misleading thing here. Repaint on the
+       same event the scanners already emit, then re-run the filter: someone
+       who has just left has to drop out of an "In Room only" view, and the
+       count beside the search box has to agree with what is on screen. */
+
+    var PRESENCE_CLASSES = ['in-room', 'out-of-room', 'unknown'];
+    var DOT_TITLE = {
+        'in-room': 'At the Faculty Lounge',
+        'out-of-room': 'Not at the Faculty Lounge',
+        unknown: 'No lounge presence data',
+    };
+    var BLE_TEXT = {
+        'in-room': 'At the Faculty Lounge',
+        'out-of-room': 'Not at the lounge',
+        unknown: 'No lounge presence data',
+    };
+
+    function swap(el, presence) {
+        if (!el) return;
+        PRESENCE_CLASSES.forEach(function (c) { el.classList.remove(c); });
+        el.classList.add(presence);
+    }
+
+    function repaint(faculty) {
+        var byId = {};
+        faculty.forEach(function (f) { byId[f.id] = f; });
+
+        document.querySelectorAll('.avail-card').forEach(function (card) {
+            var entry = byId[card.getAttribute('data-instructor')];
+            if (!entry) return;
+
+            // The lounge answer, not the building-wide one — this page asks
+            // whether somebody is at the lounge, and the feed carries both.
+            var presence = entry.lounge;
+
+            swap(card, presence);
+            card.setAttribute('data-presence', presence);
+
+            var dot = card.querySelector('.avail-status-dot');
+            swap(dot, presence);
+            if (dot) dot.title = DOT_TITLE[presence];
+
+            // The detection line drops the room and the elapsed time on a live
+            // update: this page never had permission to say where somebody is,
+            // and re-deriving "3 minutes ago" on the client would drift from
+            // what the server rendered.
+            var ble = card.querySelector('.avail-ble');
+            if (ble) {
+                swap(ble, presence);
+                var dotSpan = ble.querySelector('.avail-ble-dot');
+                ble.textContent = ' ' + BLE_TEXT[presence];
+                if (dotSpan) ble.insertBefore(dotSpan, ble.firstChild);
+            }
+
+            // Availability is the instructor's own word about themselves and
+            // arrives on the same feed, but stays a separate indicator.
+            var badge = card.querySelector('.avail-badge');
+            if (badge) {
+                badge.className = 'avail-badge ' + (entry.availability || 'none');
+                badge.textContent = entry.availabilityLabel;
+            }
+            card.setAttribute('data-status', entry.availability || 'none');
+        });
+
+        filter.apply();
+    }
+
+    if (window.PresenceLive) window.PresenceLive.onUpdate(repaint);
 }());
 </script>

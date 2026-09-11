@@ -90,6 +90,56 @@
   .push-desc { font-size:.75rem; }
 }
 
+/* ── Google Calendar connection ── */
+.gcal-state {
+  display:flex; align-items:center; gap:.75rem; flex-wrap:wrap;
+  padding:.8rem .9rem; border-radius:var(--radius-md);
+  border:1px solid var(--gray-200); background:var(--gray-50);
+}
+.gcal-state.connected { border-color:#a7f3d0; background:#ecfdf5; }
+.gcal-state.broken    { border-color:#fde68a; background:#fffbeb; }
+.gcal-dot { width:9px; height:9px; border-radius:50%; background:var(--gray-400); flex-shrink:0; }
+.gcal-state.connected .gcal-dot { background:#16a34a; }
+.gcal-state.broken .gcal-dot    { background:#d97706; }
+.gcal-copy { min-width:0; flex:1; }
+.gcal-label { font-size:.8125rem; font-weight:700; color:var(--gray-900); margin:0 0 .15rem; }
+.gcal-sub   { font-size:.78rem; color:var(--gray-600); margin:0; overflow-wrap:anywhere; }
+.gcal-btn {
+  flex-shrink:0; display:inline-flex; align-items:center; gap:.45rem;
+  padding:.55rem 1rem; border-radius:var(--radius-md); cursor:pointer;
+  font-size:.8125rem; font-weight:600; font-family:var(--font-body);
+  border:1.5px solid var(--gray-300); background:#fff; color:var(--gray-700);
+  text-decoration:none; transition:all var(--transition-base);
+}
+.gcal-btn:hover { border-color:var(--primary-blue); color:var(--primary-blue); }
+.gcal-btn.danger:hover { border-color:#dc2626; color:#dc2626; }
+.gcal-notice { margin:0 0 .9rem; padding:.7rem .85rem; border-radius:var(--radius-md); font-size:.78rem; line-height:1.6; }
+.gcal-notice.ok   { background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46; }
+.gcal-notice.warn { background:#fffbeb; border:1px solid #fde68a; color:#92400e; }
+.gcal-btn.primary { border-color:var(--primary-blue); background:var(--primary-blue); color:#fff; }
+.gcal-btn.primary:hover { filter:brightness(1.08); color:#fff; }
+.gcal-btn[disabled] { opacity:.6; cursor:default; }
+
+/* The calendar-sync half of the card, shown only once connected */
+.gcal-sync { margin-top:1rem; display:flex; flex-direction:column; gap:.9rem; }
+.gcal-sync-head { display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; }
+.gcal-sync-line { flex:1; min-width:0; margin:0; font-size:.78rem; color:var(--gray-600); line-height:1.6; }
+.gcal-field { display:flex; flex-direction:column; gap:.35rem; }
+.gcal-field span { font-size:.8125rem; font-weight:600; color:var(--gray-800); }
+.gcal-field select {
+  padding:.55rem .75rem; border:1.5px solid var(--gray-300); border-radius:var(--radius-md);
+  font-size:.8125rem; font-family:var(--font-body); color:var(--gray-800); background:#fff;
+}
+.gcal-check { display:flex; align-items:flex-start; gap:.5rem; font-size:.8125rem; color:var(--gray-700); line-height:1.5; cursor:pointer; }
+.gcal-check input { margin-top:.15rem; flex-shrink:0; }
+
+/* On a phone the button drops below the text rather than squeezing it */
+@media(max-width:520px){
+  .gcal-state { align-items:flex-start; }
+  .gcal-btn { width:100%; justify-content:center; }
+  .gcal-sync-head #googleSyncNow { width:100%; }
+}
+
 /* Meeting link row */
 .link-row { display:flex; gap:.6rem; flex-wrap:wrap; align-items:flex-start; }
 .link-row input {
@@ -134,66 +184,7 @@
   .feed-copy, .feed-btn { width:100%; justify-content:center; }
 }
 
-/* ── Connected calendars ── */
-.cal-list { list-style:none; margin:1rem 0 0; padding:0; display:flex; flex-direction:column; gap:.6rem; }
-.cal-item {
-  border:1.5px solid var(--gray-200); border-radius:var(--radius-lg);
-  padding:.75rem .85rem; background:#fff;
-}
-.cal-item.has-error { border-color:#fecaca; background:#fffafa; }
-.cal-item-head { display:flex; align-items:center; justify-content:space-between; gap:.6rem; }
-.cal-item-id { display:flex; align-items:center; gap:.5rem; min-width:0; }
-.cal-provider {
-  flex-shrink:0; font-size:.6rem; font-weight:800; padding:.16rem .45rem;
-  border-radius:var(--radius-full); text-transform:uppercase; letter-spacing:.04em;
-  background:var(--gray-100); color:var(--gray-600);
-}
-.cal-provider.google { background:#e8f2ff; color:var(--primary-blue); }
-.cal-provider.apple  { background:var(--gray-100); color:var(--gray-800); }
-.cal-name { font-size:.85rem; font-weight:700; color:var(--gray-900);
-  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.cal-remove {
-  width:26px; height:26px; flex-shrink:0; border:none; background:transparent;
-  color:var(--gray-400); border-radius:50%; cursor:pointer; font-size:1.15rem; line-height:1;
-}
-.cal-remove:hover { background:#fef2f2; color:#dc2626; }
-.cal-meta { margin:.3rem 0 0; font-size:.72rem; color:var(--gray-500); word-break:break-all; }
-.cal-error { margin:.4rem 0 0; font-size:.74rem; color:#b91c1c; line-height:1.5; }
-
-.cal-item-controls {
-  display:flex; align-items:flex-end; gap:.75rem; flex-wrap:wrap;
-  margin-top:.7rem; padding-top:.7rem; border-top:1px solid var(--gray-100);
-}
-.cal-field { display:flex; flex-direction:column; gap:.25rem; }
-.cal-field > span {
-  font-size:.65rem; font-weight:700; color:var(--gray-500);
-  text-transform:uppercase; letter-spacing:.04em;
-}
-.cal-field .modal-input { padding:.4rem .5rem; font-size:.78rem; }
-.cal-toggle { display:flex; align-items:center; gap:.35rem; font-size:.76rem;
-  font-weight:600; color:var(--gray-600); cursor:pointer; padding-bottom:.4rem; }
-.cal-toggle input { width:15px; height:15px; cursor:pointer; }
-.cal-sync-one, .cal-sync-all {
-  padding:.4rem .8rem; border-radius:var(--radius-md); border:1.5px solid #bfdbfe;
-  background:#e8f2ff; color:var(--primary-blue); font-family:var(--font-body);
-  font-size:.75rem; font-weight:700; cursor:pointer; transition:all .15s; white-space:nowrap;
-}
-.cal-sync-one:hover, .cal-sync-all:hover { background:var(--primary-blue); color:#fff; border-color:var(--primary-blue); }
-.cal-sync-one:disabled, .cal-sync-all:disabled { opacity:.55; cursor:wait; }
-.cal-sync-one { margin-left:auto; margin-bottom:.35rem; }
-
-.cal-empty {
-  margin:1rem 0 0; padding:.9rem; font-size:.8rem; color:var(--gray-500);
-  background:var(--gray-50); border:1px dashed var(--gray-200); border-radius:var(--radius-md);
-}
-.cal-status { margin:.75rem 0 0; font-size:.78rem; line-height:1.5; color:var(--gray-600); }
-.cal-status.ok  { color:#166534; }
-.cal-status.bad { color:#b91c1c; }
-.cal-add-open { margin-top:1rem; }
-.cal-field-note { margin:.3rem 0 0; font-size:.72rem; color:var(--gray-500); line-height:1.5; }
-.cal-check { display:flex; align-items:center; gap:.45rem; font-size:.8rem; color:var(--gray-600); cursor:pointer; }
-.cal-check input { width:15px; height:15px; cursor:pointer; }
-
+/* ── Feed help block, shared by the published-feed card ── */
 .cal-help { margin-top:1rem; }
 .cal-help summary { font-size:.78rem; font-weight:600; color:var(--primary-blue); cursor:pointer; }
 .cal-help-body { margin-top:.6rem; font-size:.78rem; color:var(--gray-600); line-height:1.6; }
@@ -201,11 +192,6 @@
 .cal-help-warn { color:#92400e; background:#fffbeb; border:1px solid #fde68a;
   border-radius:var(--radius-md); padding:.5rem .65rem; }
 
-@media (max-width:560px) {
-  .cal-item-controls { flex-direction:column; align-items:stretch; }
-  .cal-sync-one { margin-left:0; width:100%; }
-  .cal-add-open { width:100%; }
-}
 </style>
 
 <div class="instructor-layout">
@@ -228,18 +214,28 @@
           <div class="content-card settings-card" data-card="profile">
             <div class="profile-card-top">
               <span class="unsaved-pill">Unsaved</span>
+              <% const avatarInitials = ((instructor.firstName || ' ')[0] + (instructor.lastName || ' ')[0]).toUpperCase().trim(); %>
               <div class="settings-avatar-wrap">
-                <div class="profile-avatar-mini" id="settingsAvatar">
+                <%# data-initials so the host still knows its fallback while a photo covers it %>
+                <div class="profile-avatar-mini" id="settingsAvatar" data-initials="<%= avatarInitials %>">
                   <% if (instructor.profilePhoto) { %>
                     <img src="<%= instructor.profilePhoto %>" alt="<%= instructor.name %>" class="avatar-img">
                   <% } else { %>
-                    <span class="avatar-initials"><%= ((instructor.firstName || ' ')[0] + (instructor.lastName || ' ')[0]).toUpperCase().trim() %></span>
+                    <span class="avatar-initials"><%= avatarInitials %></span>
                   <% } %>
                   <label class="avatar-upload-overlay" title="Change photo">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
                     <input type="file" id="settingsAvatarInput" accept="image/*" style="display:none;" data-no-track>
                   </label>
                 </div>
+                <%# Sibling of the avatar, not a child: .profile-avatar-mini is
+                    overflow:hidden to keep the photo circular, which would clip
+                    a corner badge. The wrap is the 88px positioned box. %>
+                <button type="button" class="btn-avatar-remove" id="settingsAvatarRemove"
+                        title="Remove photo" aria-label="Remove photo" data-no-track
+                        <% if (!instructor.profilePhoto) { %>style="display:none"<% } %>>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
               </div>
               <p class="settings-name"><%= instructor.name %></p>
               <p class="settings-email"><%= instructor.email %></p>
@@ -284,7 +280,7 @@
                 </label>
                 <label class="status-option">
                   <input type="radio" name="campusStatus" value="meeting" <%= instructor.availabilityStatus === 'meeting' ? 'checked' : '' %>>
-                  <span class="status-dot" style="background:#dc2626;"></span> On Meeting
+                  <span class="status-dot" style="background:#dc2626;"></span> In Meeting
                 </label>
                 <label class="status-option">
                   <input type="radio" name="campusStatus" value="travel" <%= instructor.availabilityStatus === 'travel' ? 'checked' : '' %>>
@@ -361,22 +357,139 @@
           </div>
 
           <!-- Online consultation link -->
+          <%#
+            Google Calendar sits in its own card, deliberately outside
+            .settings-card: connecting is a round-trip to Google and
+            disconnecting takes effect at once, so neither belongs to the
+            unsaved-changes save bar that tracks the other cards.
+          %>
+          <%
+            const gcal = (typeof googleCalendar !== 'undefined' && googleCalendar) || { available: false, connected: false };
+            const gNotice = (typeof googleNotice !== 'undefined') ? googleNotice : null;
+            const G_NOTICES = {
+              connected:       ['ok',   'Google Calendar connected. Your events were imported, and new online consultations now get their own scheduled meeting.'],
+              denied:          ['warn', 'Connection cancelled — nothing was changed.'],
+              state_mismatch:  ['warn', 'That connection link expired. Start again from this page.'],
+              exchange_failed: ['warn', 'Google refused the connection. Try again, or remove FaciTrack at myaccount.google.com/permissions first.'],
+              not_configured:  ['warn', 'Google is not set up on this server yet. Ask your administrator.'],
+              unknown:         ['warn', 'Something went wrong connecting Google Calendar.'],
+            };
+            const gShown = G_NOTICES[gNotice] || null;
+          %>
+          <div class="content-card" data-card-static="google">
+            <div class="card-header">
+              <h3 class="card-title">Google Calendar</h3>
+            </div>
+            <div class="card-body">
+              <% if (gShown) { %>
+                <p class="gcal-notice <%= gShown[0] %>"><%= gShown[1] %></p>
+              <% } %>
+
+              <p class="settings-description" style="margin-bottom:.9rem;">
+                One connection does two things: every online consultation gets its own
+                scheduled Google Meet on your calendar with the student invited, and
+                your own events are read back so students cannot book over them.
+                FaciTrack only ever adds its own consultations — it never edits or
+                deletes anything else on your calendar.
+              </p>
+
+              <% if (!gcal.available) { %>
+                <div class="gcal-state">
+                  <span class="gcal-dot"></span>
+                  <div class="gcal-copy">
+                    <p class="gcal-label">Not available on this server</p>
+                    <p class="gcal-sub">Google credentials have not been configured yet.</p>
+                  </div>
+                </div>
+              <% } else if (gcal.connected) { %>
+                <div class="gcal-state connected">
+                  <span class="gcal-dot"></span>
+                  <div class="gcal-copy">
+                    <p class="gcal-label">Connected</p>
+                    <p class="gcal-sub"><%= gcal.email || 'Your Google account' %></p>
+                  </div>
+                  <button type="button" class="gcal-btn danger" id="googleDisconnect">Disconnect</button>
+                </div>
+
+                <%
+                  const gsync = gcal.sync || null;
+                  const gsyncWhen = gsync && gsync.last_synced_at
+                    ? new Date(gsync.last_synced_at).toLocaleString('en-PH', {
+                        month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+                        timeZone: 'Asia/Manila',
+                      })
+                    : null;
+                %>
+                <div class="gcal-sync" data-connection="<%= gsync ? gsync.id : '' %>">
+                  <div class="gcal-sync-head">
+                    <p class="gcal-sync-line">
+                      <% if (gsync && gsync.last_status === 'error') { %>
+                        Last sync failed — <%= gsync.last_error || 'try again.' %>
+                      <% } else if (gsyncWhen) { %>
+                        <%= gsync.event_count %> event<%= gsync.event_count === 1 ? '' : 's' %> imported ·
+                        last checked <%= gsyncWhen %>
+                      <% } else { %>
+                        Not synced yet.
+                      <% } %>
+                    </p>
+                    <button type="button" class="gcal-btn" id="googleSyncNow">Sync now</button>
+                  </div>
+
+                  <label class="gcal-field">
+                    <span>Do your calendar events block appointments?</span>
+                    <select id="googleBlockRule">
+                      <option value="ask"    <%= gsync && gsync.blocking_rule === 'ask'    ? 'selected' : '' %>>Ask me for each event</option>
+                      <option value="always" <%= gsync && gsync.blocking_rule === 'always' ? 'selected' : '' %>>Yes — block the time they cover</option>
+                      <option value="never"  <%= gsync && gsync.blocking_rule === 'never'  ? 'selected' : '' %>>No — just show them on my calendar</option>
+                    </select>
+                  </label>
+
+                  <label class="gcal-check">
+                    <input type="checkbox" id="googleImportTitles" <%= !gsync || gsync.import_titles ? 'checked' : '' %>>
+                    Import event titles. Untick to store busy times only.
+                  </label>
+                </div>
+
+                <p class="field-hint">
+                  Disconnecting leaves meetings that are already scheduled alone —
+                  students keep the links they were given. Imported events are removed,
+                  since FaciTrack could no longer keep them up to date.
+                </p>
+              <% } else { %>
+                <div class="gcal-state <%= gcal.error ? 'broken' : '' %>">
+                  <span class="gcal-dot"></span>
+                  <div class="gcal-copy">
+                    <p class="gcal-label"><%= gcal.error ? 'Reconnection needed' : 'Not connected' %></p>
+                    <p class="gcal-sub"><%= gcal.error || 'Online consultations will use your personal link below.' %></p>
+                  </div>
+                  <a class="gcal-btn primary" href="/instructor/google/connect">
+                    <%= gcal.error ? 'Reconnect' : 'Connect Google Calendar' %>
+                  </a>
+                </div>
+              <% } %>
+            </div>
+          </div>
+
           <div class="content-card settings-card" data-card="link">
             <div class="card-header">
-              <h3 class="card-title">Online Consultation Link</h3>
+              <h3 class="card-title">Personal Meeting Room</h3>
               <span class="unsaved-pill">Unsaved</span>
             </div>
             <div class="card-body">
               <p class="settings-description" style="margin-bottom:.9rem;">
-                Your personal meeting room. When a consultation is set to <strong>Online</strong>,
-                this link is attached automatically and shown to the student.
+                One standing link, reused for every online consultation. It is what
+                students get when Google Calendar is not connected, and the fallback
+                if a scheduled meeting cannot be created.
               </p>
               <div class="link-row">
                 <input type="url" id="meetingLinkInput"
                        placeholder="https://meet.google.com/abc-defg-hij"
                        value="<%= instructor.defaultMeetingLink || '' %>">
               </div>
-              <p class="field-hint">Leave this empty to stop offering online consultations.</p>
+              <p class="field-hint">
+                With Google Calendar connected you can leave this empty — each
+                consultation gets its own meeting instead.
+              </p>
             </div>
           </div>
 
@@ -467,44 +580,6 @@
               </div>
               <p id="pushMsg" class="push-msg"></p>
               <button type="button" id="pushTestBtn" class="push-test" style="display:none;">Send a test notification</button>
-            </div>
-          </div>
-
-          <!-- Connected calendars: saved as you go, so not change-tracked -->
-          <div class="content-card">
-            <div class="card-header">
-              <h3 class="card-title">Connected Calendars</h3>
-              <button type="button" class="cal-sync-all" id="calSyncAll">Sync now</button>
-            </div>
-            <div class="card-body">
-              <p class="settings-description">
-                Subscribe FaciTrack to your Google or Apple calendar and your events appear on the
-                Appointments page. You can also let an event block the hour it covers, so students
-                cannot book over it. FaciTrack only ever reads these calendars.
-              </p>
-
-              <ul class="cal-list" id="calList"></ul>
-              <p class="cal-empty" id="calEmpty">No calendars connected yet.</p>
-              <p class="cal-status" id="calStatus" hidden></p>
-
-              <button type="button" class="btn-save-settings cal-add-open" id="calAddOpen">
-                + Connect a calendar
-              </button>
-
-              <details class="cal-help">
-                <summary>Where do I find the address?</summary>
-                <div class="cal-help-body">
-                  <p><strong>Google Calendar</strong> — open Settings, pick the calendar under
-                  “Settings for my calendars”, then copy <em>Secret address in iCal format</em>.
-                  Google refreshes this address slowly, so a brand-new event can take a few hours
-                  to show up here.</p>
-                  <p><strong>Apple Calendar</strong> — right-click the calendar, choose
-                  <em>Share Calendar</em>, tick <em>Public Calendar</em>, and copy the link.</p>
-                  <p class="cal-help-warn">
-                    Treat these links like passwords: anyone who has one can read that calendar.
-                  </p>
-                </div>
-              </details>
             </div>
           </div>
 
@@ -622,45 +697,6 @@
   </div>
 </div>
 
-<!-- Connect a calendar. Runs its own dismissal so a half-typed address is not
-     silently thrown away by the global backdrop handler. -->
-<div class="modal-overlay" id="calAddModal" data-backdrop-close="manual">
-  <div class="modal-content" style="max-width:520px;">
-    <div class="modal-header">
-      <h3 class="modal-title">Connect a calendar</h3>
-      <button class="modal-close" type="button" id="calAddClose">&times;</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-group">
-        <label class="modal-label" for="calAddName">Name it</label>
-        <input class="modal-input" id="calAddName" maxlength="120" placeholder="e.g. My Google Calendar" data-no-track>
-      </div>
-      <div class="form-group">
-        <label class="modal-label" for="calAddUrl">Calendar address</label>
-        <input class="modal-input" id="calAddUrl" placeholder="https://… or webcal://…" data-no-track>
-        <p class="cal-field-note">The secret iCal address from Google, or a public Apple calendar link.</p>
-      </div>
-      <div class="form-group">
-        <label class="modal-label" for="calAddRule">Do these events block appointments?</label>
-        <select class="modal-input" id="calAddRule" data-no-track>
-          <option value="ask" selected>Ask me for each event</option>
-          <option value="always">Yes — block the time they cover</option>
-          <option value="never">No — just show them on my calendar</option>
-        </select>
-      </div>
-      <label class="cal-check">
-        <input type="checkbox" id="calAddTitles" checked data-no-track>
-        Import event titles. Untick to store busy times only.
-      </label>
-      <p class="mk-note decline" id="calAddError" style="display:none;"></p>
-    </div>
-    <div class="modal-footer">
-      <button class="btn-modal btn-cancel" type="button" id="calAddCancel">Cancel</button>
-      <button class="btn-modal btn-confirm-green" type="button" id="calAddConfirm">Connect</button>
-    </div>
-  </div>
-</div>
-
 <div class="toast-container" id="toastContainer"></div>
 <%- include('../../partials/footer') %>
 <%- include('../../partials/script') %>
@@ -669,5 +705,4 @@
 <script src="/js/push-subscribe.js"></script>
 <script src="/js/settings-tracker.js?v=<%= Date.now() %>"></script>
 <script src="/js/instructor-settings.js?v=<%= Date.now() %>"></script>
-<script src="/js/calendar-connections.js?v=<%= Date.now() %>"></script>
 <script src="/js/calendar-feed-link.js?v=<%= Date.now() %>"></script>

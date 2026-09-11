@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const PresenceModel = require('../models/PresenceModel');
 const appSettings = require('../services/app-settings');
+const tagDiscovery = require('../services/tag-discovery');
 const { broadcast } = require('../realtime/sseRegistry');
 
 /**
@@ -14,6 +15,37 @@ const { broadcast } = require('../realtime/sseRegistry');
  */
 
 const MAC_RE = /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/;
+
+/**
+ * How long the room currently holding somebody keeps the right to hold them.
+ *
+ * Scanners report every ten seconds, so a room that still hears a tag renews
+ * its claim three times inside this window. Past it the claim is stale — the
+ * scanner may have died or the person may have walked out of range — and any
+ * room clearing its own threshold can take over on that alone. Without this a
+ * dead scanner would pin somebody to its room until the absence sweep ran.
+ */
+const ROOM_CLAIM_FRESH_SEC = 30;
+
+/**
+ * How old a sighting may be and still count as "the scanner can hear this".
+ *
+ * The firmware keeps a tag in its report for thirty seconds after it last
+ * actually heard it, sending the age alongside each reading. The server used
+ * to ignore that age entirely, so a tag that walked out twenty-five seconds
+ * ago still counted as present at its last remembered strength — presence was
+ * up to half a minute behind the room even while the scanner reported.
+ *
+ * A tag advertising several times a second is heard many times inside a single
+ * report, so going this long without one hearing means it is genuinely gone,
+ * not momentarily blocked. Reports arrive every ten seconds, so this is one
+ * and a half cycles: long enough to ride out a missed report, short enough
+ * that nobody lingers on a board after leaving.
+ *
+ * A scanner too old to send the field reports 0, which reads as fresh — old
+ * firmware keeps behaving exactly as it did before.
+ */
+const FRESH_SIGHTING_MS = 15000;
 
 /** Constant-time compare, so a wrong key cannot be found one character at a time. */
 function keyMatches(supplied) {
@@ -79,12 +111,15 @@ const PresenceController = {
             }
 
             const sightings = parseBeacons(req.body?.beacons);
-            const [defaultThreshold, absentAfter, logging, scannerStaleAfter] = await Promise.all([
-                appSettings.get('presence_rssi_threshold'),
-                appSettings.get('presence_absent_after_sec'),
-                appSettings.get('presence_logging_enabled'),
-                appSettings.get('presence_scanner_offline_after_sec'),
-            ]);
+            const [defaultThreshold, exitMargin, switchMargin, absentAfter, logging, scannerStaleAfter] =
+                await Promise.all([
+                    appSettings.get('presence_rssi_threshold'),
+                    appSettings.get('presence_rssi_exit_margin'),
+                    appSettings.get('presence_room_switch_margin'),
+                    appSettings.get('presence_absent_after_sec'),
+                    appSettings.get('presence_logging_enabled'),
+                    appSettings.get('presence_scanner_offline_after_sec'),
+                ]);
 
             // A room tuned individually wins over the system-wide default: a
             // large laboratory and a small consultation room do not share a
@@ -92,6 +127,15 @@ const PresenceController = {
             const threshold = room.rssi_threshold !== null && room.rssi_threshold !== undefined
                 ? room.rssi_threshold
                 : defaultThreshold;
+
+            // Hysteresis. One hard line makes anybody sitting near it flap: BLE
+            // RSSI swings several dB as a person turns around, so a desk that
+            // reads within the noise band of the threshold produces a stream of
+            // entered/exited pairs from someone who never moved. Crossing in
+            // takes the full threshold; staying in only has to clear a weaker
+            // line. Two numbers, one decision — and a margin of 0 restores the
+            // old single-threshold behaviour exactly.
+            const exitThreshold = threshold - exitMargin;
 
             // Remember the scanner itself, so a room going dark is visible as a
             // stale scanner rather than as tags that mysteriously went quiet.
@@ -102,39 +146,146 @@ const PresenceController = {
                 staleAfterSeconds: scannerStaleAfter,
             });
 
-            // Every tag heard is recorded, so a brand new one appears in Admin
-            // ready to be assigned even before anybody owns it.
-            await PresenceModel.recordSightings(sightings, room.id);
+            // Only tags this system already knows are written down, unless an
+            // admin has opened a discovery window for this room. Without that
+            // gate every passing phone became a permanent row — and most phone
+            // addresses rotate, so the table grew forever and held nothing
+            // worth having.
+            const listening = await tagDiscovery.isOpenFor(room.id);
+            const recorded = await PresenceModel.recordSightings(sightings, room.id, {
+                acceptUnknown: listening,
+            });
 
-            // Only tags strong enough to be in this room, rather than passing
-            // by in the corridor, count towards presence.
-            const inRoom = sightings.filter(s => s.rssi >= threshold);
-            const beacons = await PresenceModel.getBeaconsByMac(inRoom.map(s => s.mac));
+            // Every known tag the scanner heard, at any strength. Presence only
+            // cares about the strong ones, but signal history has to include the
+            // weak: a reading below the threshold is the evidence that the
+            // threshold is set too tight, and it cannot be seen if it was never
+            // written down.
+            const heardBeacons = await PresenceModel.getBeaconsByMac(sightings.map(s => s.mac));
+            const rssiByMac = new Map(sightings.map(s => [s.mac, s.rssi]));
 
-            const rssiByMac = new Map(inRoom.map(s => [s.mac, s.rssi]));
+            // What the scanner can hear *now*, as opposed to what it remembers
+            // hearing. Only these decide whether somebody is in the room.
+            const heardNow = new Set(
+                sightings.filter(s => s.lastSeenMs <= FRESH_SIGHTING_MS).map(s => s.mac)
+            );
+
+            try {
+                await PresenceModel.recordSamples(
+                    heardBeacons.map(b => ({ beaconId: b.id, rssi: rssiByMac.get(b.mac_address) }))
+                                .filter(r => Number.isFinite(r.rssi)),
+                    room.id, scannerId,
+                    // A discovery window means somebody is walking the room with
+                    // a tag in their hand, and wants every reading.
+                    { throttleSeconds: listening ? 0 : 60 },
+                );
+            } catch (err) {
+                // Never let a history write cost somebody their presence.
+                console.error('[Presence] Could not record signal samples:', err.message);
+            }
+
+            // Anything currently audible above the weaker of the two lines is a
+            // candidate for being in the room. Which line each tag is actually
+            // held to depends on where it already is, settled per tag below.
+            const beacons = heardBeacons.filter(b =>
+                heardNow.has(b.mac_address) && rssiByMac.get(b.mac_address) >= exitThreshold);
             const assigned = beacons.filter(b => b.instructor_id && b.is_active);
+
+            // Who this room is currently credited with holding. Anyone here that
+            // the loop below does not re-confirm has left, and this report is
+            // the evidence — see the eviction after the loop.
+            const holding = await PresenceModel.getPresentInRoom(room.id);
 
             const current = await PresenceModel.getCurrent(assigned.map(b => b.instructor_id));
             const events = [];
+            const confirmedHere = new Set();
+            let held = 0;
+            let outbid = 0;
 
             for (const beacon of assigned) {
-                await PresenceModel.markPresent(beacon.instructor_id, room.id);
-
+                const rssi = rssiByMac.get(beacon.mac_address);
                 const before = current.get(beacon.instructor_id);
                 const wasHere = before && before.is_present && before.room_id === room.id;
+
+                // Already in this room, so the weaker line applies; anywhere
+                // else — including in another room — and it is a crossing,
+                // which takes the full threshold. Moving between two rooms must
+                // not be made easy by hysteresis meant to hold somebody still.
+                if (rssi < (wasHere ? exitThreshold : threshold)) continue;
+
+                // Two scanners can hear one tag, and both clearing their own
+                // threshold used to mean the last one to POST won — so presence
+                // flipped between adjacent rooms every few seconds and the
+                // dean's page showed whichever reported most recently rather
+                // than the room the person is actually in.
+                //
+                // The room that hears the tag best owns it. Taking somebody
+                // from a room that still hears them takes a clearly stronger
+                // reading, not merely a passing one: the margin is what stops
+                // two rooms of similar signal trading a person back and forth.
+                if (!wasHere && before && before.is_present && before.room_id !== null
+                    && before.secs_since_update !== null
+                    && before.secs_since_update <= ROOM_CLAIM_FRESH_SEC) {
+
+                    // A row written before last_rssi existed loses to any
+                    // reading, so ownership settles on the next report rather
+                    // than being frozen by a value that was never recorded.
+                    const heldAt = before.last_rssi === null || before.last_rssi === undefined
+                        ? -127
+                        : before.last_rssi;
+
+                    if (rssi < heldAt + switchMargin) { outbid++; continue; }
+                }
+
+                if (wasHere && rssi < threshold) held++;
+
+                await PresenceModel.markPresent(beacon.instructor_id, room.id, rssi);
+                confirmedHere.add(beacon.instructor_id);
                 if (wasHere) continue;   // still in the same room, nothing to log
 
                 events.push({
                     instructorId: beacon.instructor_id,
                     roomId: room.id,
                     event: before && before.is_present ? 'moved' : 'entered',
-                    rssi: rssiByMac.get(beacon.mac_address),
+                    rssi,
                     scannerId,
                 });
             }
 
-            // Nothing announces a departure, so absence is a timeout. Sweeping
-            // on every post keeps it self-healing while any scanner is alive.
+            /* ── Leaving, while the scanner is watching ──
+               A report from this room says two things, and the system only ever
+               listened to one of them. It says who the scanner can hear — and
+               it equally says who it cannot. Somebody this room was holding who
+               is now absent from the report, too stale to count, or faded below
+               the exit threshold has left, and the scanner is right there
+               saying so. Waiting out an absence timeout in that case put a
+               minute between walking out of a room and the board agreeing.
+
+               This is deliberately narrow: only the room that already holds
+               somebody may evict them, and only on a report it actually sent.
+               A scanner that is switched off sends nothing, so it evicts
+               nobody — that case is still the timeout's, and jobs/presence-sweep
+               handles it. */
+            const leftRoom = holding
+                .filter(h => !confirmedHere.has(h.instructor_id))
+                .map(h => h.instructor_id);
+
+            let evicted = [];
+            if (leftRoom.length) {
+                evicted = await PresenceModel.markAbsent(leftRoom, room.id);
+                for (const row of evicted) {
+                    events.push({
+                        instructorId: row.instructor_id,
+                        roomId: row.room_id,
+                        event: 'exited',
+                        rssi: null,          // they were not heard; that is the point
+                        scannerId,
+                    });
+                }
+            }
+
+            // The backstop for rooms whose scanner said nothing at all. Anyone
+            // evicted above is already absent, so this cannot double-announce.
             const departed = await PresenceModel.expireStale(absentAfter);
             for (const row of departed) {
                 events.push({ instructorId: row.instructor_id, roomId: row.room_id, event: 'exited', scannerId });
@@ -166,11 +317,34 @@ const PresenceController = {
                 success: true,
                 room: room.room_number,
                 heard: sightings.length,
-                inRoom: inRoom.length,
+                // Sightings the scanner is remembering rather than hearing. A
+                // number that is persistently high means tags are advertising
+                // too slowly to be heard inside a report.
+                stale: sightings.length - heardNow.size,
+                inRoom: sightings.filter(s => s.rssi >= threshold && heardNow.has(s.mac)).length,
                 recognised: assigned.length,
                 unassigned: beacons.filter(b => !b.instructor_id).length,
                 events: events.length,
+                // Shown on the scanner's serial log, so an installer can see
+                // whether discovery is on without opening the admin page.
+                listening,
+                recorded: recorded.updated,
+                discovered: recorded.discovered,
                 threshold,
+                exitThreshold,
+                // How many people stayed counted as present only because of the
+                // margin. A number that is persistently high says the threshold
+                // is set too tight for where these people actually sit — the
+                // margin is propping it up, and it should be tuned instead.
+                heldByMargin: held,
+                // People this room was holding that it can no longer hear, and
+                // marked out on the strength of this report rather than a timeout.
+                leftRoom: evicted.length,
+                // Tags this room heard well enough to claim but another room
+                // hears better. Persistently high on both sides of a wall means
+                // the two rooms overlap and one of them needs a tighter
+                // threshold, not a bigger switch margin.
+                outbidByOtherRoom: outbid,
                 // Says which number was applied, so a scanner's serial log
                 // shows whether this room is tuned or on the default
                 thresholdSource: room.rssi_threshold !== null && room.rssi_threshold !== undefined ? 'room' : 'default',

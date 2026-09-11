@@ -52,7 +52,13 @@
 
                     <!-- Faculty Info Sidebar -->
                     <aside class="prof-sidebar">
-                        <div class="sidebar-avatar"><%= (faculty.first_name?.[0] || '') + (faculty.last_name?.[0] || '') %></div>
+                        <div class="sidebar-avatar">
+                            <% if (faculty.profile_picture) { %>
+                                <img src="<%= faculty.profile_picture %>" alt="<%= faculty.full_name %>" loading="lazy">
+                             <% } else { %>
+                                <%= (faculty.first_name?.[0] || '') + (faculty.last_name?.[0] || '') %>
+                            <% } %>
+                        </div>
                         <h2 class="sidebar-name"><%= faculty.last_name %>, <%= faculty.first_name %><%= faculty.middle_name ? ' ' + faculty.middle_name : '' %></h2>
                         <p class="sidebar-position"><%= faculty.position %></p>
                         <div class="sidebar-divider"></div>

@@ -32,12 +32,23 @@ router.get('/consultation-room/slots', AdminController.getConsultationSlots);
 // BLE tags — assigning a physical beacon to an instructor
 router.get('/beacons', AdminController.renderBeaconsPage);
 router.get('/beacons.json', AdminController.getBeaconsJson);
+// Recording unknown tags is off by default; this opens a short window for it.
+router.post('/beacons/discovery/start', AdminController.startTagDiscovery);
+router.post('/beacons/discovery/stop', AdminController.stopTagDiscovery);
+router.post('/beacons/prune', AdminController.pruneBeacons);
+router.get('/beacons/:id/signal', AdminController.getBeaconSignal);
 router.patch('/beacons/:id', AdminController.assignBeacon);
 router.delete('/beacons/:id', AdminController.removeBeacon);
 // Per-room presence threshold, tuned where the live signal readings are visible
 router.patch('/rooms/:id/threshold', AdminController.setRoomThreshold);
 
 // System-wide settings the administrator can change without a redeploy
+// Screens outside the Faculty Lounges
+router.get('/displays', AdminController.renderDisplaysPage);
+router.post('/displays/approve', AdminController.approveDisplay);
+router.post('/displays/:id/revoke', AdminController.revokeDisplay);
+router.post('/displays/:id/forget', AdminController.forgetDisplay);
+
 router.get('/settings', AdminController.renderSettingsPage);
 router.patch('/settings', AdminController.updateSettings);
 

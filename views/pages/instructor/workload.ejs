@@ -202,6 +202,17 @@
 .imp-radio small{display:block;color:#64748b;font-weight:500;font-size:.72rem}
 .imp-error{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:10px;padding:.75rem .9rem;font-size:.8rem;font-weight:600}
 
+/* Merge conflicts — one decision per overlapping class */
+.mc-bulk{display:flex;gap:.5rem;flex-wrap:wrap;margin:.75rem 0 .25rem}
+.mc-bulk button{padding:.4rem .75rem;border:1.5px solid #e2e8f0;border-radius:8px;background:#fff;color:#374151;font-size:.75rem;font-weight:600;cursor:pointer;font-family:inherit}
+.mc-bulk button:hover{border-color:#2563eb;color:#2563eb}
+.mc-row{padding:.7rem .75rem;border-bottom:1px solid #e2e8f0}
+.mc-row:last-child{border-bottom:none}
+.mc-when{margin:0 0 .45rem;font-size:.75rem;font-weight:800;color:#0f172a}
+.mc-opts{display:grid;grid-template-columns:1fr 1fr;gap:.4rem}
+.mc-opts .imp-radio{margin-bottom:0}
+@media(max-width:560px){.mc-opts{grid-template-columns:1fr}}
+
 @media(max-width:768px){
   .wl-summary{grid-template-columns:repeat(2,1fr)}
   .cal-wrap{
@@ -247,7 +258,7 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             Import
           </button>
-          <input type="file" id="importFileInput" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+          <input type="file" id="importFileInput" accept=".docx,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf" hidden>
           <div style="position:relative;display:inline-block">
             <button class="btn-header-action primary" id="btnExportWorkload" style="height:36px;padding:0 1rem;font-size:.75rem;display:flex;align-items:center;gap:.4rem">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
@@ -258,6 +269,12 @@
               <button class="dropdown-item-wl" data-action="export" style="display:block;width:100%;text-align:left;padding:.75rem 1rem;border:none;background:none;cursor:pointer;font-size:.875rem;color:#374151;transition:background .15s">Export/Print</button>
             </div>
           </div>
+          <%# Destructive, so it sits after the other actions rather than beside Import %>
+          <button class="btn-header-action" id="btnClearWorkload" title="Remove every class block from this schedule"
+                  style="height:36px;padding:0 1rem;font-size:.75rem;display:flex;align-items:center;gap:.4rem;color:#dc2626;border-color:#fecaca">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+            Clear All
+          </button>
           <span id="autoSaveStatus" style="font-size:.75rem;color:#94a3b8;display:flex;align-items:center;gap:.35rem;padding:.4rem .6rem">
             <svg id="autoSaveIcon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
             <span id="autoSaveText">All changes saved</span>
@@ -406,7 +423,9 @@
     <div class="mo-head">
       <div style="flex:1">
         <h3>Clear All Schedule?</h3>
-        <p class="mo-meta">This removes all class blocks.</p>
+        <%# Filled in by openClearConfirm with the real counts — a make-up class
+            block is not removable here, so the copy must not promise otherwise. %>
+        <p class="mo-meta" id="clearMeta">This removes all class blocks.</p>
       </div>
     </div>
     <div class="mo-foot">
@@ -506,6 +525,36 @@
     <div class="mo-foot">
       <button class="btn btn-ghost" id="impCancel">Cancel</button>
       <button class="btn btn-primary" id="impConfirm" disabled>Import</button>
+    </div>
+  </div>
+</div>
+
+<!-- Merge conflicts — shown between the preview and the write, so an existing
+     block is never displaced without the instructor saying so. -->
+<div class="mo" id="mergeConflictModal">
+  <div class="mo-box imp-box">
+    <div class="mo-head">
+      <div style="flex:1;min-width:0">
+        <h3>Some classes overlap</h3>
+        <p class="mo-meta" id="mcMeta"></p>
+      </div>
+      <button class="mo-close" id="mcClose">&times;</button>
+    </div>
+
+    <div class="mo-body imp-body">
+      <p class="imp-hint">Merge keeps what you already have, so each overlap needs a decision. Anything not listed here imports without touching your schedule.</p>
+
+      <div class="mc-bulk">
+        <button type="button" id="mcKeepAll">Keep all mine</button>
+        <button type="button" id="mcTakeAll">Use all imported</button>
+      </div>
+
+      <div class="imp-list" id="mcList"></div>
+    </div>
+
+    <div class="mo-foot">
+      <button class="btn btn-ghost" id="mcCancel">Back</button>
+      <button class="btn btn-primary" id="mcConfirm">Apply merge</button>
     </div>
   </div>
 </div>

@@ -321,8 +321,58 @@ function parseFeed(body, { now = new Date() } = {}) {
     return rows;
 }
 
+/**
+ * Google Calendar API events → the rows external_events stores.
+ *
+ * Deliberately routed through the same toRows() the ICS path uses, so a
+ * midnight-crossing event, an all-day event and the outward slot rounding
+ * behave identically no matter which source the event came from. Two readers
+ * that split days differently would be two sets of bugs.
+ */
+function fromGoogleEvents(events) {
+    const rows = [];
+
+    for (const event of events || []) {
+        if (!event || !event.start) continue;
+        if (String(event.status).toLowerCase() === 'cancelled') continue;
+
+        // Skip the consultations FaciTrack itself put on this calendar —
+        // reading our own writes back would double them on the calendar view
+        // and block the slot they already occupy.
+        if (event.extendedProperties?.private?.facitrack) continue;
+
+        const allDay = Boolean(event.start.date);
+        let occurrence;
+
+        if (allDay) {
+            // Google's all-day end.date is exclusive, matching ICS DTEND,
+            // which is what toRows already expects.
+            occurrence = { start: event.start.date, end: event.end?.date || null };
+        } else {
+            const start = new Date(event.start.dateTime);
+            if (Number.isNaN(start.getTime())) continue;
+            const end = event.end?.dateTime ? new Date(event.end.dateTime) : null;
+            occurrence = { start, end: end && !Number.isNaN(end.getTime()) ? end : null };
+        }
+
+        const transparent = String(event.transparency).toLowerCase() === 'transparent';
+
+        for (const row of toRows(occurrence, event, allDay)) {
+            rows.push(Object.assign(row, {
+                uid: String(event.iCalUID || event.id || '').slice(0, 255),
+                summary: event.summary ? String(event.summary).slice(0, 255) : null,
+                location: event.location ? String(event.location).slice(0, 255) : null,
+                transparent,
+            }));
+        }
+    }
+
+    return rows;
+}
+
 module.exports = {
     FeedError,
+    fromGoogleEvents,
     normalizeFeedUrl,
     isPrivateAddress,
     assertPublicHost,

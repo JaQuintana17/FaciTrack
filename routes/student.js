@@ -3,7 +3,6 @@ const router = express.Router();
 const instructorRouter = require('./instructor');
 const emailService = require('../services/email');
 const StudentController = require('../controllers/StudentController');
-const CalendarFeedController = require('../controllers/CalendarFeedController');
 const { buildStudentUser } = require('../utils/sessionUser');
 
 router.use((req, res, next) => {
@@ -360,9 +359,12 @@ router.get('/appointments/:instructorId', StudentController.renderInstructorHist
 
 router.get('/availability', StudentController.renderAvailabilityPage);
 
-// Outbound calendar feed link (the feed itself is public + token-authenticated)
-router.get('/calendar/feed-link',  CalendarFeedController.getMine);
-router.post('/calendar/feed-link', CalendarFeedController.rotate);
+router.get('/settings',   StudentController.renderSettingsPage);
+router.patch('/settings', StudentController.updateSettings);
+
+// The student-facing subscribe link was removed — students book through the app
+// and do not need their bookings mirrored into a personal calendar. The feed
+// itself (/calendar/feed/:token) and the instructor's own link are untouched.
 
 // ── Auto-reschedule endpoint (called by instructor/admin when marking unavailable) ──
 router.post('/reschedule/:refNumber', (req, res) => {

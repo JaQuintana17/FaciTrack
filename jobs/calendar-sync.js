@@ -30,9 +30,9 @@ async function syncDueConnections() {
         }
     }
 
-    if (ok || failed) {
-        console.log(`[CalendarSync] ${ok} synced, ${failed} failed, ${due.length} were due.`);
-    }
+    // if (ok || failed) {
+    //     console.log(`[CalendarSync] ${ok} synced, ${failed} failed, ${due.length} were due.`);
+    // }
     return { attempted: Math.min(due.length, BATCH_SIZE), ok, failed };
 }
 
@@ -45,7 +45,6 @@ function startCalendarSyncJob() {
             console.error('[CalendarSync] Sweep failed:', err);
         }
     });
-    console.log(`[CalendarSync] Auto-sync every ${SYNC_EVERY_MINUTES} minutes.`);
 }
 
 module.exports = startCalendarSyncJob;

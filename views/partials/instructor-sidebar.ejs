@@ -1,11 +1,12 @@
 <aside class="instructor-sidebar">
     <div class="sidebar-header">
         <div class="instructor-profile-mini">
-            <div class="profile-avatar-mini" id="sidebarAvatar">
+            <% const sidebarInitials = instructor.name.split(' ').map(n => n[0]).join(''); %>
+            <div class="profile-avatar-mini" id="sidebarAvatar" data-initials="<%= sidebarInitials %>">
                 <% if (instructor.profilePhoto) { %>
                     <img src="<%= instructor.profilePhoto %>" alt="<%= instructor.name %>" class="avatar-img">
                 <% } else { %>
-                    <span class="avatar-initials"><%= instructor.name.split(' ').map(n => n[0]).join('') %></span>
+                    <span class="avatar-initials"><%= sidebarInitials %></span>
                 <% } %>
                 <label class="avatar-upload-overlay" title="Change photo">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
@@ -222,43 +223,15 @@
 
 <%- include('./sidebar') %>
 
+<%# Loaded here rather than with the page scripts so it is defined before the
+    settings pages call into it — the sidebar renders above them. %>
+<script src="/js/avatar-upload.js"></script>
 <script>
 (function() {
     // ── Avatar upload ──
-    const input = document.getElementById('avatarInput');
-    const avatar = document.getElementById('sidebarAvatar');
-    if (input && avatar) {
-        input.addEventListener('change', function() {
-            const file = this.files[0];
-            if (!file || !file.type.startsWith('image/')) return;
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const initials = avatar.querySelector('.avatar-initials');
-                const existing = avatar.querySelector('.avatar-img');
-                if (initials) initials.remove();
-                if (existing) existing.remove();
-                const img = document.createElement('img');
-                img.src = e.target.result;
-                img.alt = 'Profile Photo';
-                img.className = 'avatar-img';
-                avatar.insertBefore(img, avatar.querySelector('.avatar-upload-overlay'));
-                localStorage.setItem('instructorProfilePhoto', e.target.result);
-            };
-            reader.readAsDataURL(file);
-        });
-        const saved = localStorage.getItem('instructorProfilePhoto');
-        if (saved) {
-            const initials = avatar.querySelector('.avatar-initials');
-            const existing = avatar.querySelector('.avatar-img');
-            if (initials) initials.remove();
-            if (existing) existing.remove();
-            const img = document.createElement('img');
-            img.src = saved;
-            img.alt = 'Profile Photo';
-            img.className = 'avatar-img';
-            avatar.insertBefore(img, avatar.querySelector('.avatar-upload-overlay'));
-        }
-    }
+    // Saved server-side, so the photo follows the account rather than the
+    // browser and everyone else can actually see it. See AvatarUpload.
+    AvatarUpload.init({ input: 'avatarInput', targets: ['sidebarAvatar'] });
 
     // ── Notifications panel ──
     const bell     = document.getElementById('btnNotifBell');

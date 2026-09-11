@@ -340,40 +340,108 @@
 
     refreshPush();
 
-    // ── Avatar preview (kept local until profile photo upload exists server-side) ──
-    var avatarInput = document.getElementById('settingsAvatarInput');
-    var avatarWrap = document.getElementById('settingsAvatar');
-
-    function paintAvatar(dataUrl) {
-        ['settingsAvatar', 'sidebarAvatar'].forEach(function (id) {
-            var host = document.getElementById(id);
-            if (!host) return;
-            var initials = host.querySelector('.avatar-initials');
-            var existing = host.querySelector('.avatar-img');
-            if (initials) initials.remove();
-            if (existing) existing.remove();
-            var img = document.createElement('img');
-            img.src = dataUrl;
-            img.className = 'avatar-img';
-            host.insertBefore(img, host.querySelector('.avatar-upload-overlay') || null);
+    // ── Google Calendar ──
+    // Connecting is a plain link out to Google's consent screen, so only the
+    // disconnect and the sync controls need wiring. The page reloads after
+    // both: the server decides what "connected" and "last synced" mean, and a
+    // reload is the honest way to show what it now thinks.
+    var googleDisconnect = document.getElementById('googleDisconnect');
+    if (googleDisconnect) {
+        googleDisconnect.addEventListener('click', function () {
+            googleDisconnect.disabled = true;
+            fetch('/instructor/google', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+            })
+                .then(function (res) { return res.json(); })
+                .then(function (data) {
+                    if (!data.success) {
+                        googleDisconnect.disabled = false;
+                        showToast('error', 'Not Disconnected', data.error || 'Could not disconnect Google Calendar.');
+                        return;
+                    }
+                    window.location.href = '/instructor/settings';
+                })
+                .catch(function () {
+                    googleDisconnect.disabled = false;
+                    showToast('error', 'Not Disconnected', 'Could not reach the server.');
+                });
         });
     }
 
-    if (avatarInput && avatarWrap) {
-        avatarInput.addEventListener('change', function () {
-            var file = this.files[0];
-            if (!file || !file.type.startsWith('image/')) return;
-            var reader = new FileReader();
-            reader.onload = function (event) {
-                paintAvatar(event.target.result);
-                localStorage.setItem('instructorProfilePhoto', event.target.result);
-            };
-            reader.readAsDataURL(file);
+    var googleSync = document.getElementById('googleSyncNow');
+    if (googleSync) {
+        googleSync.addEventListener('click', function () {
+            googleSync.disabled = true;
+            googleSync.textContent = 'Syncing…';
+            fetch('/instructor/calendar/sync', { method: 'POST' })
+                .then(function (res) { return res.json(); })
+                .then(function (data) {
+                    if (!data.success) {
+                        googleSync.disabled = false;
+                        googleSync.textContent = 'Sync now';
+                        showToast('error', 'Sync Failed', data.error || 'Could not read your calendar.');
+                        return;
+                    }
+                    window.location.href = '/instructor/settings';
+                })
+                .catch(function () {
+                    googleSync.disabled = false;
+                    googleSync.textContent = 'Sync now';
+                    showToast('error', 'Sync Failed', 'Could not reach the server.');
+                });
         });
-
-        var saved = localStorage.getItem('instructorProfilePhoto');
-        if (saved) paintAvatar(saved);
     }
+
+    // The two calendar preferences save on change rather than through the save
+    // bar — the card sits outside .settings-card, so nothing is tracking them.
+    var googleSyncBox = document.querySelector('.gcal-sync');
+    if (googleSyncBox && googleSyncBox.dataset.connection) {
+        var connectionId = googleSyncBox.dataset.connection;
+
+        function saveCalendarPref(body, label) {
+            return fetch('/instructor/calendar/connections/' + encodeURIComponent(connectionId), {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            })
+                .then(function (res) { return res.json(); })
+                .then(function (data) {
+                    if (!data.success) throw new Error(data.error || 'Not saved.');
+                    showToast('success', 'Saved', label);
+                })
+                .catch(function () {
+                    showToast('error', 'Not Saved', 'Could not save that preference.');
+                });
+        }
+
+        var blockRule = document.getElementById('googleBlockRule');
+        if (blockRule) {
+            blockRule.addEventListener('change', function () {
+                saveCalendarPref({ blockingRule: blockRule.value }, 'Blocking preference updated.');
+            });
+        }
+
+        var importTitles = document.getElementById('googleImportTitles');
+        if (importTitles) {
+            importTitles.addEventListener('change', function () {
+                saveCalendarPref(
+                    { importTitles: importTitles.checked },
+                    importTitles.checked ? 'Event titles will be imported.' : 'Busy times only.'
+                );
+            });
+        }
+    }
+
+    // ── Profile photo ──
+    // Saved to the account, not the browser. The sidebar avatar is repainted
+    // alongside the settings one so the change is visible without a reload.
+    AvatarUpload.init({
+        input: 'settingsAvatarInput',
+        remove: 'settingsAvatarRemove',
+        targets: ['settingsAvatar', 'sidebarAvatar'],
+        notify: showToast
+    });
 
     refreshDirtyState();
 }());

@@ -673,6 +673,10 @@
         <p id="detailBle"></p>
       </div>
       <div class="detail-item">
+        <label>Detected In</label>
+        <p id="detailDetectedRoom"></p>
+      </div>
+      <div class="detail-item">
         <label>Last Detected</label>
         <p id="detailLastSeen"></p>
       </div>
@@ -699,6 +703,8 @@
 <%- include('../../partials/footer') %>
 <%- include('../../partials/script') %>
 
+<script src="/js/realtime.js?v=<%= Date.now() %>"></script>
+<script src="/js/presence-live.js?v=<%= Date.now() %>"></script>
 <script>
 (function(){
   'use strict';
@@ -815,11 +821,17 @@
 
   // ── Detail modal ──
   window.openDetail = function(f){
+    var modal = document.getElementById('detailModal');
+    if (modal) modal.dataset.facultyId = f.id;
     document.getElementById('detailAvatar').textContent  = initials(f.name);
     document.getElementById('detailName').textContent    = f.name;
     document.getElementById('detailPos').textContent     = f.position;
     document.getElementById('detailDept').textContent    = f.department || '—';
     document.getElementById('detailRoom').textContent    = f.officeRoom;
+    // Where they are now, which is not their office and can change while this
+    // panel is open. Only claimed when a scanner actually reports them inside.
+    document.getElementById('detailDetectedRoom').textContent =
+      f.bleStatus === 'in-room' ? (f.detectedRoom || 'In a room') : '—';
     document.getElementById('detailAvail').innerHTML     = availPill(f);
     document.getElementById('detailLastSeen').textContent = f.bleLastDetected || 'Never detected';
     document.getElementById('detailHours').textContent   = f.hoursThisMonth + 'h';
@@ -1123,6 +1135,61 @@
   document.getElementById('detailModal').addEventListener('click', function(e){
     if (e.target === this) closeModal('detailModal');
   });
+
+  /* ── Live presence ──
+     Everything on this page is grouped by bleStatus, so a stale value does not
+     just show the wrong badge — it files someone under the wrong heading and
+     miscounts it. Merging into the array the page already renders from means
+     the sections, the counts, the table and the room board all follow. */
+  if (window.PresenceLive) {
+    window.PresenceLive.onUpdate(function (live) {
+      var byId = {};
+      live.forEach(function (f) { byId[f.id] = f; });
+
+      var changed = false;
+      facultyData.forEach(function (f) {
+        var entry = byId[f.id];
+        if (!entry) return;
+        if (f.bleStatus !== entry.presence) { f.bleStatus = entry.presence; changed = true; }
+        if (f.availability !== entry.availability) {
+          f.availability = entry.availability;
+          f.availabilityLabel = entry.availabilityLabel;
+          changed = true;
+        }
+
+        // Moving between two rooms changes neither the presence nor the
+        // availability, so without this the card and the room board kept
+        // whichever room was true when the page loaded — somebody could walk
+        // from one laboratory to the next and this page would never say so.
+        // 'room' is absent for any role not shown rooms, and skipping the
+        // merge in that case leaves what the server rendered untouched.
+        if ('room' in entry) {
+          if (f.detectedRoom !== entry.room) { f.detectedRoom = entry.room; changed = true; }
+          if (String(f.detectedRoomId) !== String(entry.roomId)) {
+            f.detectedRoomId = entry.roomId;
+            changed = true;
+          }
+        }
+      });
+
+      // Re-rendering rebuilds every card, which would fight someone mid-search
+      // or with a modal open for no reason if nothing actually moved.
+      if (!changed) return;
+      render();
+      renderRooms();
+      renderBoard();
+
+      // The detail panel is not rebuilt by render(), so somebody left reading
+      // it would keep the room that was true when they opened it.
+      var panel = document.getElementById('detailModal');
+      if (panel && panel.classList.contains('open') && panel.dataset.facultyId) {
+        var shownId = panel.dataset.facultyId;
+        for (var i = 0; i < facultyData.length; i++) {
+          if (String(facultyData[i].id) === shownId) { window.openDetail(facultyData[i]); break; }
+        }
+      }
+    });
+  }
 
   render();
   renderRooms();

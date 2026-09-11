@@ -149,42 +149,15 @@
         });
     });
 
-    // ── Avatar preview (kept local until profile photo upload exists server-side) ──
-    var avatarInput = document.getElementById('settingsAvatarInput');
-    var avatarWrap = document.getElementById('settingsAvatar');
-
-    function paintAvatar(dataUrl) {
-        ['settingsAvatar', 'deanSidebarAvatar'].forEach(function (id) {
-            var host = document.getElementById(id);
-            if (!host) return;
-            var initials = host.querySelector('.avatar-initials');
-            var existing = host.querySelector('.avatar-img');
-            if (initials) initials.remove();
-            if (existing) existing.remove();
-            var img = document.createElement('img');
-            img.src = dataUrl;
-            img.className = 'avatar-img';
-            host.insertBefore(img, host.querySelector('.avatar-upload-overlay') || null);
-        });
-    }
-
-    if (avatarInput && avatarWrap) {
-        avatarInput.addEventListener('change', function () {
-            var file = this.files[0];
-            if (!file || !file.type.startsWith('image/')) return;
-            var reader = new FileReader();
-            reader.onload = function (event) {
-                paintAvatar(event.target.result);
-                try { localStorage.setItem('deanProfilePhoto', event.target.result); } catch (err) {}
-            };
-            reader.readAsDataURL(file);
-        });
-
-        try {
-            var savedPhoto = localStorage.getItem('deanProfilePhoto');
-            if (savedPhoto) paintAvatar(savedPhoto);
-        } catch (err) { /* blocked storage just means no saved photo */ }
-    }
+    // ── Profile photo ──
+    // Saved to the account, not the browser. The sidebar avatar is repainted
+    // alongside the settings one so the change is visible without a reload.
+    AvatarUpload.init({
+        input: 'settingsAvatarInput',
+        remove: 'settingsAvatarRemove',
+        targets: ['settingsAvatar', 'deanSidebarAvatar'],
+        notify: showToast
+    });
 
     if (tracker) tracker.refresh();
 }());

@@ -321,6 +321,21 @@ async function parseWorkloadDocx(buffer) {
     const tables = readTables(await documentXml.async('string'));
     if (!tables.length) throw new Error('No schedule table was found in this document.');
 
+    return interpretTables(tables, await readSemester(zip));
+}
+
+/**
+ * Everything between a set of raw tables and the finished preview.
+ *
+ * Split out so the PDF reader can reuse it: the two file types differ only in
+ * how the cells are recovered, never in what a cell means. A second copy of the
+ * rules below is how "AB4-TR002" would end up parsed one way from a .docx and
+ * another from the same form exported to .pdf.
+ *
+ * @param {Array<Array<Array<{lines:string[],span:number,merge?:string,fill?:string}>>>} tables
+ * @param {string|null} semester
+ */
+function interpretTables(tables, semester) {
     // Score by how many weekday headings a table has, so a signature block or
     // the legend table is never mistaken for the grid.
     let best = null;
@@ -415,7 +430,7 @@ async function parseWorkloadDocx(buffer) {
     }
 
     return {
-        semester: await readSemester(zip),
+        semester,
         blocks,
         skipped,
         roomLabels: [...roomLabels.values()].sort((a, z) => a.label.localeCompare(z.label)),
@@ -423,4 +438,11 @@ async function parseWorkloadDocx(buffer) {
     };
 }
 
-module.exports = { parseWorkloadDocx, GRID_START_SLOT, GRID_END_SLOT };
+module.exports = {
+    parseWorkloadDocx,
+    // Shared with workload-import-pdf.js — see interpretTables.
+    interpretTables,
+    OVERLOAD_FILL,
+    GRID_START_SLOT,
+    GRID_END_SLOT,
+};

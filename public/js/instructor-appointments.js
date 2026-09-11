@@ -180,7 +180,7 @@ function renderCalendar() {
             ownEventsOn(dateStr).forEach(ev => {
                 const chip = document.createElement('span');
                 chip.className = 'apt-cal-own' + (ev.blocks ? ' blocks' : '') +
-                    (ev.kind === 'task' ? ' task' : '') + (ev.done ? ' done' : '');
+                    (ev.kind === 'task' ? ' task' : '');
                 chip.textContent = (ev.allDay ? '' : shortTime(ev.startTime) + ' ') + ev.title;
                 chip.title = `${ev.kind === 'task' ? 'Task' : 'Event'}` +
                     (ev.blocks ? ' · blocks appointments' : ' · does not block') +
@@ -292,6 +292,32 @@ function openPopover(aptId, anchor) {
     $('popId').textContent        = apt.studentId;
     $('popWhen').textContent      = `${formatFullDate(apt.date)}  ·  ${apt.time}`;
     $('popDuration').textContent  = apt.duration || '—';
+    // Online consultations carry their venue as a link. Hidden entirely for
+    // face-to-face, where the row would only ever be a dash.
+    const linkRow = $('popLinkRow');
+    if (linkRow) {
+        const online = apt.mode === 'Online';
+        linkRow.hidden = !online;
+        if (online) {
+            const anchor = $('popLink');
+            const copy = $('popLinkCopy');
+            if (apt.meetingLink) {
+                anchor.textContent = apt.meetingLink;
+                anchor.href = apt.meetingLink;
+                anchor.removeAttribute('aria-disabled');
+                copy.hidden = false;
+                copy.dataset.link = apt.meetingLink;
+            } else {
+                // Said plainly rather than left blank: no link is a state the
+                // instructor may need to act on, not a rendering gap.
+                anchor.textContent = 'No meeting link yet';
+                anchor.removeAttribute('href');
+                anchor.setAttribute('aria-disabled', 'true');
+                copy.hidden = true;
+            }
+        }
+    }
+
     $('popTopic').textContent     = apt.topic;
     $('popNotes').textContent     = apt.notes ?? '---';
 
@@ -326,6 +352,20 @@ function positionPopover(pop, anchor) {
     if (window.innerWidth <= 600) { pop.style.opacity = '1'; pop.style.maxHeight = ''; return; }
 
     const r = anchor.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight;
+
+    // An anchor that has left the document — a re-render replaced it — measures
+    // 0x0 at 0,0, which the visibility test below reads as "scrolled away" and
+    // hides. To the user that is a popover that never opened, with a dimmed
+    // backdrop and nothing to dismiss. Centre it instead: the content is what
+    // they asked for, only its anchoring is lost.
+    if (!r.width && !r.height) {
+        pop.style.opacity = '1';
+        pop.style.maxHeight = '';
+        pop.style.left = Math.max(8, (vw - (pop.offsetWidth || 300)) / 2) + 'px';
+        pop.style.top  = Math.max(8, (vh - (pop.offsetHeight || 260)) / 2) + 'px';
+        return;
+    }
+
     const vis = r.top < vh && r.bottom > 0 && r.left < vw && r.right > 0;
     pop.style.opacity = vis ? '1' : '0';
     if (!vis) return;
@@ -377,6 +417,43 @@ function closePopover(instant) {
 function initPopover() {
     // Backdrop click — only fires on mobile (pointer-events:none on desktop)
     $('aptBackdrop').addEventListener('click', () => { closePopover(); closeDayPanel(); });
+    // Copying the link out of the popup. An instructor pasting it into a
+    // group chat or an email is the common way it actually reaches students.
+    const popCopy = $('popLinkCopy');
+    if (popCopy) {
+        popCopy.addEventListener('click', () => {
+            const link = popCopy.dataset.link;
+            if (!link) return;
+
+            const done = (ok) => {
+                popCopy.textContent = ok ? 'Copied' : 'Press Ctrl+C';
+                setTimeout(() => { popCopy.textContent = 'Copy'; }, 2000);
+            };
+
+            // clipboard.writeText needs a secure context, and this app is
+            // reached over plain http on the campus network as well as https.
+            const fallback = () => {
+                const field = document.createElement('textarea');
+                field.value = link;
+                field.setAttribute('readonly', '');
+                field.style.position = 'fixed';
+                field.style.opacity = '0';
+                document.body.appendChild(field);
+                field.select();
+                let ok = false;
+                try { ok = document.execCommand('copy'); } catch { ok = false; }
+                document.body.removeChild(field);
+                return ok;
+            };
+
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(link).then(() => done(true), () => done(fallback()));
+            } else {
+                done(fallback());
+            }
+        });
+    }
+
     $('popClose').addEventListener('click', () => closePopover());
 
     document.addEventListener('click', e => {
@@ -700,7 +777,7 @@ function openDayPanel(dateStr, apts, anchor) {
 
         dayOwn.forEach(ev => {
             const row = document.createElement('div');
-            row.className = 'day-panel-own' + (ev.done ? ' done' : '');
+            row.className = 'day-panel-own';
             row.innerHTML =
                 `<span class="day-panel-own-dot ${ev.blocks ? 'blocks' : ''}"></span>
                  <div class="day-panel-info">
@@ -1177,7 +1254,6 @@ function openEventModal(existing, presetDate) {
     $('eventStart').value = existing && existing.startTime ? existing.startTime : '09:00';
     $('eventEnd').value = existing && existing.endTime ? existing.endTime : '10:00';
     $('eventBlocks').checked = existing ? existing.blocks : true;
-    $('eventDone').checked = existing ? existing.done : false;
 
     syncEventForm();
     modal.classList.add('show');
@@ -1190,12 +1266,9 @@ function closeEventModal() {
     editingEventId = null;
 }
 
-/** Show only the controls that apply to the current kind and all-day choice. */
+/** Show only the controls that apply to the current all-day choice. */
 function syncEventForm() {
-    const allDay = $('eventAllDay').checked;
-    const isTask = $('eventKind').value === 'task';
-    $('eventTimeRow').hidden = allDay;
-    $('eventDoneRow').hidden = !isTask;
+    $('eventTimeRow').hidden = $('eventAllDay').checked;
     $('eventBlocksHint').textContent = $('eventBlocks').checked
         ? 'Students cannot book consultations during this time.'
         : 'Shown on your calendar only. Students can still book.';
@@ -1211,7 +1284,6 @@ function eventPayload() {
         startTime: $('eventStart').value,
         endTime: $('eventEnd').value,
         blocks: $('eventBlocks').checked,
-        done: $('eventDone').checked,
     };
 }
 
@@ -1490,7 +1562,7 @@ function initApproveAll() {
         // Name them, so this is never a blind confirmation
         list.innerHTML = pending.map(a =>
             `<li><strong>${escapeHtml(a.studentName)}</strong>` +
-            `<span>${escapeHtml(a.date)} · ${escapeHtml(a.time)}</span></li>`).join('');
+            `<span>${escapeHtml(formatFullDate(a.date))} · ${escapeHtml(a.time)}</span></li>`).join('');
 
         modal.classList.add('show');
     }
@@ -1691,7 +1763,12 @@ function doApprove(aptId, onSuccess, onError) {
             return;
         }
         const apt = appointments.find(a => a.id === aptId);
-        if (apt) apt.status = 'confirmed';
+        if (apt) {
+            apt.status = 'confirmed';
+            // Approving an online consultation is what creates its Meet, so the
+            // link arrives with this response rather than on the next load.
+            if (d.meetingLink) apt.meetingLink = d.meetingLink;
+        }
         refreshStats();
         renderCalendar();
         if (currentView === 'list') renderListView();
@@ -1875,22 +1952,26 @@ document.addEventListener('DOMContentLoaded', () => {
             if (cell) {
                 // Scroll to the cell
                 cell.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                
+
                 // Highlight the cell
                 document.querySelectorAll('.apt-cal-cell.selected-instant').forEach(c => c.classList.remove('selected-instant', 'selected'));
                 cell.classList.add('selected-instant', 'selected');
-                
-                // Find the badge for this appointment within the cell
-                const badge = cell.querySelector(`.apt-badge[data-apt-id="${targetId}"]`);
-                
-                // Open popover after a slight delay to allow scrolling to complete
+
+                // Open the popover after the scroll, but look the anchor up again
+                // at that moment rather than reusing the nodes captured above.
+                // loadCalendarEvents() resolves on its own schedule and calls
+                // renderCalendar(), so anything held across this gap can be a
+                // detached node by now — and a detached anchor measures 0x0 at
+                // 0,0, which positionPopover reads as "off-screen" and hides.
                 setTimeout(() => {
-                    if (badge) {
-                        openPopover(targetId, badge);
-                    } else {
-                        // If badge not found (maybe filtered out), try to open from the cell
-                        openPopover(targetId, cell);
-                    }
+                    const liveCell = document.querySelector(`.apt-cal-cell[data-date="${dateStr}"]`);
+                    if (!liveCell) return;
+                    liveCell.classList.add('selected-instant', 'selected');
+
+                    // The badge is preferred; the cell is the fallback when this
+                    // appointment is filtered out of the badge list.
+                    const liveBadge = liveCell.querySelector(`.apt-badge[data-apt-id="${targetId}"]`);
+                    openPopover(targetId, liveBadge || liveCell);
                 }, 400);
             } else {
                 // If cell not found (appointment date might be in another month), try list view as fallback

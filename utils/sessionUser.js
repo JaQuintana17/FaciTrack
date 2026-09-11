@@ -8,6 +8,9 @@ function buildStudentUser(session, extraFields = {}) {
         email: session?.email,
         role: session.role,
         profilePhoto: session?.profilePhoto || 'N/A',
+        // The Faculty Lounge page is per-department, so the sidebar needs to know
+        // whether one is set before it offers the link.
+        departmentId: session?.departmentId ?? null,
         ...extraFields
     }
 }

@@ -22,6 +22,10 @@ const DEFINITIONS = {
         type: 'int', env: 'PENDING_NUDGE_EVERY_HOURS', fallback: 6, min: 1, max: 168,
         label: 'Remind instructors every (hours)',
     },
+    pending_escalate_hours: {
+        type: 'int', env: 'PENDING_ESCALATE_HOURS', fallback: 48, min: 1, max: 336,
+        label: 'Escalate unanswered requests to the dean after (hours)',
+    },
     makeup_max_weeks_ahead: {
         type: 'int', env: 'MAKEUP_MAX_WEEKS_AHEAD', fallback: 8, min: 1, max: 52,
         label: 'Make-up class booking window (weeks)',
@@ -45,6 +49,14 @@ const DEFINITIONS = {
     presence_rssi_threshold: {
         type: 'int', fallback: -75, min: -100, max: -30,
         label: 'Presence signal threshold (dBm)',
+    },
+    presence_rssi_exit_margin: {
+        type: 'int', fallback: 8, min: 0, max: 30,
+        label: 'Presence exit margin (dB)',
+    },
+    presence_room_switch_margin: {
+        type: 'int', fallback: 6, min: 0, max: 30,
+        label: 'Room switch margin (dB)',
     },
     presence_absent_after_sec: {
         type: 'int', fallback: 120, min: 30, max: 3600,

@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FaciTrack - <%= title %></title>
+  <link rel="icon" href="/images/FaciTrack-logo.png" type="image/png">
+
+  <%#
+    Deliberately self-contained: no header partial, no footer, no stylesheet
+    from /css, no data beyond what the error handler passes in.
+
+    This is the page shown when something has already gone wrong — often the
+    database being unreachable, which is exactly when a shared partial that
+    expects a user, a notification count or a department would throw a second
+    error inside the handler rendering the first. A page whose whole job is to
+    survive a failure cannot have dependencies that share that failure.
+  %>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1rem;
+      background: #f5f7fa;
+      color: #1f2937;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .error-card {
+      max-width: 480px;
+      width: 100%;
+      text-align: center;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 2.5rem 2rem;
+      box-shadow: 0 4px 16px rgba(10, 61, 98, 0.08);
+    }
+
+    .error-logo { width: 56px; height: 56px; margin: 0 auto 1.5rem; display: block; }
+
+    .error-icon {
+      width: 64px; height: 64px;
+      margin: 0 auto 1.25rem;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 50%;
+      background: #fef3c7;
+      color: #b45309;
+    }
+    .error-icon.fault { background: #fee2e2; color: #b91c1c; }
+
+    .error-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 0.6rem;
+    }
+
+    .error-message {
+      font-size: 0.9375rem;
+      color: #6b7280;
+      line-height: 1.65;
+      margin-bottom: 1.5rem;
+    }
+
+    .error-hint {
+      font-size: 0.8125rem;
+      color: #6b7280;
+      line-height: 1.6;
+      background: #f9fafb;
+      border: 1px solid #f3f4f6;
+      border-radius: 8px;
+      padding: 0.75rem 0.9rem;
+      margin-bottom: 1.5rem;
+      text-align: left;
+    }
+    .error-hint strong { color: #374151; }
+
+    /* Only ever filled in outside production — see the handler. */
+    .error-detail {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.75rem;
+      color: #9ca3af;
+      background: #f9fafb;
+      border: 1px solid #f3f4f6;
+      border-radius: 6px;
+      padding: 0.6rem 0.75rem;
+      margin-bottom: 1.5rem;
+      text-align: left;
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+
+    .error-ref {
+      font-size: 0.75rem;
+      color: #9ca3af;
+      margin-top: 1.25rem;
+    }
+    .error-ref code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: #6b7280;
+    }
+
+    .error-actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
+
+    .error-btn {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      padding: 0.625rem 1.25rem;
+      border-radius: 8px;
+      font-size: 0.9375rem; font-weight: 600;
+      text-decoration: none; cursor: pointer;
+      font-family: inherit; border: none;
+      transition: opacity 0.15s ease;
+    }
+    .error-btn:hover { opacity: 0.85; }
+    .error-btn-primary { background: #0A3D62; color: #fff; }
+    .error-btn-secondary { background: #f3f4f6; color: #374151; border: 1px solid #e5e7eb; }
+
+    @media (max-width: 420px) {
+      .error-card { padding: 2rem 1.25rem; }
+      .error-btn { width: 100%; justify-content: center; }
+    }
+  </style>
+</head>
+<body>
+
+<main class="error-card">
+  <img src="/images/FaciTrack-logo.png" alt="FaciTrack" class="error-logo"
+       onerror="this.style.display='none'">
+
+  <div class="error-icon <%= unavailable ? '' : 'fault' %>">
+    <% if (unavailable) { %>
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/>
+      </svg>
+    <% } else { %>
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+    <% } %>
+  </div>
+
+  <h1 class="error-title"><%= heading %></h1>
+  <p class="error-message"><%= message %></p>
+
+  <% if (unavailable) { %>
+  <div class="error-hint">
+    <strong>Nothing you did caused this, and nothing was lost.</strong>
+    Your appointments and settings are safe — the app simply cannot reach its
+    database right now. Try again in a moment; if it keeps happening, let your
+    administrator know.
+  </div>
+  <% } %>
+
+  <% if (detail) { %>
+    <div class="error-detail"><%= detail %></div>
+  <% } %>
+
+  <div class="error-actions">
+    <button type="button" class="error-btn error-btn-primary" onclick="location.reload()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+      </svg>
+      Try Again
+    </button>
+    <a href="/" class="error-btn error-btn-secondary">Back to Home</a>
+  </div>
+
+  <% if (reference) { %>
+    <p class="error-ref">Reference <code><%= reference %></code></p>
+  <% } %>
+</main>
+
+</body>
+</html>

@@ -20,6 +20,7 @@ const UserModel = {
                 u.status,
                 u.last_login,
                 u.department_id,
+                u.profile_picture,
                 d.full_name AS department_name
             FROM users u
             LEFT JOIN departments d ON u.department_id = d.id
@@ -102,6 +103,9 @@ const UserModel = {
             -- Needed to work out whether a slot is actually offerable, the same
             -- way the profile page does
             u.default_meeting_link,
+            -- A connected Google Calendar is the other way an instructor can
+            -- host online, so the directory has to count it too
+            (ga.user_id IS NOT NULL) AS google_connected,
             u.availability_status,
             -- Next available slot fields
             next_slot.consultation_date AS next_date,
@@ -109,6 +113,7 @@ const UserModel = {
             next_slot.start_time        AS next_start_time
         FROM users u
         LEFT JOIN departments d ON u.department_id = d.id
+        LEFT JOIN google_accounts ga ON ga.user_id = u.id AND ga.last_error IS NULL
         LEFT JOIN (
             SELECT
                 instructor_id,
@@ -234,9 +239,13 @@ const UserModel = {
             u.profile_picture, u.department_id,
             u.availability_status,
             u.default_meeting_link,
+            -- Online consultations work off either venue: a scheduled Meet
+            -- from the instructor's connected calendar, or their static link
+            (ga.user_id IS NOT NULL) AS google_connected,
             d.full_name AS department_name
          FROM users u
          LEFT JOIN departments d ON u.department_id = d.id
+         LEFT JOIN google_accounts ga ON ga.user_id = u.id AND ga.last_error IS NULL
          WHERE u.public_id = ?`,
             [publicId]
         );
@@ -344,7 +353,9 @@ const UserModel = {
 
     /**
      * Every active instructor with their office, self-reported availability
-     * and BLE presence, for the student's Faculty Availability board.
+     * and BLE presence, for the student's Faculty Lounge board and the
+     * lounge display panel. Both scope presence to the lounge itself; this
+     * query returns detected_room_type so they can.
      *
      * `faculty_presence` is a LEFT JOIN because the BLE module has not shipped:
      * the rows come back with no presence today and the page says so, and the
@@ -364,6 +375,7 @@ const UserModel = {
                     officeDept.building    AS office_building,
                     fp.is_present,
                     fp.last_updated        AS presence_updated_at,
+                    fp.room_id             AS detected_room_id,
                     detected.room_number   AS detected_room_number,
                     detected.room_type     AS detected_room_type
                FROM users u
@@ -379,6 +391,47 @@ const UserModel = {
             [departmentId, departmentId]
         );
         return rows;
+    },
+
+    /**
+     * Point a user at a new avatar and hand back the path it replaced.
+     *
+     * The previous value comes back so the caller can delete the file it names.
+     * Without that, every re-upload would strand its predecessor on disk.
+     *
+     * SELECT ... FOR UPDATE holds the row for the length of the transaction, so
+     * two uploads racing each other cannot both read the same old path and
+     * leave one of the two files orphaned.
+     *
+     * @returns {{previous: string|null}|null}  null when no such user
+     */
+    async updateProfilePicture(publicId, webPath) {
+        const conn = await pool.getConnection();
+        try {
+            await conn.beginTransaction();
+
+            const [[current]] = await conn.execute(
+                'SELECT profile_picture FROM users WHERE public_id = ? FOR UPDATE',
+                [publicId]
+            );
+            if (!current) {
+                await conn.rollback();
+                return null;
+            }
+
+            await conn.execute(
+                'UPDATE users SET profile_picture = ? WHERE public_id = ?',
+                [webPath, publicId]
+            );
+
+            await conn.commit();
+            return { previous: current.profile_picture || null };
+        } catch (err) {
+            await conn.rollback();
+            throw err;
+        } finally {
+            conn.release();
+        }
     },
 }
 

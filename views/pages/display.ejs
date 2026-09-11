@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FaciTrack - <%= title %></title>
+  <link rel="icon" href="/images/FaciTrack-logo.png" type="image/png">
+
+  <%#
+    Self-contained, like the error page and for a related reason: this runs
+    unattended on a panel nobody logs into. No header partial (it expects a
+    session), no sidebar, no notification bell, no service-worker registration
+    — a stale cached board would state that someone is In when they left hours
+    ago, which is worse than an honest blank.
+  %>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: #e2e8f0;
+      --in: #16a34a;
+      --out: #94a3b8;
+      --unknown: #cbd5e1;
+    }
+
+    body {
+      min-height: 100vh;
+      background: #f1f5f9;
+      color: var(--ink);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      padding: 2vh 2vw;
+      /* A wall panel is read standing up, from a few metres away. Everything
+         scales with the viewport so one build fits a 15" panel and a 55" TV. */
+      font-size: clamp(15px, 1.15vw, 22px);
+    }
+
+    .board-head {
+      display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+      padding-bottom: 1rem; margin-bottom: 1.25rem;
+      border-bottom: 2px solid var(--line);
+    }
+    /* Shown only when the board cannot answer its own question — a wall of
+       "No data" with nothing explaining it reads as a broken screen. */
+    .board-notice {
+      padding: 0.7em 1em; margin-bottom: 1.1rem; border-radius: 8px;
+      background: #fef3c7; color: #78350f; border: 1px solid #fcd34d;
+      font-size: 1.05em; font-weight: 600;
+    }
+    .board-logo { height: 2.6em; width: auto; }
+    .board-titles { flex: 1; min-width: 0; }
+    .board-dept { font-size: 1.9em; font-weight: 800; line-height: 1.15; }
+    .board-sub { font-size: 0.95em; color: var(--muted); margin-top: 0.15em; }
+
+    .board-clock { text-align: right; }
+    .board-time { font-size: 2em; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+    .board-date { font-size: 0.9em; color: var(--muted); margin-top: 0.2em; }
+
+    .board-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(21em, 1fr));
+      gap: 1rem;
+    }
+
+    .person {
+      display: flex; align-items: center; gap: 1rem;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-left: 6px solid var(--unknown);
+      border-radius: 14px;
+      padding: 1.1rem 1.2rem;
+    }
+    .person.in  { border-left-color: var(--in); }
+    .person.out { border-left-color: var(--out); }
+
+    .person-avatar {
+      width: 3.4em; height: 3.4em; flex-shrink: 0;
+      border-radius: 50%;
+      background: #e2e8f0; color: #475569;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1em; font-weight: 800;
+      overflow: hidden;
+    }
+    .person-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+    .person-id { flex: 1; min-width: 0; }
+    .person-name {
+      font-size: 1.15em; font-weight: 700; line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+    .person-position {
+      font-size: 0.85em; color: var(--muted); margin-top: 0.1em;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .person-availability {
+      display: inline-block; margin-top: 0.45em;
+      font-size: 0.78em; font-weight: 700;
+      padding: 0.2em 0.7em; border-radius: 999px;
+      background: #f1f5f9; color: #475569;
+    }
+    .person-availability.available { background: #dcfce7; color: #15803d; }
+    .person-availability.dnd       { background: #fee2e2; color: #b91c1c; }
+    .person-availability.travel,
+    .person-availability.leave     { background: #fef3c7; color: #b45309; }
+    .person-availability.meeting   { background: #dbeafe; color: #1d4ed8; }
+
+    /* The one thing readable from the far end of the corridor. */
+    .person-presence {
+      flex-shrink: 0; text-align: center;
+      min-width: 3.6em;
+    }
+    .presence-word {
+      font-size: 1.5em; font-weight: 800; line-height: 1;
+      letter-spacing: -0.01em;
+    }
+    .person.in  .presence-word { color: var(--in); }
+    .person.out .presence-word { color: var(--out); }
+    .person.unknown .presence-word { color: var(--unknown); font-size: 0.95em; }
+
+    .board-empty {
+      background: #fff; border: 1px dashed var(--line); border-radius: 14px;
+      padding: 3rem 1.5rem; text-align: center; color: var(--muted);
+      font-size: 1.05em; line-height: 1.6;
+    }
+    .board-empty ul { list-style: none; margin-top: 1rem; font-weight: 700; color: var(--ink); }
+    .board-empty li { display: inline-block; margin: 0.25rem 0.4rem; }
+    .board-empty code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: #f1f5f9; padding: 0.15em 0.5em; border-radius: 6px;
+    }
+
+    .board-foot {
+      margin-top: 1.25rem; padding-top: 0.9rem;
+      border-top: 1px solid var(--line);
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 1rem; flex-wrap: wrap;
+      font-size: 0.82em; color: var(--muted);
+    }
+    .board-updated { display: flex; align-items: center; gap: 0.5em; }
+    .board-dot {
+      width: 0.6em; height: 0.6em; border-radius: 50%;
+      background: var(--in); flex-shrink: 0;
+    }
+
+    /* When the panel loses its connection the board must say so. A screen
+       quietly showing hours-old presence is worse than one admitting it does
+       not know. */
+    body.stale .board-dot { background: #d97706; }
+    body.stale .board-stale-note { display: inline; }
+    body.stale .board-grid { opacity: 0.45; }
+    .board-stale-note { display: none; font-weight: 700; color: #b45309; }
+
+    /* ── Waiting to be approved ── */
+    .pair {
+      max-width: 34em; margin: 6vh auto 0; text-align: center;
+      background: #fff; border: 1px solid var(--line); border-radius: 18px;
+      padding: 2.5rem 2rem;
+    }
+    .pair-lead { font-size: 1.05em; color: var(--muted); line-height: 1.6; }
+    .pair-code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 3.4em; font-weight: 800; letter-spacing: 0.14em;
+      color: var(--ink); margin: 0.5em 0 0.2em;
+      /* The one thing an admin has to read off the screen from a doorway. */
+      word-break: break-all;
+    }
+    .pair-steps {
+      text-align: left; margin: 1.5rem auto 0; max-width: 26em;
+      font-size: 0.92em; color: var(--muted); line-height: 1.7;
+    }
+    .pair-steps li { margin-bottom: 0.35rem; }
+    .pair-note { margin-top: 1.5rem; font-size: 0.82em; color: var(--muted); }
+    .pair-revoked {
+      margin-top: 1rem; padding: 0.8rem 1rem; border-radius: 10px;
+      background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c;
+      font-size: 0.9em; line-height: 1.6;
+    }
+
+    @media (max-width: 640px) {
+      .board-head { gap: 0.7rem; }
+      .board-clock { text-align: left; }
+      .board-grid { grid-template-columns: 1fr; }
+      .pair { padding: 2rem 1.25rem; }
+      .pair-code { font-size: 2.4em; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="board-head">
+  <img src="/images/CSPC-logo.png" alt="" class="board-logo" onerror="this.style.display='none'">
+  <div class="board-titles">
+    <div class="board-dept">
+      <%= department ? (department.short_name || department.full_name) : 'FaciTrack' %>
+    </div>
+    <div class="board-sub">
+      <% if (department) { %>
+        Faculty Lounge — who is in right now
+      <% } else { %>
+        Display board — waiting to be set up
+      <% } %>
+    </div>
+  </div>
+  <div class="board-clock">
+    <div class="board-time" id="boardTime">--:--</div>
+    <div class="board-date" id="boardDate">&nbsp;</div>
+  </div>
+</header>
+
+<% if (status !== 'approved') { %>
+  <div class="pair" id="pairPanel">
+    <% if (status === 'revoked') { %>
+      <p class="pair-lead">This screen's access has been withdrawn.</p>
+      <div class="pair-revoked">
+        An administrator revoked this display. It will stay blank until it is
+        approved again.
+      </div>
+    <% } else { %>
+      <p class="pair-lead">Give this code to your FaciTrack administrator to activate this display.</p>
+      <div class="pair-code" id="pairCode"><%= pairingCode || '——————' %></div>
+      <ol class="pair-steps">
+        <li>An administrator opens <strong>Admin → Displays</strong>.</li>
+        <li>They enter this code and choose which Faculty Lounge this screen is outside of.</li>
+        <li>This page turns into the board on its own — leave it running.</li>
+      </ol>
+      <p class="pair-note">
+        The code changes periodically. Whatever is on screen right now is the one that works.
+      </p>
+    <% } %>
+  </div>
+<% } else if (!faculty.length) { %>
+  <div class="board-empty">
+    <p>No active instructors are listed for this department yet.</p>
+  </div>
+<% } else { %>
+  <div class="board-notice" id="boardNotice" <%= coverageNotice ? '' : 'hidden' %>><%= coverageNotice || '' %></div>
+  <main class="board-grid" id="boardGrid">
+    <% faculty.forEach(person => { %>
+      <article class="person <%= person.presence === 'in-room' ? 'in' : (person.presence === 'out-of-room' ? 'out' : 'unknown') %>">
+        <div class="person-avatar">
+          <% if (person.photo) { %>
+            <img src="<%= person.photo %>" alt="">
+          <% } else { %>
+            <%= person.name.split(/\s+/).filter(Boolean).slice(0, 2).map(n => n[0]).join('').toUpperCase() %>
+          <% } %>
+        </div>
+        <div class="person-id">
+          <div class="person-name"><%= person.name %></div>
+          <div class="person-position"><%= person.position %></div>
+          <span class="person-availability <%= person.availability || '' %>"><%= person.availabilityLabel %></span>
+        </div>
+        <div class="person-presence">
+          <div class="presence-word"><%= person.presenceLabel %></div>
+        </div>
+      </article>
+    <% }); %>
+  </main>
+<% } %>
+
+<footer class="board-foot">
+  <span class="board-updated">
+    <span class="board-dot"></span>
+    Updated <span id="boardUpdated">just now</span>
+    <span class="board-stale-note">— connection lost, this may be out of date</span>
+  </span>
+  <span>FaciTrack</span>
+</footer>
+
+<script>
+  window.BOARD = {
+    status: <%- JSON.stringify(status) %>,
+    generatedAt: <%- JSON.stringify(generatedAt) %>
+  };
+</script>
+<script src="/js/display-board.js"></script>
+
+</body>
+</html>

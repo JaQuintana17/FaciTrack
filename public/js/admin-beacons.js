@@ -142,6 +142,12 @@
     var refreshing = false;
 
     function isEditing() {
+        // An open signal modal counts as busy too: a full reload while somebody
+        // is reading a tag's history to set a threshold throws away what they
+        // came for, and a newly discovered tag can wait for them to finish.
+        var modal = document.getElementById('signalModal');
+        if (modal && !modal.hidden) return true;
+
         var el = document.activeElement;
         return el && (el.tagName === 'INPUT' || el.tagName === 'SELECT');
     }
@@ -170,7 +176,7 @@
                 hearing.innerHTML = '<span class="bx-range"></span><span class="bx-muted bx-sub"></span>';
                 hearing.querySelector('.bx-range').textContent = s.strongest + ' … ' + s.weakest + ' dBm';
                 hearing.querySelector('.bx-sub').textContent =
-                    s.tags_heard + ' tag' + (s.tags_heard === 1 ? '' : 's') + ' in 5 min';
+                    s.tags_heard + ' assigned tag' + (s.tags_heard === 1 ? '' : 's') + ' in 5 min';
             } else {
                 hearing.innerHTML = '<span class="bx-muted">nothing heard</span>';
             }
@@ -232,6 +238,10 @@
                 applyScanners(data.scanners);
                 applyTags(data.beacons);
                 applyStats(data.stats);
+                // The window can lapse, or be closed from another browser, so
+                // the card follows the server rather than a local timer.
+                paintDiscovery(data.discovery);
+                applyCounts(data.counts);
                 evaluateStaleness();
 
                 // A tag or scanner that did not exist when the page rendered has
@@ -288,6 +298,10 @@
                 });
         }
 
+        if (button.dataset.action === 'signal') {
+            openSignal(id, row);
+        }
+
         if (button.dataset.action === 'remove') {
             // Safe: the tag reappears unassigned the next time a scanner hears
             // it, so this is undone by leaving it switched on.
@@ -299,6 +313,258 @@
             });
         }
     });
+
+
+    /* ── Signal history ───────────────────────────────────────────────────
+       What a threshold gets set from. The tag's readings are not summarised
+       into a single average anywhere here: an average flatters, and the number
+       that matters is the weak end, because that is what a threshold has to
+       clear when somebody turns their back on the scanner.
+       ─────────────────────────────────────────────────────────────────────── */
+
+    var signalModal = document.getElementById('signalModal');
+    var signalBody = document.getElementById('signalBody');
+    var signalTitle = document.getElementById('signalTitle');
+    var signalSubtitle = document.getElementById('signalSubtitle');
+    var signalWindow = document.getElementById('signalWindow');
+    var openBeaconId = null;
+
+    function esc(text) {
+        var d = document.createElement('div');
+        d.textContent = text == null ? '' : String(text);
+        return d.innerHTML;
+    }
+
+    /** A tiny line chart. No library: it is one series of integers. */
+    function sparkline(series, threshold, exitThreshold) {
+        if (series.length < 2) return '';
+
+        var W = 600, H = 80, PAD = 4;
+        var values = series.map(function (s) { return s.rssi; });
+        var lo = Math.min.apply(null, values.concat([exitThreshold]));
+        var hi = Math.max.apply(null, values.concat([threshold]));
+        if (hi === lo) hi = lo + 1;
+
+        var y = function (v) { return PAD + (hi - v) / (hi - lo) * (H - PAD * 2); };
+        var x = function (i) { return i / (series.length - 1) * W; };
+
+        var path = values.map(function (v, i) {
+            return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1);
+        }).join(' ');
+
+        return '<svg class="bx-spark" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" aria-hidden="true">' +
+            '<line x1="0" x2="' + W + '" y1="' + y(threshold).toFixed(1) + '" y2="' + y(threshold).toFixed(1) +
+                '" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="5 4"/>' +
+            '<line x1="0" x2="' + W + '" y1="' + y(exitThreshold).toFixed(1) + '" y2="' + y(exitThreshold).toFixed(1) +
+                '" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="5 4"/>' +
+            '<path d="' + path + '" fill="none" stroke="#2563eb" stroke-width="2" ' +
+                'stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' +
+            '</svg>' +
+            '<div class="bx-spark-key">' +
+            '<span><i style="background:#2563eb"></i>signal</span>' +
+            '<span><i style="background:#dc2626"></i>enter at ' + threshold + '</span>' +
+            '<span><i style="background:#f59e0b"></i>leave below ' + exitThreshold + '</span>' +
+            '</div>';
+    }
+
+    /** Say plainly whether this room's threshold fits these readings. */
+    function verdict(room) {
+        var weakShare = room.samples ? room.belowEnter / room.samples : 0;
+
+        // No threshold can rescue a tag the scanner can barely hear. Offering a
+        // number here would be worse than useless — it would look like a fix.
+        if (room.belowScannerFloor) {
+            return '<div class="bx-sig-verdict bad">' +
+                '<strong>This is too weak to fix with a threshold.</strong> The readings here run down to ' +
+                room.min + ' dBm, and the scanner discards anything below −85, so there is no cutoff that would ' +
+                'hold this tag reliably. Raise the tag&rsquo;s transmit power in BeaconSET+, move the scanner closer ' +
+                'or out into the open, or check the tag is not being worn behind somebody.</div>';
+        }
+
+        if (room.belowExit > 0) {
+            return '<div class="bx-sig-verdict bad">' +
+                '<strong>This threshold is too tight.</strong> ' + room.belowExit + ' of ' + room.samples +
+                ' readings fell below even the exit line of ' + room.exitThreshold + ' dBm, so this tag drops out ' +
+                'of the room while sitting still. Try <strong>' + room.suggested + ' dBm</strong>, which clears every ' +
+                'reading in this window — provided nothing outside the room reads stronger than that.</div>';
+        }
+        if (weakShare > 0.2) {
+            return '<div class="bx-sig-verdict warn">' +
+                '<strong>The margin is doing the work.</strong> ' + room.belowEnter + ' of ' + room.samples +
+                ' readings are under the ' + room.threshold + ' dBm enter line; only the exit margin is keeping ' +
+                'this tag in the room. That holds, but somebody arriving would struggle to be picked up. ' +
+                '<strong>' + room.suggested + ' dBm</strong> would fit these readings with room to spare.</div>';
+        }
+        return '<div class="bx-sig-verdict good">' +
+            '<strong>This threshold fits.</strong> ' + (room.samples - room.belowEnter) + ' of ' + room.samples +
+            ' readings clear ' + room.threshold + ' dBm with the weakest at ' + room.min + '.</div>';
+    }
+
+    function renderSignal(data) {
+        if (!data.rooms.length) {
+            signalBody.innerHTML = '<p class="bx-empty">No readings in this window. ' +
+                'The tag has to be heard by a scanner before there is anything to tune against.</p>';
+            return;
+        }
+
+        signalBody.innerHTML = data.rooms.map(function (room) {
+            var series = data.series.filter(function (s) { return s.room === room.room; });
+            return '<div class="bx-sig-room">' +
+                '<h4>' + esc(room.room) + '</h4>' +
+                '<span class="bx-muted bx-sub">' + room.samples + ' readings · threshold ' + room.threshold +
+                    ' dBm (' + room.thresholdSource + ')</span>' +
+                '<div class="bx-sig-grid">' +
+                    '<div class="bx-sig-cell weak"><span>Weakest</span><strong>' + room.min + '</strong></div>' +
+                    '<div class="bx-sig-cell weak"><span>10th pct</span><strong>' + room.p10 + '</strong></div>' +
+                    '<div class="bx-sig-cell"><span>Median</span><strong>' + room.median + '</strong></div>' +
+                    '<div class="bx-sig-cell"><span>Strongest</span><strong>' + room.max + '</strong></div>' +
+                '</div>' +
+                sparkline(series, room.threshold, room.exitThreshold) +
+                verdict(room) +
+                '</div>';
+        }).join('');
+    }
+
+    function loadSignal() {
+        if (!openBeaconId) return;
+        signalBody.innerHTML = '<p class="bx-empty">Loading readings…</p>';
+        send('/admin/beacons/' + openBeaconId + '/signal?minutes=' + signalWindow.value)
+            .then(function (data) {
+                if (!data.success) {
+                    signalBody.innerHTML = '<p class="bx-empty">Could not load the readings.</p>';
+                    return;
+                }
+                renderSignal(data);
+            });
+    }
+
+    function openSignal(id, row) {
+        openBeaconId = id;
+        var label = row.querySelector('[data-field="label"]').value.trim();
+        var mac = row.querySelector('.bx-mono').textContent.trim();
+        var select = row.querySelector('[data-field="instructor"]');
+        var who = select.value ? select.options[select.selectedIndex].text.trim() : 'Unassigned';
+
+        signalTitle.textContent = label || mac;
+        signalSubtitle.textContent = who + ' · ' + mac;
+        signalModal.hidden = false;
+        loadSignal();
+    }
+
+    function closeSignal() {
+        signalModal.hidden = true;
+        openBeaconId = null;
+    }
+
+    if (signalModal) {
+        document.getElementById('signalClose').addEventListener('click', closeSignal);
+        document.getElementById('signalRefresh').addEventListener('click', loadSignal);
+        signalWindow.addEventListener('change', loadSignal);
+        // Clicking the backdrop closes; clicking the card must not.
+        signalModal.addEventListener('click', function (e) {
+            if (e.target === signalModal) closeSignal();
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && !signalModal.hidden) closeSignal();
+        });
+    }
+
+
+    /* ── Adding a tag ────────────────────────────────────────────────────
+       Unknown tags are only written down while listening, so this is the
+       only route by which a new tag enters the system. The countdown is
+       driven off the server's own deadline rather than a local timer: a
+       window opened on one browser must not look open on another after it
+       has already lapsed. */
+
+    var discoveryCard = document.getElementById('discoveryCard');
+    var discoveryUntil = 0;
+
+    function paintDiscovery(state) {
+        if (!discoveryCard) return;
+
+        var open = Boolean(state && state.open);
+        discoveryUntil = open ? Date.now() + (state.secondsLeft * 1000) : 0;
+
+        discoveryCard.classList.toggle('listening', open);
+        document.getElementById('discoveryStart').hidden = open;
+        document.getElementById('discoveryStop').hidden = !open;
+        document.getElementById('discoveryCountdown').hidden = !open;
+        document.getElementById('discoveryRoom').disabled = open;
+        document.getElementById('discoveryMinutes').disabled = open;
+        document.getElementById('discoveryState').textContent = open ? 'Listening now' : 'Not listening';
+
+        tickCountdown();
+    }
+
+    function tickCountdown() {
+        var el = document.getElementById('discoveryCountdown');
+        if (!el || el.hidden) return;
+
+        var left = Math.max(0, Math.round((discoveryUntil - Date.now()) / 1000));
+        var mins = Math.floor(left / 60);
+        var secs = left % 60;
+        el.textContent = mins + ':' + (secs < 10 ? '0' : '') + secs + ' left';
+
+        // The window closed while nobody was looking — reflect it rather than
+        // leaving a card that claims to be listening.
+        if (left === 0) { paintDiscovery({ open: false }); refresh(); }
+    }
+
+    var startBtn = document.getElementById('discoveryStart');
+    if (startBtn) {
+        startBtn.addEventListener('click', function () {
+            startBtn.disabled = true;
+            send('/admin/beacons/discovery/start', 'POST', {
+                roomId: document.getElementById('discoveryRoom').value || null,
+                minutes: Number(document.getElementById('discoveryMinutes').value),
+            }).then(function (data) {
+                startBtn.disabled = false;
+                if (!data.success) { showToast('error', 'Not Listening', data.error || 'Could not start.'); return; }
+                showToast('success', 'Listening', 'Hold the tag against the scanner now.');
+                refresh();
+            });
+        });
+    }
+
+    var stopBtn = document.getElementById('discoveryStop');
+    if (stopBtn) {
+        stopBtn.addEventListener('click', function () {
+            send('/admin/beacons/discovery/stop', 'POST').then(function () {
+                paintDiscovery({ open: false });
+                refresh();
+            });
+        });
+    }
+
+    var pruneBtn = document.getElementById('beaconPrune');
+    if (pruneBtn) {
+        pruneBtn.addEventListener('click', function () {
+            var unclaimed = document.getElementById('beaconCountUnassigned').textContent;
+            if (!window.confirm('Remove ' + unclaimed + ' unclaimed tag(s)? Assigned tags are left alone.')) return;
+
+            pruneBtn.disabled = true;
+            // olderThanDays 0 with includeRecent clears everything unassigned,
+            // which is what the button on screen offers to do.
+            send('/admin/beacons/prune', 'POST', { olderThanDays: 0, includeRecent: true })
+                .then(function (data) {
+                    pruneBtn.disabled = false;
+                    if (!data.success) { showToast('error', 'Not Removed', data.error || 'Could not prune.'); return; }
+                    showToast('success', 'Removed', data.removed + ' unclaimed tag(s) removed.');
+                    refresh();
+                });
+        });
+    }
+
+    function applyCounts(counts) {
+        if (!counts) return;
+        var assigned = document.getElementById("beaconCountAssigned");
+        var unassigned = document.getElementById("beaconCountUnassigned");
+        if (assigned) assigned.textContent = counts.assigned;
+        if (unassigned) unassigned.textContent = counts.unassigned;
+    }
+
+    setInterval(tickCountdown, 1000);
 
     /* ── Wiring ── */
 
@@ -320,6 +586,21 @@
 
     // A scanner falling silent sends nothing, so only elapsed time reveals it
     setInterval(refresh, BACKSTOP_MS);
+
+    /* Coming back to a tab that has been in the background.
+       Nothing is fetched while hidden — polling a tab nobody is looking at is
+       waste — but the staleness pass keeps running against timestamps that are
+       no longer being renewed, so every scanner ages out and the tile reads
+       0 online. That is correct about the data the page holds and wrong about
+       the world, and it used to persist until the next backstop. Ask for fresh
+       data the moment the tab is looked at again. */
+    document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) refresh();
+    });
+    // A tab restored from the back/forward cache fires this instead.
+    window.addEventListener('pageshow', function (e) {
+        if (e.persisted) refresh();
+    });
 
     paint();
     setInterval(paint, 5000);

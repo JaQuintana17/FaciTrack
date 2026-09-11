@@ -3,6 +3,7 @@ const { SLOT_HOLDING_SQL } = require('../services/scheduling');
 const NotificationModel = require('../models/NotificationModel');
 const AuditLogModel = require('../models/AuditLogModel');
 const { notifyUser } = require('../services/notify');
+const { provisionMeetingLink, releaseMeetingLink } = require('../services/meeting');
 const { to12Hour, formatFullDate } = require('../utils/timeFormat');
 
 async function assignConsultationRoom(conn, departmentId, consultationDate, timeStart, timeEnd) {
@@ -117,6 +118,7 @@ const AppointmentModel = {
         const query = `SELECT
                 ap.id, ap.status, ap.mode, ap.topic, ap.section_group_name, ap.course_subject,
                 ap.email, ap.notes, ap.created_at, ap.rescheduled_to_id, ap.rescheduled_from_id, ap.decline_reason,
+                COALESCE(ap.meeting_link, u.default_meeting_link) AS meeting_link,
                 ch.consultation_date, ch.day_of_the_week, ch.start_time, ch.end_time,
                 u.public_id AS instructor_public_id,
                 u.first_name, u.last_name, u.middle_name, u.position,
@@ -216,8 +218,19 @@ const AppointmentModel = {
 
             await conn.commit();
 
+            const studentName = `${student.first_name} ${student.last_name ?? ''}`.trim();
+
+            // No Meet is created here. A request is not yet a meeting — the
+            // instructor may decline it — and minting a calendar event at
+            // booking put entries on their calendar for consultations that
+            // never happened, then deleted them again on decline. The event is
+            // created when the instructor approves, in approveAppointment.
+            //
+            // The instructor's standing room link, if they have one, is already
+            // on the row from the transaction above, so an online request still
+            // shows where it would be held.
+
             try {
-                const studentName = `${student.first_name} ${student.last_name ?? ''}`;
                 const timeLabel = `${to12Hour(slotCheck.start_time)} – ${to12Hour(slotCheck.end_time)}`;
                 const dateLabel = formatFullDate(consultationDate);
 
@@ -246,7 +259,7 @@ const AppointmentModel = {
                 console.error('[Notification] Failed to create (createAppointment):', notifErr);
             }
 
-            return { success: true, appointmentId: result.insertId, roomId };
+            return { success: true, appointmentId: result.insertId, roomId, meetingLink };
         } catch (err) {
             await conn.rollback();
             throw err;
@@ -285,6 +298,7 @@ const AppointmentModel = {
         const query = `SELECT
                 ap.id, ap.status, ap.mode, ap.topic, ap.section_group_name, ap.course_subject,
                 ap.email, ap.notes, ap.created_at, ap.decline_reason,
+                COALESCE(ap.meeting_link, host.default_meeting_link) AS meeting_link,
                 ch.consultation_date, ch.day_of_the_week, ch.start_time, ch.end_time,
                 s.first_name AS student_first_name, s.last_name AS student_last_name,
                 ap.student_number,
@@ -293,6 +307,7 @@ const AppointmentModel = {
             FROM appointments ap
             JOIN consultation_hours ch ON ap.consultation_hour_id = ch.id
             JOIN users s ON ap.student_id = s.id
+            JOIN users host ON ap.instructor_id = host.id
             LEFT JOIN rooms r ON ap.room_id = r.id
             LEFT JOIN departments d ON r.department_id = d.id
             WHERE ap.instructor_id = ?
@@ -334,6 +349,10 @@ const AppointmentModel = {
             await freeSlotIfNotClosed(conn, appointment.consultation_hour_id);
 
             await conn.commit();
+
+            // The consultation is off — take the meeting off the instructor's
+            // calendar too, or it sits there as a live Meet nobody will join.
+            await releaseMeetingLink(appointmentId);
 
             try {
                 const dateLabel = formatFullDate(appointment.consultation_date);
@@ -384,10 +403,13 @@ const AppointmentModel = {
             if (!instructor) { await conn.rollback(); return { success: false, reason: 'INSTRUCTOR_NOT_FOUND' }; }
 
             const [[appointment]] = await conn.execute(
-                `SELECT a.student_id, a.mode, a.meeting_link, r.room_number,
+                `SELECT a.student_id, a.mode, a.meeting_link, a.topic, a.email,
+                    s.first_name AS student_first_name, s.last_name AS student_last_name,
+                    r.room_number,
                     ch.consultation_date, ch.start_time, ch.end_time
              FROM appointments a
              JOIN consultation_hours ch ON a.consultation_hour_id = ch.id
+             JOIN users s ON a.student_id = s.id
              LEFT JOIN rooms r ON a.room_id = r.id
              WHERE a.id = ? AND a.instructor_id = ? AND a.status = 'pending'
              FOR UPDATE`,
@@ -401,6 +423,26 @@ const AppointmentModel = {
             );
 
             await conn.commit();
+
+            // Now it is a meeting, so now it gets one. Done after the commit
+            // and never inside it: this is a network round-trip, and an
+            // approval that rolled back because Google was slow would be a far
+            // worse outcome than one that falls back to the standing link.
+            let meetingLink = appointment.meeting_link;
+            if (appointment.mode === 'Online') {
+                const provisioned = await provisionMeetingLink({
+                    appointmentId,
+                    instructorId: instructor.id,
+                    studentName: `${appointment.student_first_name ?? ''} ${appointment.student_last_name ?? ''}`.trim() || 'Student',
+                    studentEmail: appointment.email,
+                    topic: appointment.topic,
+                    date: appointment.consultation_date,
+                    startTime: appointment.start_time,
+                    endTime: appointment.end_time,
+                    fallbackLink: appointment.meeting_link,
+                });
+                meetingLink = provisioned.meetingLink;
+            }
 
             try {
                 const dateLabel = formatFullDate(appointment.consultation_date);
@@ -424,7 +466,7 @@ const AppointmentModel = {
                                 { label: 'Time', value: `${timeLabel} – ${to12Hour(appointment.end_time)}` },
                                 { label: 'Mode', value: appointment.mode },
                                 { label: 'Room', value: appointment.mode === 'Face-to-Face' ? appointment.room_number : null },
-                                { label: 'Meeting link', value: appointment.mode === 'Online' ? appointment.meeting_link : null },
+                                { label: 'Meeting link', value: appointment.mode === 'Online' ? meetingLink : null },
                             ],
                         },
                     }
@@ -433,7 +475,7 @@ const AppointmentModel = {
                 console.error('[Notification] Failed to create (approveAppointment):', notifErr);
             }
 
-            return { success: true };
+            return { success: true, meetingLink };
         } catch (err) {
             await conn.rollback();
             throw err;
@@ -471,6 +513,10 @@ const AppointmentModel = {
             await freeSlotIfNotClosed(conn, appointment.consultation_hour_id);
 
             await conn.commit();
+
+            // Declined requests never happen, so the provisional Meet created
+            // at booking time has to go with them.
+            await releaseMeetingLink(appointmentId);
 
             try {
                 const dateLabel = formatFullDate(appointment.consultation_date);
@@ -526,9 +572,11 @@ const AppointmentModel = {
             if (!instructor) { await conn.rollback(); return { success: false, reason: 'INSTRUCTOR_NOT_FOUND' }; }
 
             const [[oldApt]] = await conn.execute(
-                `SELECT a.*, ch.consultation_date AS old_date, ch.start_time AS old_start_time
+                `SELECT a.*, ch.consultation_date AS old_date, ch.start_time AS old_start_time,
+                    s.first_name AS student_first_name, s.last_name AS student_last_name
              FROM appointments a
              JOIN consultation_hours ch ON a.consultation_hour_id = ch.id
+             JOIN users s ON a.student_id = s.id
              WHERE a.id = ? AND a.instructor_id = ? AND a.status IN ('pending','confirmed')
              FOR UPDATE`,
                 [appointmentId, instructor.id]
@@ -565,10 +613,16 @@ const AppointmentModel = {
                 }
             } else {
                 const [[host]] = await conn.execute(
-                    'SELECT default_meeting_link FROM users WHERE id = ?', [instructor.id]
+                    `SELECT u.default_meeting_link, (ga.user_id IS NOT NULL) AS google_connected
+                       FROM users u
+                       LEFT JOIN google_accounts ga ON ga.user_id = u.id AND ga.last_error IS NULL
+                      WHERE u.id = ?`,
+                    [instructor.id]
                 );
                 meetingLink = oldApt.meeting_link || host?.default_meeting_link || null;
-                if (!meetingLink) {
+                // No link yet is fine when the calendar is connected — one is
+                // minted for the new slot right after this commits.
+                if (!meetingLink && !Number(host?.google_connected)) {
                     await conn.rollback();
                     return { success: false, reason: 'MEETING_LINK_REQUIRED' };
                 }
@@ -600,6 +654,26 @@ const AppointmentModel = {
             );
 
             await conn.commit();
+
+            // A scheduled Meet is pinned to a time, so moving the consultation
+            // means retiring the old event and minting one for the new slot.
+            // Only the link changes; if Google is unavailable the copied link
+            // from the old appointment stays, which is still reachable.
+            if (mode === 'Online') {
+                await releaseMeetingLink(appointmentId);
+                const provisioned = await provisionMeetingLink({
+                    appointmentId: newAppointmentId,
+                    instructorId: instructor.id,
+                    studentName: `${oldApt.student_first_name ?? ''} ${oldApt.student_last_name ?? ''}`.trim() || 'Student',
+                    studentEmail: oldApt.email,
+                    topic: oldApt.topic,
+                    date: newSlot.consultation_date,
+                    startTime: newSlot.start_time,
+                    endTime: newSlot.end_time,
+                    fallbackLink: meetingLink,
+                });
+                meetingLink = provisioned.meetingLink;
+            }
 
             try {
                 const previousDateLabel = formatFullDate(oldApt.old_date);
@@ -804,7 +878,11 @@ const AppointmentModel = {
              JOIN consultation_hours ch ON a.consultation_hour_id = ch.id
              JOIN users s ON a.student_id = s.id
              WHERE a.mode = 'Online'
-               AND a.status IN ('pending','confirmed')
+               -- Confirmed only. A pending request has no link because it has
+               -- not been approved yet, and telling an instructor their
+               -- consultation is missing a link when the answer is "approve it"
+               -- would nag them about something that is not wrong.
+               AND a.status = 'confirmed'
                AND (a.meeting_link IS NULL OR a.meeting_link = '')
                AND TIMESTAMP(ch.consultation_date, ch.start_time) > NOW()
                AND (a.completion_nudged_at IS NULL
@@ -844,6 +922,49 @@ const AppointmentModel = {
             [nudgeEveryHours]
         );
         return rows;
+    },
+
+    /**
+     * Unanswered requests old enough that the dean should know.
+     *
+     * The dean is found through the instructor's department rather than
+     * departments.dean_id, matching how DeanModel scopes every other query —
+     * and departments.dean_id is not always filled in.
+     *
+     * Escalated once per booking, not repeatedly: the dean has a report
+     * listing every one of these, so a second push adds noise rather than
+     * information. Requests whose consultation time has already passed are
+     * skipped — nobody can approve those now.
+     */
+    async getPendingAppointmentsForEscalation(afterHours = 48) {
+        const [rows] = await pool.execute(
+            `SELECT a.id, a.created_at,
+                    ch.consultation_date, ch.start_time,
+                    dean.id AS dean_id,
+                    s.first_name AS student_first_name, s.last_name AS student_last_name,
+                    i.first_name AS instructor_first_name, i.last_name AS instructor_last_name
+               FROM appointments a
+               JOIN consultation_hours ch ON a.consultation_hour_id = ch.id
+               JOIN users i ON a.instructor_id = i.id
+               JOIN users s ON a.student_id    = s.id
+               JOIN users dean ON dean.role = 'Dean'
+                              AND dean.status = 'Active'
+                              AND dean.department_id <=> i.department_id
+              WHERE a.status = 'pending'
+                AND a.dean_escalated_at IS NULL
+                AND TIMESTAMP(ch.consultation_date, ch.start_time) > NOW()
+                AND a.created_at < DATE_SUB(NOW(), INTERVAL ? HOUR)
+              ORDER BY a.created_at ASC`,
+            [afterHours]
+        );
+        return rows;
+    },
+
+    async markDeanEscalated(appointmentId) {
+        await pool.execute(
+            'UPDATE appointments SET dean_escalated_at = NOW() WHERE id = ?',
+            [appointmentId]
+        );
     },
 
     async markPendingNudged(appointmentId) {

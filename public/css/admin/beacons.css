@@ -80,3 +80,100 @@
     .bx-stats { grid-template-columns: 1fr; gap: .6rem; }
     .bx-table { min-width: 700px; }
 }
+
+/* ── Adding a tag ── */
+.bx-discover-row { display:flex; gap:.75rem; align-items:flex-end; flex-wrap:wrap; }
+.bx-field { display:flex; flex-direction:column; gap:.3rem; }
+.bx-field label { font-size:.75rem; font-weight:700; color:var(--gray-600); }
+.bx-btn {
+  padding:.6rem 1.1rem; border-radius:var(--radius-md); border:1.5px solid var(--gray-300);
+  background:#fff; color:var(--gray-700); font-family:var(--font-body);
+  font-size:.8125rem; font-weight:700; cursor:pointer; white-space:nowrap;
+}
+.bx-btn.primary { background:var(--primary-blue); border-color:var(--primary-blue); color:#fff; }
+.bx-btn.danger:hover { border-color:#dc2626; color:#dc2626; }
+.bx-btn[disabled] { opacity:.55; cursor:default; }
+.bx-countdown {
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:.9rem; font-weight:800; color:#15803d; padding-bottom:.6rem;
+}
+.bx-prune {
+  margin-top:1.1rem; padding-top:.9rem; border-top:1px solid var(--gray-100);
+  display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap;
+}
+
+/* Whether an address is one a person can be bound to. A rotating address looks
+   identical to a tag in a list of MACs; this is what tells them apart. */
+.bx-addr {
+  display:inline-block; margin-left:.4rem; padding:.1rem .45rem; border-radius:999px;
+  font-size:.62rem; font-weight:800; text-transform:uppercase; letter-spacing:.04em;
+}
+.bx-addr.fixed    { background:#dcfce7; color:#15803d; }
+.bx-addr.rotating { background:#fef3c7; color:#b45309; }
+
+/* A listening scanner should be obvious from across the room */
+#discoveryCard.listening { border-color:#86efac; box-shadow:0 0 0 3px rgba(22,163,74,.12); }
+
+@media (max-width:640px) {
+  .bx-discover-row { flex-direction:column; align-items:stretch; }
+  .bx-discover-row .bx-btn { width:100%; }
+  .bx-prune { flex-direction:column; align-items:stretch; }
+  .bx-prune .bx-btn { width:100%; }
+}
+
+/* ── Signal history ──────────────────────────────────────────────────────────
+   The readout a threshold gets set from. Deliberately plain: the numbers are
+   the point, and the chart is only there to show whether the spread is steady
+   or swinging. */
+.bx-modal {
+  position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:1000;
+  display:flex; align-items:center; justify-content:center; padding:1rem;
+}
+.bx-modal-card {
+  background:#fff; border-radius:var(--radius-lg); box-shadow:0 25px 70px rgba(0,0,0,.35);
+  width:100%; max-width:660px; max-height:90vh; display:flex; flex-direction:column;
+}
+.bx-modal-head {
+  display:flex; align-items:center; justify-content:space-between; gap:1rem;
+  padding:1.15rem 1.4rem; border-bottom:1px solid var(--gray-200);
+}
+.bx-modal-head h3 { margin:0; font-size:1.0625rem; font-weight:800; color:var(--gray-900); }
+.bx-modal-body { padding:1.3rem 1.4rem; overflow-y:auto; }
+.bx-modal-foot {
+  padding:.9rem 1.4rem; border-top:1px solid var(--gray-200); background:var(--gray-50);
+  display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap;
+}
+.bx-modal-close {
+  width:32px; height:32px; border:none; background:transparent; color:var(--gray-500);
+  font-size:1.35rem; line-height:1; cursor:pointer; border-radius:var(--radius-md);
+}
+.bx-modal-close:hover { background:var(--gray-100); color:var(--gray-900); }
+
+.bx-sig-room { border:1px solid var(--gray-200); border-radius:var(--radius-md); padding:1rem; margin-bottom:1rem; }
+.bx-sig-room h4 { margin:0 0 .1rem; font-size:.9375rem; font-weight:800; color:var(--gray-900); }
+.bx-sig-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:.75rem; margin:.9rem 0; }
+.bx-sig-cell { text-align:center; padding:.55rem .3rem; background:var(--gray-50); border-radius:var(--radius-md); }
+.bx-sig-cell span { display:block; font-size:.65rem; font-weight:800; text-transform:uppercase;
+  letter-spacing:.04em; color:var(--gray-500); margin-bottom:.15rem; }
+.bx-sig-cell strong { font-size:1.05rem; font-weight:800; color:var(--gray-900);
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+/* The weak end is what a threshold has to clear, so it is the one highlighted. */
+.bx-sig-cell.weak { background:#fef3c7; }
+.bx-sig-cell.weak strong { color:#b45309; }
+
+.bx-sig-verdict { padding:.7rem .85rem; border-radius:var(--radius-md); font-size:.8125rem; line-height:1.55; }
+.bx-sig-verdict.good { background:#dcfce7; color:#14532d; }
+.bx-sig-verdict.warn { background:#fef3c7; color:#78350f; }
+.bx-sig-verdict.bad  { background:#fee2e2; color:#7f1d1d; }
+.bx-sig-verdict strong { font-weight:800; }
+
+.bx-spark { display:block; width:100%; height:80px; margin:.9rem 0 .3rem; }
+.bx-spark-key { display:flex; gap:1rem; flex-wrap:wrap; font-size:.7rem; color:var(--gray-500); }
+.bx-spark-key i { display:inline-block; width:14px; height:2px; vertical-align:middle; margin-right:.3rem; }
+
+@media (max-width:640px) {
+  .bx-sig-grid { grid-template-columns:repeat(2,1fr); }
+  .bx-modal-card { max-height:94vh; }
+  .bx-modal-foot { flex-direction:column; align-items:stretch; }
+  .bx-modal-foot .bx-btn { width:100%; }
+}

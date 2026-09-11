@@ -19,11 +19,38 @@
         height: 26px;
         color: #a0b4c8;
     }
+    /* Same footprint as the placeholder, so a card is the same height either way */
+    .card-photo {
+        width: 52px;
+        height: 52px;
+        border-radius: var(--radius-full);
+        object-fit: cover;
+        flex-shrink: 0;
+        box-shadow: 0 2px 8px rgba(10,61,98,0.12);
+    }
+
+    /* ── Directory pagination ── */
+    .fac-pager {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 1rem; flex-wrap: wrap;
+        padding: 0.9rem 1.25rem; border-top: 1px solid var(--gray-200);
+    }
+    .fac-pager-info { font-size: 0.8125rem; color: var(--gray-500); }
+    .fac-pager-buttons { display: flex; gap: 0.5rem; }
+    .fac-pager-buttons button {
+        padding: 0.45rem 0.9rem; border: 1.5px solid var(--gray-300);
+        border-radius: var(--radius-md); background: #fff; color: var(--gray-700);
+        font-size: 0.8125rem; font-weight: 600; font-family: var(--font-body);
+        cursor: pointer; transition: all var(--transition-base);
+    }
+    .fac-pager-buttons button:hover:not(:disabled) { border-color: var(--primary-blue); color: var(--primary-blue); }
+    .fac-pager-buttons button:disabled { opacity: 0.45; cursor: default; }
 
     @media (max-width: 640px) {
         #deptFilter {
             width: 100%;
         }
+        .fac-pager { justify-content: center; }
     }
 </style>
 
@@ -71,10 +98,13 @@
                         <% facultyList.forEach((faculty, index) => { %>
                         <a href="/student/faculty/<%= faculty.instructor_id %>" class="faculty-card" data-status="<%= faculty.status %>" data-name="<%= (faculty.full_name || '').toLowerCase() %>" data-spec="<%= (faculty.position || '').toLowerCase() %>" data-dept="<%= faculty.department_id %>">
                             <div class="card-top">
-                                <!-- Photo placeholder — replace with <img> when actual photo is available -->
-                                <div class="card-photo-placeholder">
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                                </div>
+                                <% if (faculty.profile_picture) { %>
+                                    <img src="<%= faculty.profile_picture %>" alt="<%= faculty.full_name %>" class="card-photo" loading="lazy">
+                                <% } else { %>
+                                    <div class="card-photo-placeholder">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                                    </div>
+                                <% } %>
                             </div>
                             <div class="card-body">
                                 <h3 class="card-name"><%= faculty.full_name %></h3>
@@ -101,6 +131,16 @@
                         <% }); %>
                     </div>
                 </div>
+
+                <%# Hidden until there is more than one page — a pager under a
+                    single screen of cards is just noise. %>
+                <div class="fac-pager" id="facPager" hidden>
+                    <span class="fac-pager-info" id="facPagerInfo"></span>
+                    <div class="fac-pager-buttons">
+                        <button type="button" id="facPrev">Previous</button>
+                        <button type="button" id="facNext">Next</button>
+                    </div>
+                </div>
             </div>
 
         </div>
@@ -112,6 +152,10 @@
 <%- include('../../partials/footer') %>
 <%- include('../../partials/script') %>
 <script>
+// The department the directory should open on: null unless Settings has
+// "Start in my department" turned on and a department is actually set.
+window.STUDENT_DEFAULT_DEPT = <%- JSON.stringify(typeof defaultDeptId !== 'undefined' ? defaultDeptId : null) %>;
+
 function showToast(type, title, message) {
     const c = document.getElementById('toastContainer');
     const t = document.createElement('div');
@@ -123,27 +167,76 @@ function showToast(type, title, message) {
 document.addEventListener('DOMContentLoaded', function () {
     const searchInput = document.getElementById('searchInput');
     const deptFilter = document.getElementById('deptFilter');
-    const cards = document.querySelectorAll('.faculty-card');
+    const cards = Array.from(document.querySelectorAll('.faculty-card'));
     const emptyState = document.getElementById('emptyState');
+    const pager = document.getElementById('facPager');
+    const pagerInfo = document.getElementById('facPagerInfo');
+    const prevBtn = document.getElementById('facPrev');
+    const nextBtn = document.getElementById('facNext');
 
+    const PER_PAGE = 12;
+    let page = 1;
+    let matches = cards;
+
+    // Filtering decides which cards qualify; paging decides how many of those are
+    // on screen. Keeping the two separate is what lets the filters behave exactly
+    // as they did before — the pager only ever narrows what already matched.
     function applyFilters() {
         const dept = deptFilter.value;
         const query = searchInput.value.toLowerCase().trim();
-        let visible = 0;
 
-        cards.forEach(card => {
-            const matchDept   = dept === 'all' || card.dataset.dept === dept;
-            const matchSearch = !query || card.dataset.name.includes(query) || card.dataset.spec.includes(query);
-            const show = matchDept && matchSearch;
-            card.style.display = show ? '' : 'none';
-            if (show) visible++;
-        });
+        matches = cards.filter(card =>
+            (dept === 'all' || card.dataset.dept === dept) &&
+            (!query || card.dataset.name.includes(query) || card.dataset.spec.includes(query))
+        );
 
-        emptyState.style.display = visible === 0 ? 'block' : 'none';
+        page = 1;   // a changed filter always starts from the first page
+        renderPage();
     }
+
+    function renderPage() {
+        const pages = Math.max(1, Math.ceil(matches.length / PER_PAGE));
+        if (page > pages) page = pages;
+
+        const start = (page - 1) * PER_PAGE;
+        const shown = matches.slice(start, start + PER_PAGE);
+
+        cards.forEach(card => { card.style.display = 'none'; });
+        shown.forEach(card => { card.style.display = ''; });
+
+        emptyState.style.display = matches.length === 0 ? 'block' : 'none';
+
+        pager.hidden = matches.length <= PER_PAGE;
+        pagerInfo.textContent = matches.length
+            ? 'Showing ' + (start + 1) + '–' + (start + shown.length) + ' of ' + matches.length + ' faculty'
+            : '';
+        prevBtn.disabled = page === 1;
+        nextBtn.disabled = page === pages;
+    }
+
+    // Back to the top of the list on a page change — otherwise the next page
+    // opens halfway down and looks like nothing happened.
+    function scrollGridTop() {
+        const grid = document.getElementById('facultyGrid');
+        if (grid && grid.parentElement) grid.parentElement.scrollTop = 0;
+    }
+
+    prevBtn.addEventListener('click', function () {
+        if (page > 1) { page--; renderPage(); scrollGridTop(); }
+    });
+    nextBtn.addEventListener('click', function () {
+        if (page * PER_PAGE < matches.length) { page++; renderPage(); scrollGridTop(); }
+    });
 
     searchInput.addEventListener('input', applyFilters);
     deptFilter.addEventListener('change', applyFilters);
+
+    // Settings > "Start in my department" only picks the opening filter value.
+    // Every department stays selectable and filtering works exactly as before.
+    var preferred = window.STUDENT_DEFAULT_DEPT;
+    if (preferred && deptFilter.querySelector('option[value="' + preferred + '"]')) {
+        deptFilter.value = String(preferred);
+    }
 
     applyFilters();
 });

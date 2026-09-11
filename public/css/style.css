@@ -4,6 +4,15 @@
     box-sizing: border-box;
 }
 
+/* The browser hides [hidden] elements with its own display:none, but any
+   author rule setting display outruns it — so an element given display:flex
+   stays on screen however many times the JS sets el.hidden = true. Stating it
+   once here means every current and future toggle behaves, instead of each
+   component discovering the same surprise and patching it locally. */
+[hidden] {
+    display: none !important;
+}
+
 html {
     font-size: 16px;
     -webkit-text-size-adjust: 100%;
@@ -204,4 +213,126 @@ img {
     overflow: visible !important;
     text-overflow: clip !important;
     line-height: 1.3 !important;
+}
+
+/* ── Remove profile photo ──
+   A badge on the avatar's corner rather than a control in the page flow — as a
+   block button underneath, it pushed into the name below. It anchors to
+   .settings-avatar-wrap (the 88px positioned box) rather than to the avatar
+   itself, which is overflow:hidden to keep the photo circular and would clip a
+   corner badge. The upload module hides it when there is no photo to remove. */
+.btn-avatar-remove {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    z-index: 2;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #dc2626;
+    color: #fff;
+    border: 2px solid var(--bg-white);
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    line-height: 1;
+    transition: background var(--transition-fast);
+}
+
+.btn-avatar-remove:hover { background: #b91c1c; }
+
+.btn-avatar-remove:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+/* Comfortably tappable on touch screens, where there is no hover to reveal it */
+@media (max-width: 768px) {
+    .btn-avatar-remove {
+        width: 26px;
+        height: 26px;
+    }
+}
+
+/* ── Connection status bar ──
+   Offline is a state, not an event, so this stays up for as long as it is
+   true. Bottom-anchored to clear the sticky headers and sidebars, and above
+   modals because it explains why a modal's Save just failed. */
+.conn-bar {
+    position: fixed;
+    left: 50%;
+    bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+    transform: translateX(-50%);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    max-width: calc(100vw - 2rem);
+    padding: 0.6rem 0.9rem;
+    border-radius: 999px;
+    font-family: var(--font-body, system-ui, sans-serif);
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    color: #78350f;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+}
+
+.conn-bar.restored {
+    color: #065f46;
+    background: #ecfdf5;
+    border-color: #a7f3d0;
+}
+
+.conn-dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #d97706;
+}
+
+.conn-bar.restored .conn-dot { background: #16a34a; }
+
+/* Only the offline dot pulses — a solved problem should sit still */
+.conn-bar.offline .conn-dot { animation: conn-pulse 1.8s ease-in-out infinite; }
+
+@keyframes conn-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .conn-bar.offline .conn-dot { animation: none; }
+}
+
+.conn-msg { min-width: 0; }
+
+.conn-action {
+    flex-shrink: 0;
+    padding: 0.3rem 0.7rem;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+    background: transparent;
+    color: inherit;
+    font-family: inherit;
+    font-size: 0.75rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.conn-action:hover { background: rgba(0, 0, 0, 0.06); }
+
+/* On a phone the pill becomes a full-width bar rather than wrapping badly */
+@media (max-width: 520px) {
+    .conn-bar {
+        left: 0.75rem;
+        right: 0.75rem;
+        max-width: none;
+        transform: none;
+        border-radius: 12px;
+    }
 }

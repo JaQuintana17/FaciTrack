@@ -12,11 +12,9 @@
           <p class="page-subtitle">Manage your consultation availability</p>
         </div>
       </div>
-      <!-- ─── Unavailability Banner ─── -->
-      <div id="unavailBanner" style="display:none;margin-bottom:1rem;padding:.75rem 1rem;background:#fef9ec;border:1px solid #fde68a;border-radius:10px;align-items:center;gap:.6rem;font-size:.84rem;color:#92400e;">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        <span id="unavailBannerText"></span>
-      </div>
+      <%# The "Unavailable this week" banner used to sit here. It restated what
+          the week strip, the mini calendar and the blocked-dates list already
+          show, so it was removed rather than kept in three places. %>
 
       <!-- ─── Mark Unavailable Card ─── -->
       <div class="gcal-wrap" style="margin-bottom:1.25rem;border-color:#fee2e2;background:linear-gradient(135deg,#fffdfd 0%,#fff7f7 100%);">
@@ -638,8 +636,6 @@ function renderWeekStrip(){
     strip.appendChild(card);
   }
   empty.style.display=hasAvailability?'none':'block';
-  // Update unavailability banner for this week
-  if (typeof checkWeekUnavailBanner === 'function') checkWeekUnavailBanner();
 }
 
 /* -- Day slots panel -- */
@@ -736,9 +732,27 @@ function refreshDayPanel() {
               : isBooked ?
                   '<div class="dsp-subslot-student">' +
                       '<span class="dsp-subslot-student-name">Booked</span>' +
-                      '<button class="dsp-subslot-search-btn" onclick="goToAppointments()">View</button>' +
+                      '<button class="dsp-subslot-search-btn" type="button">View</button>' +
                   '</div>'
               : '');
+
+          // A booked slot is a link to the booking it holds. The whole card is
+          // the target, not just the View button — on a phone that button is a
+          // small corner of what already reads as one tappable thing, so the
+          // button stays only as the visible affordance.
+          if (isBooked && sub.appointmentId) {
+              card.classList.add('clickable');
+              card.setAttribute('role', 'button');
+              card.setAttribute('tabindex', '0');
+              card.title = 'Open this appointment';
+
+              const open = function () { openAppointment(sub.appointmentId); };
+              card.addEventListener('click', open);
+              card.addEventListener('keydown', function (e) {
+                  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+              });
+          }
+
           grid.appendChild(card);
         });
         groupEl.appendChild(grid);
@@ -752,8 +766,19 @@ function hideDayPanel(){
   activePanelDate = null;
 }
 
-function goToAppointments(){
-  window.location.href = '/instructor/appointments';
+/**
+ * Open one booking on the appointments page.
+ *
+ * The popover there is the real one — it carries approve, decline and
+ * reschedule and reads the appointment list that page already loads. A second
+ * read-only copy here would be a weaker thing to land on, so this reuses the
+ * same ?openApt= link the notifications use, which scrolls the calendar to the
+ * booking and opens its popover.
+ */
+function openAppointment(appointmentId){
+  window.location.href = appointmentId
+    ? '/instructor/appointments?openApt=' + encodeURIComponent(appointmentId)
+    : '/instructor/appointments';
 }
 
 document.getElementById('dspClose').addEventListener('click', hideDayPanel);
@@ -1136,7 +1161,14 @@ function loadUnavailDates() {
 function renderUnavailList() {
   var list  = document.getElementById('unavailList');
   var items = document.getElementById('unavailItems');
-  var keys  = Object.keys(unavailDates).sort();
+
+  // Only dates still ahead. A block that has already passed cannot be acted on
+  // — removing it changes nothing — so listing it just crowds out the ones that
+  // still matter. The rows stay in the database; this hides them from the card.
+  // Compared as date keys so it is the local calendar day, not a UTC instant.
+  var todayKey = toDateKeyJS(new Date());
+  var keys = Object.keys(unavailDates).filter(function (k) { return k >= todayKey; }).sort();
+
   if (!keys.length) { list.style.display = 'none'; return; }
   list.style.display = 'block';
   items.innerHTML = '';
@@ -1153,31 +1185,6 @@ function renderUnavailList() {
       '</button>';
     items.appendChild(chip);
   });
-}
-
-// ── Check if selected week contains unavailable days and show a banner ──
-function checkWeekUnavailBanner() {
-  var banner = document.getElementById('unavailBanner');
-  var bannerText = document.getElementById('unavailBannerText');
-  // Find days in current week view that are blocked
-  var blocked = [];
-  for (var d = 0; d < 7; d++) {
-    var date = new Date(selectedDate);
-    var diff = d - date.getDay();
-    var candidate = new Date(date);
-    candidate.setDate(date.getDate() + diff - date.getDay() + d);
-    var key = toDateKeyJS(candidate);
-    if (unavailDates[key]) {
-      var lbl = candidate.toLocaleDateString('en-PH', { weekday:'short', month:'short', day:'numeric' });
-      blocked.push(lbl + (unavailDates[key].reason ? ' (' + unavailDates[key].reason.substring(0,30) + ')' : ''));
-    }
-  }
-  if (blocked.length) {
-    bannerText.textContent = 'Unavailable this week: ' + blocked.join('; ');
-    banner.style.display = 'flex';
-  } else {
-    banner.style.display = 'none';
-  }
 }
 
 function toDateKeyJS(d) {
@@ -1202,7 +1209,6 @@ function removeUnavailDate(dateKey) {
       delete unavailDates[dateKey];
       renderUnavailList();
       renderWeekStrip();
-      checkWeekUnavailBanner();
       showToast('success', 'Block Removed', label + ' is now available for bookings again.');
     })
     .catch(function() { alert('Network error. Please try again.'); });
@@ -1212,7 +1218,6 @@ function removeUnavailDate(dateKey) {
 window.onUnavailabilityChanged = function () {
   loadUnavailDates();
   renderWeekStrip();
-  checkWeekUnavailBanner();
 };
 
 // Load on page start

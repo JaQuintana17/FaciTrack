@@ -117,7 +117,8 @@
                                 <td>
                                     <div>
                                         <p style="font-weight:700;font-size:0.875rem;color:var(--gray-900);margin:0 0 0.125rem;"><%= room.room_number %></p>
-                                        <p style="font-size:0.75rem;color:var(--gray-500);margin:0;"><%= room.building_name %></p>
+                                        <%# Floor rides with the building rather than taking its own column — the table is already wide on a phone %>
+                                        <p style="font-size:0.75rem;color:var(--gray-500);margin:0;"><%= room.building_name %> &middot; Floor <%= room.floor_number %></p>
                                     </div>
                                 </td>
                                 <td style="font-size:0.8125rem;color:var(--gray-600);"><%= room.department_name %></td>
@@ -142,7 +143,8 @@
                                         <button class="btn-icon-action approve btn-edit-room" title="Edit room"
                                             data-index="<%= i %>"
                                             data-roomid="<%= room.id %>"
-                                            data-roomnumber="<%= room.room_number %>" 
+                                            data-roomnumber="<%= room.room_number %>"
+                                            data-floornumber="<%= room.floor_number %>"
                                             data-department="<%= room.department_id %>"
                                             data-roomtype="<%= room.room_type %>"
                                             data-fieldcapacity="<%= room.capacity || '' %>"
@@ -185,6 +187,10 @@
                 <div class="form-field">
                     <label>Room Number <span style="color:#e53e3e;">*</span></label>
                     <input type="text" id="roomNumber" placeholder="Room 001">
+                </div>
+                <div class="form-field">
+                    <label>Floor <span style="color:#e53e3e;">*</span></label>
+                    <input type="number" id="roomFloor" min="1" max="20" step="1" placeholder="1">
                 </div>
                 <!-- <div class="form-field">
                     <label>Building</label>
@@ -320,10 +326,11 @@ function renderPage() {
     document.getElementById('roomCount').textContent = total;
 }
 
-function openEditRoom(index, roomNumber, departmentId, roomType, assignedFaculty, bleScanner, status ,fieldCapacity) {
+function openEditRoom(index, roomNumber, floorNumber, departmentId, roomType, assignedFaculty, bleScanner, status ,fieldCapacity) {
     editingRoomIndex = index;
     document.getElementById('roomModalTitle').textContent = 'Edit Room';
     document.getElementById('roomNumber').value = roomNumber;
+    document.getElementById('roomFloor').value = floorNumber || '';
     // document.getElementById('roomBuilding').value = building;
     document.getElementById('roomDept').value = departmentId;
     document.getElementById('roomType').value = roomType;
@@ -340,7 +347,7 @@ function closeRoomModal() {
     editingRoomIndex = null;
     document.getElementById('roomModal').classList.remove('show');
     document.getElementById('roomModalTitle').textContent = 'Add Room';
-    ['roomNumber','roomFaculty'].forEach(id => document.getElementById(id).value = '');
+    ['roomNumber','roomFloor','roomFaculty'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('roomDept').value = '';
     document.getElementById('roomType').value = 'Faculty Office';
     document.getElementById('roomBle').value = 'false';
@@ -353,6 +360,7 @@ function getAllRows() {
 
 async function saveRoom() {
     const roomNumber = document.getElementById('roomNumber').value.trim();
+    const floorNumber = document.getElementById('roomFloor').value.trim();
     const department = document.getElementById('roomDept').value;
     const roomType = document.getElementById('roomType').value;
     const bleStatus = document.getElementById('roomBle').value === 'true' ? 1 : 0;
@@ -360,6 +368,11 @@ async function saveRoom() {
     const status = document.getElementById('roomStatus').value;
 
     if (!roomNumber) { showToast('error', 'Required', 'Room number is required.'); return; }
+    if (!floorNumber) { showToast('error', 'Required', 'Floor number is required.'); return; }
+    if (!Number.isInteger(Number(floorNumber)) || Number(floorNumber) < 1 || Number(floorNumber) > 20) {
+        showToast('error', 'Invalid', 'Floor must be a whole number between 1 and 20.');
+        return;
+    }
     if (!department) { showToast('error', 'Required', 'Please select a department.'); return; }
     if (!roomType) { showToast('error', 'Required', 'Please select a room type.'); return; }
     const action = editingRoomIndex !== null ? 'updated' : 'added';
@@ -377,9 +390,9 @@ async function saveRoom() {
 
     const payload = {
         roomNumber,
+        floorNumber: Number(floorNumber),
         department,
         roomType,
-        capacity,
         bleStatus,
         assignedFaculty,
         status,
@@ -504,6 +517,7 @@ document.addEventListener('click', e => {
     openEditRoom(
         d.index,
         d.roomnumber,
+        d.floornumber,
         d.department,
         d.roomtype,
         d.assignedfaculty,

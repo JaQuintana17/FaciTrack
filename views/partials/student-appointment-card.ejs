@@ -76,6 +76,36 @@
             </div>
         </div>
         <% } %>
+
+        <%# An online consultation's venue is its link, and the card showed the
+            room for a face-to-face one while saying only "Online" for this.
+            Joining is offered while the consultation is still going to happen;
+            once it is over or called off the link is shown but not pushed, so
+            a past booking can still be looked up without inviting anyone into
+            a meeting that is finished. %>
+        <% if (apt.mode === 'Online' && apt.status !== 'declined') { %>
+        <div class="apt-list-row">
+            <div class="apt-list-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+            </div>
+            <div class="apt-link-block">
+                <p class="apt-list-label">Meeting link</p>
+                <% if (apt.meetingLink) { %>
+                    <div class="apt-link-row">
+                        <a class="apt-link-url" href="<%= apt.meetingLink %>" target="_blank" rel="noopener noreferrer"><%= apt.meetingLink %></a>
+                        <div class="apt-link-actions">
+                            <% if (apt.status === 'pending' || apt.status === 'confirmed') { %>
+                                <a class="apt-link-btn primary" href="<%= apt.meetingLink %>" target="_blank" rel="noopener noreferrer">Join</a>
+                            <% } %>
+                            <button type="button" class="apt-link-btn" data-copy-link="<%= apt.meetingLink %>">Copy</button>
+                        </div>
+                    </div>
+                <% } else { %>
+                    <p class="apt-list-value muted">Not set yet — it will appear here once your instructor's is ready.</p>
+                <% } %>
+            </div>
+        </div>
+        <% } %>
         <% if (apt.notes && apt.notes.trim() && apt.status !== 'declined') { %>
         <div class="apt-list-row">
             <div class="apt-list-icon">

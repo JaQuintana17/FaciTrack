@@ -112,6 +112,20 @@
                             </div>
 
                             <div class="settings-field">
+                                <label class="settings-label" for="presenceRssiExitMargin">Exit margin (dB)</label>
+                                <input type="number" class="settings-input" id="presenceRssiExitMargin" min="0" max="30" step="1"
+                                       value="<%= settings.presence_rssi_exit_margin %>">
+                                <p class="settings-hint">Once someone counts as in a room they stay in until they fall this far below the threshold. It stops a person sitting near the cutoff flickering in and out as the signal wavers. With a threshold of <%= settings.presence_rssi_threshold %> dBm they would enter at <%= settings.presence_rssi_threshold %> and only leave below <%= settings.presence_rssi_threshold - settings.presence_rssi_exit_margin %>. Set 0 for a single hard cutoff.</p>
+                            </div>
+
+                            <div class="settings-field">
+                                <label class="settings-label" for="presenceRoomSwitchMargin">Room switch margin (dB)</label>
+                                <input type="number" class="settings-input" id="presenceRoomSwitchMargin" min="0" max="30" step="1"
+                                       value="<%= settings.presence_room_switch_margin %>">
+                                <p class="settings-hint">When two rooms can both hear the same tag, the room already holding someone keeps them until another room hears them this much more strongly. Without it presence flips to whichever scanner reported most recently. Raise it if people flicker between adjacent rooms; if that keeps happening, the two rooms overlap and one needs a tighter threshold instead. At 0 the strongest reading still wins — there is just no dead band, so a single dB is enough to move somebody.</p>
+                            </div>
+
+                            <div class="settings-field">
                                 <label class="settings-label" for="presenceAbsentAfter">Mark absent after (seconds)</label>
                                 <input type="number" class="settings-input" id="presenceAbsentAfter" min="30" max="3600" step="1"
                                        value="<%= settings.presence_absent_after_sec %>">

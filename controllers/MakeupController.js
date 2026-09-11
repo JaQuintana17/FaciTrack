@@ -182,7 +182,8 @@ const MakeupController = {
             });
         } catch (err) {
             console.error('[MakeupController.renderRequestList]', err);
-            res.status(500).send('Failed to load make-up requests.');
+            // Rendered by the error page rather than written as bare text.
+            throw err;
         }
     },
 
@@ -250,7 +251,8 @@ const MakeupController = {
             });
         } catch (err) {
             console.error('[MakeupController.renderRequestForm]', err);
-            res.status(500).send('Failed to load the request form.');
+            // Rendered by the error page rather than written as bare text.
+            throw err;
         }
     },
 
@@ -460,7 +462,8 @@ const MakeupController = {
             fs.createReadStream(doc.file_path).pipe(res);
         } catch (err) {
             console.error('[MakeupController.downloadDocument]', err);
-            res.status(500).send('Failed to load the document.');
+            // Rendered by the error page rather than written as bare text.
+            throw err;
         }
     },
 
@@ -516,7 +519,8 @@ const MakeupController = {
             });
         } catch (err) {
             console.error('[MakeupController.renderDeanQueue]', err);
-            res.status(500).send('Failed to load make-up requests.');
+            // Rendered by the error page rather than written as bare text.
+            throw err;
         }
     },
 

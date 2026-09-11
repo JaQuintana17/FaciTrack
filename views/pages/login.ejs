@@ -5,6 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FaciTrack - Login</title>
   <link rel="icon" href="/images/FaciTrack-logo.png" type="image/png">
+
+  <%# This page has its own <head> rather than partials/header, so the PWA tags
+      have to be repeated here. Without them the login screen — the page most
+      people arrive on — offers no install, only a bookmark shortcut. %>
+  <meta name="theme-color" content="#0A3D62">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/images/icon-maskable-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
@@ -118,16 +125,22 @@
 
       <form action="/login" method="POST" class="login-form" id="loginForm" novalidate>
 
+        <% const enteredEmail = (typeof email !== 'undefined' && email) ? email : ''; %>
+
         <!-- Email field -->
         <div class="form-group">
           <label for="email" class="form-label">Email / Username <span class="required">*</span></label>
+          <%# Kept across a failed attempt so only the password has to be retyped.
+              Focus follows: the email field when empty, the password when it is
+              already filled in — which is the field they actually need. %>
           <input
             type="email"
             id="email"
             name="email"
+            value="<%= enteredEmail %>"
             class="form-input <%= (error && error !== 'Please enter your password.') ? 'input-error' : '' %>"
             placeholder="Enter your email"
-            autofocus>
+            <%= enteredEmail ? '' : 'autofocus' %>>
           <!-- Client-side empty validation -->
           <span class="field-error" id="emailError">Email is required.</span>
           <!-- Server-side error -->
@@ -146,7 +159,8 @@
             id="password"
             name="password"
             class="form-input <%= (error === 'Please enter your password.') ? 'input-error' : '' %>"
-            placeholder="Enter your password">
+            placeholder="Enter your password"
+            <%= enteredEmail ? 'autofocus' : '' %>>
           <!-- Client-side empty validation -->
           <span class="field-error" id="passwordError">Password is required.</span>
           <!-- Server-side error -->
@@ -231,6 +245,17 @@
   </div>
 
 </main>
+
+<%# Registers the service worker, which installability also requires. This page
+    does not load main.js, so it is done inline rather than pulling the whole
+    bundle onto a screen that needs none of it. %>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('/sw.js').catch(function () {});
+    });
+  }
+</script>
 
 </body>
 </html>

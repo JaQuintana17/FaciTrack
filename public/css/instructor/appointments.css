@@ -865,3 +865,25 @@
 .day-panel-btn.mode:hover { background:#e0e7ff; border-color:#6366f1; }
 .day-panel-btn.complete { background:#f0fdfa; color:#115e59; border-color:#5eead4; }
 .day-panel-btn.complete:hover { background:#ccfbf1; border-color:#0d9488; }
+
+/* ── Meeting link in the consultation popover ──────────────────────────────
+   The URL wraps rather than being clipped — a link you cannot read in full is
+   one you cannot check before joining. */
+.pop-link-val {
+  display: flex; flex-direction: column; align-items: flex-start; gap: .35rem; min-width: 0;
+}
+.pop-link-val a {
+  color: var(--primary-blue); text-decoration: none; word-break: break-all;
+  font-weight: 600; min-width: 0;
+}
+.pop-link-val a:hover { text-decoration: underline; }
+.pop-link-val a[aria-disabled="true"] {
+  color: var(--gray-500); font-weight: 400; font-style: italic; cursor: default;
+}
+.pop-link-val a[aria-disabled="true"]:hover { text-decoration: none; }
+.pop-link-copy {
+  padding: .22rem .55rem; border: 1.5px solid var(--gray-300); border-radius: var(--radius-md);
+  background: #fff; color: var(--gray-700); font-family: var(--font-body);
+  font-size: .68rem; font-weight: 700; cursor: pointer; white-space: nowrap; flex-shrink: 0;
+}
+.pop-link-copy:hover { border-color: var(--primary-blue); color: var(--primary-blue); }

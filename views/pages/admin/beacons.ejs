@@ -90,7 +90,7 @@
                                     <td>
                                         <% if (s.tags_heard) { %>
                                             <span class="bx-range"><%= s.strongest %> … <%= s.weakest %> dBm</span>
-                                            <span class="bx-muted bx-sub"><%= s.tags_heard %> tag<%= s.tags_heard === 1 ? '' : 's' %> in 5 min</span>
+                                            <span class="bx-muted bx-sub"><%= s.tags_heard %> assigned tag<%= s.tags_heard === 1 ? '' : 's' %> in 5 min</span>
                                         <% } else { %>
                                             <span class="bx-muted">nothing heard</span>
                                         <% } %>
@@ -132,11 +132,67 @@
                 </div>
             </div>
 
+            <!-- ── Adding a tag ── -->
+            <%#
+              Unknown tags are not recorded by default. A scanner hears every
+              phone that walks past, and most of those addresses rotate every
+              few minutes, so storing them filled the table without ever
+              yielding anything assignable — and kept a record of passers-by
+              that this system has no reason to hold.
+            %>
+            <div class="content-card" id="discoveryCard">
+              <div class="card-header">
+                <h3 class="card-title">Add a tag</h3>
+                <span class="bx-muted bx-sub" id="discoveryState">
+                  <%= discovery.open ? 'Listening now' : 'Not listening' %>
+                </span>
+              </div>
+              <div class="card-body">
+                <p class="bx-muted" style="margin-bottom:1rem;line-height:1.6">
+                  New tags are only written down while you are listening. Start
+                  listening, then hold the tag against the scanner in that room —
+                  it will appear at the top of the list below, as the strongest signal.
+                </p>
+
+                <div class="bx-discover-row">
+                  <div class="bx-field">
+                    <label for="discoveryRoom">Room</label>
+                    <select class="bx-select" id="discoveryRoom">
+                      <option value="">Any room with a scanner</option>
+                      <% scanners.forEach(s => { if (s.room_id) { %>
+                        <option value="<%= s.room_id %>"><%= s.room_number %></option>
+                      <% } }); %>
+                    </select>
+                  </div>
+                  <div class="bx-field">
+                    <label for="discoveryMinutes">For</label>
+                    <select class="bx-select" id="discoveryMinutes">
+                      <option value="2">2 minutes</option>
+                      <option value="3" selected>3 minutes</option>
+                      <option value="5">5 minutes</option>
+                      <option value="10">10 minutes</option>
+                    </select>
+                  </div>
+                  <button type="button" class="bx-btn primary" id="discoveryStart">Start listening</button>
+                  <button type="button" class="bx-btn" id="discoveryStop" hidden>Stop</button>
+                  <span class="bx-countdown" id="discoveryCountdown" hidden></span>
+                </div>
+
+                <div class="bx-prune">
+                  <span class="bx-muted">
+                    <strong id="beaconCountAssigned"><%= counts.assigned %></strong> assigned,
+                    <strong id="beaconCountUnassigned"><%= counts.unassigned %></strong> unclaimed
+                  </span>
+                  <button type="button" class="bx-btn danger" id="beaconPrune">Remove unclaimed tags</button>
+                </div>
+              </div>
+            </div>
+
             <!-- ── Tags ── -->
             <div class="content-card">
                 <div class="card-header">
                     <h3 class="card-title">Tags <span class="bx-muted">(<%= beacons.length %>)</span></h3>
-                    <span class="bx-muted bx-sub">A new tag appears here by itself once a scanner hears it</span>
+                    <span class="bx-muted bx-sub">Strongest signal first while listening</span>
                 </div>
                 <div class="card-body" style="padding:0">
                     <% if (!beacons.length) { %>
@@ -161,6 +217,11 @@
                                     </td>
                                     <td>
                                         <span class="bx-mono"><%= b.mac_address %></span>
+                                        <%# A rotating address looks identical to a tag in a list of
+                                            MACs. Saying so here is what stops an instructor being
+                                            bound to a phone that renames itself within the hour. %>
+                                        <span class="bx-addr <%= b.address.assignable ? 'fixed' : 'rotating' %>"
+                                              title="<%= b.address.note %>"><%= b.address.label %></span>
                                         <% if (b.ibeacon_major !== null && b.ibeacon_major !== undefined) { %>
                                             <span class="bx-muted bx-sub">iBeacon <%= b.ibeacon_major %>/<%= b.ibeacon_minor %></span>
                                         <% } %>
@@ -193,6 +254,7 @@
                                     </td>
                                     <td>
                                         <div class="bx-actions">
+                                            <button class="bx-btn" data-action="signal" title="Recent signal readings, for setting a threshold">Signal</button>
                                             <button class="bx-btn primary" data-action="save">Save</button>
                                             <button class="bx-btn danger" data-action="remove" title="Forget this tag">Remove</button>
                                         </div>
@@ -208,6 +270,33 @@
 
         </div>
     </main>
+</div>
+
+<!-- ── Signal history ──
+     Opened from a tag's Signal button. Everything in it is drawn from
+     /admin/beacons/:id/signal, so nothing is rendered until it is asked for. -->
+<div class="bx-modal" id="signalModal" hidden>
+  <div class="bx-modal-card" role="dialog" aria-modal="true" aria-labelledby="signalTitle">
+    <div class="bx-modal-head">
+      <div>
+        <h3 id="signalTitle">Signal history</h3>
+        <span class="bx-muted bx-sub" id="signalSubtitle"></span>
+      </div>
+      <button type="button" class="bx-modal-close" id="signalClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="bx-modal-body" id="signalBody"></div>
+    <div class="bx-modal-foot">
+      <div class="bx-field">
+        <label for="signalWindow">Window</label>
+        <select class="bx-select" id="signalWindow">
+          <option value="15">Last 15 minutes</option>
+          <option value="60" selected>Last hour</option>
+          <option value="240">Last 4 hours</option>
+        </select>
+      </div>
+      <button type="button" class="bx-btn" id="signalRefresh">Refresh</button>
+    </div>
+  </div>
 </div>
 
 <div class="toast-container" id="toastContainer"></div>

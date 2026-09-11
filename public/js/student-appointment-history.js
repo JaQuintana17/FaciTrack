@@ -105,4 +105,46 @@
             setTimeout(function () { card.classList.remove('is-target'); }, 4000);
         }
     }
+
+    /* ── Copying a meeting link ──
+       Joining from the phone you booked on is one tap, but the common case is
+       booking on a phone and joining from a laptop, and that needs the link
+       out of the page. Delegated, so cards re-rendered by the filter keep
+       working. */
+    document.addEventListener('click', function (e) {
+        var btn = e.target.closest('[data-copy-link]');
+        if (!btn) return;
+
+        var link = btn.getAttribute('data-copy-link');
+        var restore = function () { btn.textContent = 'Copy'; };
+
+        function fallback() {
+            // clipboard.writeText needs a secure context, and this app is
+            // reached over plain http on the campus network as well as https.
+            var field = document.createElement('textarea');
+            field.value = link;
+            field.setAttribute('readonly', '');
+            field.style.position = 'fixed';
+            field.style.opacity = '0';
+            document.body.appendChild(field);
+            field.select();
+            var ok = false;
+            try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
+            document.body.removeChild(field);
+            return ok;
+        }
+
+        function done(ok) {
+            btn.textContent = ok ? 'Copied' : 'Press Ctrl+C';
+            if (ok) showToast('success', 'Copied', 'The meeting link is on your clipboard.');
+            setTimeout(restore, 2000);
+        }
+
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(link).then(function () { done(true); },
+                function () { done(fallback()); });
+        } else {
+            done(fallback());
+        }
+    });
 }());

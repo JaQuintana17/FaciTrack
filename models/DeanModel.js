@@ -97,6 +97,48 @@ const DeanModel = {
     },
 
     /**
+     * Booking requests in this dean's department that no instructor has
+     * answered yet.
+     *
+     * Scoped the same way getFaculty() is — through the dean's own
+     * department_id — so a dean only ever sees their own faculty.
+     *
+     * Only consultations still in the future are counted. A request for a slot
+     * that has already passed is a different problem: nobody can approve it
+     * now, and listing it as "waiting" would imply an action that no longer
+     * exists.
+     *
+     * @param {number} staleHours  a request counts as unanswered after this long
+     */
+    async getUnansweredRequests(deanPublicId, { staleHours = 48 } = {}) {
+        const [rows] = await pool.execute(
+            `SELECT a.id,
+                    a.created_at,
+                    a.topic,
+                    a.mode,
+                    TIMESTAMPDIFF(HOUR, a.created_at, NOW())      AS waiting_hours,
+                    TIMESTAMPDIFF(HOUR, a.created_at, NOW()) >= ? AS is_stale,
+                    ch.consultation_date,
+                    ch.start_time,
+                    ch.end_time,
+                    CONCAT(i.first_name, ' ', i.last_name) AS instructor_name,
+                    CONCAT(s.first_name, ' ', s.last_name) AS student_name,
+                    a.student_number
+               FROM appointments a
+               JOIN consultation_hours ch ON a.consultation_hour_id = ch.id
+               JOIN users i ON a.instructor_id = i.id
+               JOIN users s ON a.student_id    = s.id
+               JOIN users dean ON dean.public_id = ?
+              WHERE a.status = 'pending'
+                AND i.department_id <=> dean.department_id
+                AND TIMESTAMP(ch.consultation_date, ch.start_time) > NOW()
+              ORDER BY a.created_at ASC`,
+            [staleHours, deanPublicId]
+        );
+        return rows;
+    },
+
+    /**
      * The presence feed for the Presence Logs page.
      *
      * `faculty_presence` holds one row per instructor and is updated in place,

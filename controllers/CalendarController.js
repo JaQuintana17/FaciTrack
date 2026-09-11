@@ -1,7 +1,6 @@
 const CalendarModel = require('../models/CalendarModel');
 const UserModel = require('../models/UserModel');
 const AuditLogModel = require('../models/AuditLogModel');
-const { FeedError } = require('../services/calendar-feed');
 const { todayKey, addDays } = require('../utils/wallClock');
 
 /**
@@ -20,38 +19,6 @@ const CalendarController = {
         } catch (err) {
             console.error('[CalendarController.listConnections]', err);
             res.status(500).json({ success: false, error: 'Could not load your calendars.' });
-        }
-    },
-
-    async addConnection(req, res) {
-        try {
-            const result = await CalendarModel.addConnection(req.session.userId, {
-                url: req.body.url,
-                displayName: req.body.displayName,
-                blockingRule: req.body.blockingRule,
-                autoSync: req.body.autoSync !== false && req.body.autoSync !== 'false',
-                importTitles: req.body.importTitles !== false && req.body.importTitles !== 'false',
-            });
-
-            if (!result.success) {
-                return res.status(400).json({ success: false, error: 'That calendar could not be added.' });
-            }
-
-            await log(req, 'Connected an external calendar');
-            res.json({
-                success: true,
-                id: result.id,
-                imported: result.imported,
-                pending: result.pending,
-                connections: await CalendarModel.getConnections(req.session.userId),
-            });
-        } catch (err) {
-            // A bad address is the instructor's to fix, not a server fault
-            if (err instanceof FeedError) {
-                return res.status(422).json({ success: false, error: err.message });
-            }
-            console.error('[CalendarController.addConnection]', err);
-            res.status(500).json({ success: false, error: 'Could not add that calendar.' });
         }
     },
 

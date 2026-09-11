@@ -402,6 +402,34 @@
     toast('Block removed', 'info');
   }
 
+  /* ── Clear all ── */
+
+  // A make-up class block is created by an approved request, so it is not the
+  // instructor's to delete from here — same rule confirmRemoveBlock enforces.
+  // WorkloadModel.pruneBlocks holds the server half of it.
+  function clearableKeys() {
+    return Object.keys(blocks).filter(k => blocks[k].type !== 'Make Up Class');
+  }
+
+  function openClearConfirm() {
+    const removable = clearableKeys().length;
+    if (!removable) { toast('There is nothing to clear.', 'info'); return; }
+
+    const kept = Object.keys(blocks).length - removable;
+    document.getElementById('clearMeta').textContent =
+      `This removes ${removable} class block${removable === 1 ? '' : 's'}` +
+      (kept ? `, and keeps ${kept} make-up class block${kept === 1 ? '' : 's'}.` : '.');
+    showMo('clearModal');
+  }
+
+  function confirmClearAll() {
+    clearableKeys().forEach(k => { delete blocks[k]; });
+    hideMo('clearModal');
+    renderBlocks();   // also repaints the legend
+    autoSave();
+    toast('Schedule cleared', 'info');
+  }
+
   /* ── Modal ── */
   function openModal(key, day, startSlot, endSlot) {
     editingKey = key;
@@ -748,7 +776,7 @@ body{font-family:Arial,sans-serif;font-size:7.5pt;color:#000;background:#fff;-we
     setTimeout(() => el.remove(), 3000);
   }
 
-  /* ── Import from a workload form (.docx) ── */
+  /* ── Import from a workload form (.docx or .pdf) ── */
 
   let importData = null;
 
@@ -857,6 +885,54 @@ body{font-family:Arial,sans-serif;font-size:7.5pt;color:#000;background:#fff;-we
       : 'My schedule is empty, so nothing is removed';
   }
 
+  /** One imported row, resolved into the shape `blocks` stores. */
+  function prepareImported(b, chosen, rooms) {
+    const roomId = b.roomLabel in chosen ? chosen[b.roomLabel] : (b.roomId || null);
+    const room = rooms.find(o => String(o.id) === String(roomId));
+    const type = typeForRoomType(room && room.type, b.type);
+
+    return {
+      day: b.day,
+      startSlot: b.startSlot,
+      endSlot: b.endSlot,
+      subjectCode: b.subjectCode,
+      // The form carries codes only — the instructor fills in real names later.
+      subjectName: b.subjectName || b.subjectCode,
+      roomId: roomId || null,
+      room: room ? room.label : b.roomLabel,
+      section: b.section || '',
+      type,
+      color: typeColor(type),
+    };
+  }
+
+  /**
+   * Existing blocks an incoming one would sit on top of. Two blocks cannot share
+   * hours on the same day, so one of them has to give way. Make-up classes are
+   * never candidates: they belong to an approved request.
+   */
+  function overlappingKeys(b) {
+    return Object.keys(blocks).filter(k => {
+      const e = blocks[k];
+      return e.day === b.day && e.type !== 'Make Up Class'
+        && b.startSlot < e.endSlot && e.startSlot < b.endSlot;
+    });
+  }
+
+  /**
+   * Make-up classes an incoming block would land on. Excluding them from
+   * overlappingKeys only stops them being deleted — writing blocks[day_slot]
+   * would still overwrite one that happens to share the key. The import has to
+   * give way instead, so these rows are skipped rather than offered as a choice.
+   */
+  function makeupCollisions(b) {
+    return Object.keys(blocks).filter(k => {
+      const e = blocks[k];
+      return e.type === 'Make Up Class' && e.day === b.day
+        && b.startSlot < e.endSlot && e.startSlot < b.endSlot;
+    });
+  }
+
   function applyImport() {
     if (!importData) return;
 
@@ -869,51 +945,117 @@ body{font-family:Arial,sans-serif;font-size:7.5pt;color:#000;background:#fff;-we
       chosen[sel.dataset.roomLabel] = sel.value || null;
     });
 
-    // Make-up classes are the dean's, not the instructor's, so a replace never
-    // touches them — matching what the server does when it prunes.
+    const prepared = importData.blocks.map(b => prepareImported(b, chosen, rooms));
+
+    // Replace was already an explicit "clear my schedule first", so there is
+    // nothing left to ask about. Make-up classes survive it, matching what the
+    // server does when it prunes.
     if (mode === 'replace') {
       Object.keys(blocks).forEach(k => {
         if (blocks[k].type !== 'Make Up Class') delete blocks[k];
       });
+      commitImport(prepared, prepared.map(() => 'incoming'));
+      return;
     }
 
-    let added = 0;
-    let displaced = 0;
-    importData.blocks.forEach(b => {
-      // Anything already sitting in this block's hours has to go, or the two
-      // would render on top of each other.
-      Object.entries(blocks).forEach(([k, e]) => {
-        if (e.day !== b.day || e.type === 'Make Up Class') return;
-        if (b.startSlot < e.endSlot && e.startSlot < b.endSlot) { delete blocks[k]; displaced++; }
-      });
+    // Merge promises to keep what is already there, so an overlap is a question
+    // rather than something to resolve quietly in the importer's favour.
+    const conflicts = prepared.map(overlappingKeys);
+    if (!conflicts.some(keys => keys.length)) {
+      commitImport(prepared, prepared.map(() => 'incoming'));
+      return;
+    }
 
-      const roomId = b.roomLabel in chosen ? chosen[b.roomLabel] : (b.roomId || null);
-      const room = rooms.find(o => String(o.id) === String(roomId));
-      const type = typeForRoomType(room && room.type, b.type);
+    pendingMerge = {
+      prepared,
+      conflicts,
+      // Conflicting rows default to keeping what the instructor already has;
+      // everything else imports as normal.
+      decisions: prepared.map((_, i) => (conflicts[i].length ? 'existing' : 'incoming')),
+    };
+    hideMo('importModal');
+    renderMergeConflicts();
+    showMo('mergeConflictModal');
+  }
 
-      blocks[`${b.day}_${b.startSlot}`] = {
-        day: b.day,
-        startSlot: b.startSlot,
-        endSlot: b.endSlot,
-        subjectCode: b.subjectCode,
-        // The form carries codes only — the instructor fills in real names later.
-        subjectName: b.subjectName || b.subjectCode,
-        roomId: roomId || null,
-        room: room ? room.label : b.roomLabel,
-        section: b.section || '',
-        type,
-        color: typeColor(type),
-      };
+  /* ── Import: merge conflicts ── */
+
+  // Held only while the conflict dialog is open.
+  let pendingMerge = null;
+
+  function renderMergeConflicts() {
+    const { prepared, conflicts, decisions } = pendingMerge;
+    const rows = [];
+
+    prepared.forEach((b, i) => {
+      if (!conflicts[i].length) return;
+
+      const mine = conflicts[i].map(k => {
+        const e = blocks[k];
+        const where = e.room ? ` · ${esc(e.room)}` : '';
+        return `${esc(e.subjectCode)} · ${esc(rangeLabel(e.startSlot, e.endSlot))}${where}`;
+      }).join('<br>');
+
+      const incoming = `${esc(b.subjectCode)} · ${esc(rangeLabel(b.startSlot, b.endSlot))}`
+        + (b.section ? ` · ${esc(b.section)}` : '');
+
+      rows.push(
+        `<div class="mc-row" data-i="${i}">
+           <p class="mc-when">${esc(b.day)} · ${esc(rangeLabel(b.startSlot, b.endSlot))}</p>
+           <div class="mc-opts">
+             <label class="imp-radio">
+               <input type="radio" name="mc${i}" value="existing"${decisions[i] === 'existing' ? ' checked' : ''}>
+               <span><strong>Keep mine</strong><small>${mine}</small></span>
+             </label>
+             <label class="imp-radio">
+               <input type="radio" name="mc${i}" value="incoming"${decisions[i] === 'incoming' ? ' checked' : ''}>
+               <span><strong>Use imported</strong><small>${incoming}</small></span>
+             </label>
+           </div>
+         </div>`
+      );
+    });
+
+    document.getElementById('mcMeta').textContent =
+      `${rows.length} imported class${rows.length === 1 ? '' : 'es'} overlap${rows.length === 1 ? 's' : ''} your schedule.`;
+    document.getElementById('mcList').innerHTML = rows.join('');
+  }
+
+  function setAllMergeDecisions(value) {
+    if (!pendingMerge) return;
+    pendingMerge.conflicts.forEach((keys, i) => {
+      if (keys.length) pendingMerge.decisions[i] = value;
+    });
+    renderMergeConflicts();
+  }
+
+  /**
+   * Write the prepared blocks in, honouring one decision per row.
+   * Overlaps are recomputed here rather than reused from the dialog: an earlier
+   * row in this same pass may already have changed what is on the grid.
+   */
+  function commitImport(prepared, decisions) {
+    let added = 0, displaced = 0, kept = 0, blocked = 0;
+
+    prepared.forEach((b, i) => {
+      if (decisions[i] === 'existing') { kept++; return; }
+      if (makeupCollisions(b).length) { blocked++; return; }
+      overlappingKeys(b).forEach(k => { delete blocks[k]; displaced++; });
+      blocks[`${b.day}_${b.startSlot}`] = b;
       added++;
     });
 
+    pendingMerge = null;
+    hideMo('mergeConflictModal');
     hideMo('importModal');
     renderBlocks();
     autoSave();
 
-    toast(displaced && mode === 'merge'
-      ? `Imported ${added} classes · ${displaced} overlapping block${displaced === 1 ? '' : 's'} replaced`
-      : `Imported ${added} classes`, 'success');
+    const parts = [`Imported ${added} class${added === 1 ? '' : 'es'}`];
+    if (displaced) parts.push(`${displaced} block${displaced === 1 ? '' : 's'} replaced`);
+    if (kept) parts.push(`${kept} of yours kept`);
+    if (blocked) parts.push(`${blocked} skipped over a make-up class`);
+    toast(parts.join(' · '), blocked ? 'info' : 'success');
   }
 
   /* ── Wire ── */
@@ -992,7 +1134,33 @@ body{font-family:Arial,sans-serif;font-size:7.5pt;color:#000;background:#fff;-we
     document.getElementById('removeBlockCancel').addEventListener('click', () => hideMo('removeBlockModal'));
     document.getElementById('removeBlockConfirm').addEventListener('click', confirmRemoveBlock);
 
-    ['cellModal', 'clearModal', 'exportModal', 'removeBlockModal', 'importModal'].forEach(id => {
+    // Merge conflicts
+    document.getElementById('mcList').addEventListener('change', function (e) {
+      const input = e.target.closest('input[type="radio"]');
+      const row = input && input.closest('.mc-row');
+      if (row && pendingMerge) pendingMerge.decisions[Number(row.dataset.i)] = input.value;
+    });
+    document.getElementById('mcKeepAll').addEventListener('click', () => setAllMergeDecisions('existing'));
+    document.getElementById('mcTakeAll').addEventListener('click', () => setAllMergeDecisions('incoming'));
+    document.getElementById('mcConfirm').addEventListener('click', () => {
+      if (pendingMerge) commitImport(pendingMerge.prepared, pendingMerge.decisions);
+    });
+    // Back returns to the preview with the import still loaded; close abandons it.
+    document.getElementById('mcCancel').addEventListener('click', () => {
+      pendingMerge = null;
+      hideMo('mergeConflictModal');
+      showMo('importModal');
+    });
+    document.getElementById('mcClose').addEventListener('click', () => {
+      pendingMerge = null;
+      hideMo('mergeConflictModal');
+    });
+
+    document.getElementById('btnClearWorkload').addEventListener('click', openClearConfirm);
+    document.getElementById('clearCancel').addEventListener('click', () => hideMo('clearModal'));
+    document.getElementById('clearConfirm').addEventListener('click', confirmClearAll);
+
+    ['cellModal', 'clearModal', 'exportModal', 'removeBlockModal', 'importModal', 'mergeConflictModal'].forEach(id => {
       document.getElementById(id)?.addEventListener('click', function (e) {
         if (e.target === this) hideMo(id);
       });

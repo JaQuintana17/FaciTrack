@@ -2,6 +2,8 @@ const crypto = require('crypto');
 const pool = require('../configs/db');
 const secretBox = require('../utils/secretBox');
 const feed = require('../services/calendar-feed');
+const Google = require('../services/google-calendar');
+const GoogleAccountModel = require('./GoogleAccountModel');
 const { todayKey, addDays } = require('../utils/wallClock');
 
 /**
@@ -18,37 +20,52 @@ const CalendarModel = {
     // ── Connections ────────────────────────────────────────────────────────
 
     /**
-     * Subscribe to a feed. The URL is validated and fetched once before
-     * anything is stored, so a bad address fails at the point it was typed.
+     * The instructor's Google connection, created when they connect their
+     * calendar and reused from then on.
+     *
+     * It carries no URL — the events are read through the API using the token
+     * in google_accounts. The row still exists because this is where the
+     * per-calendar preferences live (does an event block bookings, import
+     * titles or busy times only) and because external_events hangs off it.
      */
-    async addConnection(userPublicId, { url, displayName, provider, blockingRule, autoSync, importTitles }) {
-        const [[user]] = await pool.execute(
-            'SELECT id FROM users WHERE public_id = ?', [userPublicId]);
-        if (!user) return { success: false, reason: 'USER_NOT_FOUND' };
-
-        const normalized = feed.normalizeFeedUrl(url).toString();
-        const result = await feed.fetchFeed(normalized);
-        if (result.unchanged) {
-            // Only possible if a caller passed validators; treat as a fresh fetch
-            return { success: false, reason: 'EMPTY' };
-        }
+    async ensureGoogleConnection(userInternalId) {
+        const [[existing]] = await pool.execute(
+            `SELECT id FROM calendar_connections
+              WHERE user_id = ? AND provider = 'google' AND feed_url IS NULL
+              LIMIT 1`,
+            [userInternalId]);
+        if (existing) return existing.id;
 
         const id = crypto.randomUUID();
         await pool.execute(
             `INSERT INTO calendar_connections
                  (id, user_id, provider, display_name, feed_url, feed_hint,
                   auto_sync, blocking_rule, import_titles)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [id, user.id, provider || detectProvider(normalized),
-             String(displayName || '').trim().slice(0, 120) || 'Calendar',
-             secretBox.seal(normalized), secretBox.hint(normalized),
-             autoSync === false ? 0 : 1,
-             ['always', 'never', 'ask'].includes(blockingRule) ? blockingRule : 'ask',
-             importTitles === false ? 0 : 1]
-        );
+             VALUES (?, ?, 'google', 'Google Calendar', NULL, NULL, 1, 'ask', 1)`,
+            [id, userInternalId]);
+        return id;
+    },
 
-        const synced = await this.applyFeed(id, user.id, result);
-        return { success: true, id, ...synced };
+    /** The instructor's Google connection and its preferences, for settings. */
+    async getGoogleConnection(userPublicId) {
+        const [[row]] = await pool.execute(
+            `SELECT c.id, c.blocking_rule, c.import_titles, c.auto_sync,
+                    c.last_synced_at, c.last_status, c.last_error, c.event_count
+               FROM calendar_connections c
+               JOIN users u ON c.user_id = u.id
+              WHERE u.public_id = ? AND c.provider = 'google' AND c.feed_url IS NULL
+              LIMIT 1`,
+            [userPublicId]);
+        return row || null;
+    },
+
+    /** Disconnecting Google takes its imported events with it (ON DELETE CASCADE). */
+    async removeGoogleConnection(userInternalId) {
+        const [result] = await pool.execute(
+            `DELETE FROM calendar_connections
+              WHERE user_id = ? AND provider = 'google' AND feed_url IS NULL`,
+            [userInternalId]);
+        return result.affectedRows > 0;
     },
 
     async getConnections(userPublicId) {
@@ -73,7 +90,9 @@ const CalendarModel = {
               WHERE c.id = ? AND (? IS NULL OR u.public_id = ?)`,
             [connectionId, userPublicId, userPublicId]);
         if (!row) return null;
-        row.url = secretBox.open(row.feed_url);
+        // An API-backed connection stores no URL; only a subscribed feed does.
+        row.apiBacked = row.feed_url === null;
+        row.url = row.apiBacked ? null : secretBox.open(row.feed_url);
         return row;
     },
 
@@ -113,6 +132,9 @@ const CalendarModel = {
     async syncConnection(connectionId, userPublicId = null) {
         const connection = await this.getConnectionForSync(connectionId, userPublicId);
         if (!connection) return { success: false, reason: 'NOT_FOUND' };
+
+        if (connection.apiBacked) return this.syncGoogleConnection(connection);
+
         if (!connection.url) {
             await this.recordFailure(connectionId, 'Saved address could not be read. Reconnect this calendar.');
             return { success: false, reason: 'UNREADABLE' };
@@ -147,6 +169,44 @@ const CalendarModel = {
     },
 
     /**
+     * Pull one Google connection through the Calendar API.
+     *
+     * Reuses applyFeed so the storage rules — upsert on (uid, occurrence),
+     * keep a decision the instructor made by hand, prune what vanished — are
+     * identical whichever way the events arrived.
+     */
+    async syncGoogleConnection(connection) {
+        const token = await GoogleAccountModel.accessTokenFor(connection.user_id);
+        if (!token) {
+            await this.recordFailure(connection.id,
+                'Google access has expired. Reconnect your calendar in Settings.');
+            return { success: false, reason: 'NOT_CONNECTED' };
+        }
+
+        const now = new Date();
+        let events;
+        try {
+            events = await Google.listEvents(token, {
+                timeMin: new Date(now.getTime() - feed.WINDOW_BACK_DAYS * 86400000),
+                timeMax: new Date(now.getTime() + feed.WINDOW_AHEAD_DAYS * 86400000),
+            });
+        } catch (err) {
+            await this.recordFailure(connection.id, err.message);
+            return { success: false, reason: 'FETCH_FAILED', error: err.message };
+        }
+
+        try {
+            const applied = await this.applyFeed(connection.id, connection.user_id, {
+                rows: feed.fromGoogleEvents(events),
+            });
+            return { success: true, unchanged: false, ...applied };
+        } catch (err) {
+            await this.recordFailure(connection.id, 'Those events could not be read.');
+            throw err;
+        }
+    },
+
+    /**
      * Write a fetched feed into external_events.
      *
      * Rows already present keep their blocking decision when the instructor
@@ -160,7 +220,8 @@ const CalendarModel = {
             [connectionId]);
         if (!connection) return { imported: 0, removed: 0, pending: 0 };
 
-        const rows = feed.parseFeed(fetched.body);
+        // Either an ICS body to parse, or rows the Google reader already built.
+        const rows = fetched.rows || feed.parseFeed(fetched.body);
         const conn = await pool.getConnection();
         try {
             await conn.beginTransaction();
@@ -330,12 +391,6 @@ function defaultBlocking(rule, row) {
     if (row.allDay) return false;
     if (rule === 'always') return true;
     return false;   // 'ask' — stays free until the instructor says otherwise
-}
-
-function detectProvider(url) {
-    if (/google\.com/i.test(url)) return 'google';
-    if (/icloud\.com|apple\.com/i.test(url)) return 'apple';
-    return 'other';
 }
 
 module.exports = CalendarModel;

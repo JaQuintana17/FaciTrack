@@ -67,6 +67,8 @@
         presence: function () {
             return saveCard({
                 presence_rssi_threshold: Number(value('presenceRssiThreshold')),
+                presence_rssi_exit_margin: Number(value('presenceRssiExitMargin')),
+                presence_room_switch_margin: Number(value('presenceRoomSwitchMargin')),
                 presence_absent_after_sec: Number(value('presenceAbsentAfter')),
                 presence_scanner_offline_after_sec: Number(value('presenceScannerOffline')),
                 presence_logging_enabled: checked('presenceLoggingEnabled'),

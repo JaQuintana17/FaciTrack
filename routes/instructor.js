@@ -13,6 +13,7 @@ const MakeupController = require('../controllers/MakeupController');
 const CalendarController = require('../controllers/CalendarController');
 const CalendarFeedController = require('../controllers/CalendarFeedController');
 const InstructorEventController = require('../controllers/InstructorEventController');
+const GoogleCalendarController = require('../controllers/GoogleCalendarController');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // ── Document uploads for make-up class requests ──
@@ -418,6 +419,14 @@ router.patch('/appointments/:id/mode', InstructorController.updateAppointmentMod
 // Personal meeting room used for online consultations
 router.patch('/meeting-link', InstructorController.updateDefaultMeetingLink);
 
+// Google Calendar connection — lets online consultations get a real scheduled
+// Meet instead of reusing the static personal room link. The callback sits
+// behind the instructor guard like everything else here; the instructor is
+// already signed in when Google sends them back.
+router.get('/google/connect', GoogleCalendarController.connect);
+router.get('/google/callback', GoogleCalendarController.callback);
+router.delete('/google', GoogleCalendarController.disconnect);
+
 // reschedule appointment routes
 router.get('/appointments/reschedule-options', InstructorController.getRescheduleOptions);
 router.post('/appointments/:id/reschedule', InstructorController.rescheduleAppointment);
@@ -447,7 +456,7 @@ router.delete('/unavailability/:date',     InstructorController.removeUnavailabi
 router.get('/workload', WorkloadController.renderPage);
 router.post('/workload/save', WorkloadController.save);
 
-// Read a CSPC workload form (.docx) and return a preview. The instructor
+// Read a CSPC workload form (.docx or .pdf) and return a preview. The instructor
 // confirms it in the browser; the page's existing save path does the writing.
 router.post('/workload/import', upload.single('workload'), WorkloadImportController.preview);
 // Workload — Load timetable
@@ -576,9 +585,12 @@ router.post('/consultations/:id/decline', (req, res) => {
 // ── Make-Up Class Request routes ──
 // Persistence, conflict checking and notifications live in MakeupController.
 // Specific paths are declared before the /:id ones so they are not swallowed.
-// ── External calendar subscriptions (Google / Apple / any ICS feed) ──
+// ── The instructor's own calendar, read through the Google API ──
+// Connecting and disconnecting live on /google above; these manage the
+// preferences and the pull. There is no longer a subscribe-by-URL route:
+// pasting a secret iCal address was replaced by the Google connection, which
+// is both simpler to set up and hours fresher.
 router.get('/calendar/connections',        CalendarController.listConnections);
-router.post('/calendar/connections',       CalendarController.addConnection);
 router.patch('/calendar/connections/:id',  CalendarController.updateConnection);
 router.delete('/calendar/connections/:id', CalendarController.removeConnection);
 router.post('/calendar/sync',              CalendarController.sync);
@@ -595,7 +607,6 @@ router.get('/events',                InstructorEventController.list);
 router.post('/events/conflicts',     InstructorEventController.conflicts);
 router.post('/events',               InstructorEventController.create);
 router.patch('/events/:id',          InstructorEventController.update);
-router.patch('/events/:id/done',     InstructorEventController.toggleDone);
 router.delete('/events/:id',         InstructorEventController.remove);
 
 router.get('/calendar/feed-link',    CalendarFeedController.getMine);

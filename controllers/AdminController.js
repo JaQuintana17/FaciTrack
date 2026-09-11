@@ -13,7 +13,117 @@ const { buildAdminUser } = require('../utils/sessionUser');
 // dashboard breakdown cannot drift from the column definition.
 const EMPLOYMENT_TYPES = ['Permanent', 'Job Order', 'Co-Terminus', 'Casual', 'COS', 'Temporary'];
 
+// Highest floor the form will accept. CSPC's tallest academic building is far
+// short of this; the bound exists to catch a typo, not to describe a building.
+const MAX_FLOOR = 20;
+
+/**
+ * Floor number is required on every room, but rooms.floor_number carries
+ * DEFAULT 1 — this server does not run in strict mode, so a missing value would
+ * otherwise be accepted silently. This is where "required" is actually enforced,
+ * and where it can explain itself. Shared by createRoom and updateRoom so the
+ * two cannot disagree about what a valid floor is.
+ *
+ * @returns {{floorNumber?: string}} empty when valid
+ */
+function validateFloor(raw) {
+    if (raw === undefined || raw === null || String(raw).trim() === '') {
+        return { floorNumber: 'Floor Number is required.' };
+    }
+    const floor = Number(raw);
+    if (!Number.isInteger(floor) || floor < 1 || floor > MAX_FLOOR) {
+        return { floorNumber: `Floor Number must be a whole number between 1 and ${MAX_FLOOR}.` };
+    }
+    return {};
+}
+
+const DisplayDeviceModel = require('../models/DisplayDeviceModel');
+const tagDiscovery = require('../services/tag-discovery');
+const { describeAddress } = require('../utils/bleAddress');
+const { timeAgo } = require('../utils/timeFormat');
+
+/**
+ * Screens outside the Faculty Lounges.
+ *
+ * A panel cannot sign in, so the device is authorised instead: it shows a code
+ * and an admin adopts it here, choosing which lounge it belongs to. Until then
+ * the screen has no board and no department.
+ */
+const DisplayAdmin = {
+
+    async renderDisplaysPage(req, res) {
+        const [devices, departments] = await Promise.all([
+            DisplayDeviceModel.list(),
+            DepartmentModel.getDepartments(),
+        ]);
+
+        res.render('pages/admin/displays', {
+            title: 'FaciTrack - Displays',
+            admin: buildAdminUser(req.session),
+            departments,
+            devices: devices.map(d => ({
+                ...d,
+                lastSeenLabel: d.last_seen_at ? timeAgo(d.last_seen_at) : 'never',
+            })),
+        });
+    },
+
+    async approveDisplay(req, res) {
+        const departmentId = parseInt(req.body.departmentId, 10);
+        if (!departmentId) {
+            return res.status(422).json({ success: false, error: 'Choose which Faculty Lounge this screen is outside of.' });
+        }
+
+        const me = await UserModel.getUserByPublicId(req.session.userId);
+        const result = await DisplayDeviceModel.approveByCode(req.body.code, {
+            departmentId,
+            label: req.body.label,
+            approvedBy: me ? me.internal_id : null,
+        });
+
+        if (!result.success) {
+            const messages = {
+                NOT_FOUND: 'No screen is showing that code. Check the screen and try again.',
+                CODE_EXPIRED: 'That code has expired. Use the one now showing on the screen.',
+                ALREADY_APPROVED: 'That screen is already approved.',
+            };
+            return res.status(404).json({ success: false, error: messages[result.reason] || 'Could not approve that screen.' });
+        }
+
+        try {
+            await AuditLogModel.log(me.internal_id, me.role, 'Approved a lounge display', 'settings');
+        } catch (err) {
+            console.error('[AuditLog] Failed to log display approval:', err);
+        }
+
+        res.json({ success: true });
+    },
+
+    async revokeDisplay(req, res) {
+        const ok = await DisplayDeviceModel.revoke(parseInt(req.params.id, 10));
+        if (!ok) return res.status(404).json({ success: false, error: 'That screen is no longer registered.' });
+
+        try {
+            const me = await UserModel.getUserByPublicId(req.session.userId);
+            await AuditLogModel.log(me.internal_id, me.role, 'Revoked a lounge display', 'settings');
+        } catch (err) {
+            console.error('[AuditLog] Failed to log display revocation:', err);
+        }
+
+        res.json({ success: true });
+    },
+
+    async forgetDisplay(req, res) {
+        const ok = await DisplayDeviceModel.remove(parseInt(req.params.id, 10));
+        if (!ok) return res.status(404).json({ success: false, error: 'That screen is no longer registered.' });
+        res.json({ success: true });
+    },
+};
+
 const AdminController = {
+
+    ...DisplayAdmin,
+
 
     // DASHBOARD
 
@@ -74,7 +184,8 @@ const AdminController = {
             });
         } catch (err) {
             console.error('[AdminController.renderDashboard]', err);
-            res.status(500).send('Failed to load the dashboard.');
+            // Rendered by the error page rather than written as bare text.
+            throw err;
         }
     },
 
@@ -95,7 +206,8 @@ const AdminController = {
             });
         } catch (err) {
             console.error('[AdminController.renderSettingsPage]', err);
-            res.status(500).send('Failed to load system settings.');
+            // Rendered by the error page rather than written as bare text.
+            throw err;
         }
     },
 
@@ -143,14 +255,21 @@ const AdminController = {
             ...s,
             online: s.secs_since_report !== null && s.secs_since_report <= scannerOfflineAfter,
         }));
+        // Every row says whether its address is one a person can be bound to.
+        // A rotating phone address looks exactly like a tag in a list of MACs,
+        // and assigning an instructor to one binds them to an identity that
+        // stops existing within the hour.
         const beaconRows = beacons.map(b => ({
             ...b,
             online: b.secs_since_seen !== null && b.secs_since_seen <= tagOfflineAfter,
+            address: describeAddress(b.mac_address),
         }));
 
         return {
             beacons: beaconRows,
             scanners: scannerRows,
+            discovery: await tagDiscovery.status(),
+            counts: await PresenceModel.beaconCounts(),
             roomsAwaitingScanner: awaiting,
             instructors,
             scannerConfigured: Boolean(process.env.PRESENCE_INGEST_KEY),
@@ -168,6 +287,146 @@ const AdminController = {
     },
 
     /** The same data as JSON, for the page to refresh itself on a nudge. */
+    /**
+     * Open the window during which unknown tags are recorded.
+     *
+     * Scoped to one room by default: the installer is standing in front of one
+     * scanner, and there is no reason for every other scanner on campus to
+     * start collecting addresses while they do it.
+     */
+    async startTagDiscovery(req, res) {
+        const roomId = req.body.roomId ? parseInt(req.body.roomId, 10) : null;
+        const me = await UserModel.getUserByPublicId(req.session.userId);
+
+        const state = await tagDiscovery.open({
+            roomId,
+            minutes: req.body.minutes,
+            adminInternalId: me ? me.internal_id : null,
+        });
+
+        try {
+            await AuditLogModel.log(me.internal_id, me.role, 'Opened BLE tag discovery', 'settings');
+        } catch (err) {
+            console.error('[AuditLog] Failed to log tag discovery:', err);
+        }
+
+        res.json({ success: true, ...state });
+    },
+
+    async stopTagDiscovery(req, res) {
+        const me = await UserModel.getUserByPublicId(req.session.userId);
+        await tagDiscovery.close(me ? me.internal_id : null);
+        res.json({ success: true });
+    },
+
+    /**
+     * Delete tags nobody claimed.
+     *
+     * Assigned tags are never touched, however long they have been silent — a
+     * flat battery must not silently unbind an instructor.
+     */
+    /**
+     * GET /admin/beacons/:id/signal?minutes=15
+     *
+     * The readings behind one tag, summarised per room. This is the number a
+     * threshold is set from: not the average, which flatters, but the weak end,
+     * because a threshold has to clear the worst reading from where somebody
+     * actually sits — turned away from the scanner, phone in the way.
+     */
+    async getBeaconSignal(req, res) {
+        // Mirrors RSSI_FLOOR in firmware/facitrack-scanner. A reading weaker
+        // than this never leaves the board, so no threshold below it can work.
+        const SCANNER_RSSI_FLOOR = -85;
+
+        const minutes = Math.min(Math.max(Number(req.query.minutes) || 15, 1), 240);
+        const rows = await PresenceModel.signalHistory(Number(req.params.id), { minutes });
+
+        const [defaultThreshold, exitMargin] = await Promise.all([
+            appSettings.get('presence_rssi_threshold'),
+            appSettings.get('presence_rssi_exit_margin'),
+        ]);
+
+        // Grouped by room: the same tag heard by two scanners is two different
+        // measurements, and averaging them together would describe neither.
+        const byRoom = new Map();
+        for (const row of rows) {
+            const key = row.room_id ?? 'none';
+            if (!byRoom.has(key)) {
+                byRoom.set(key, { roomId: row.room_id, room: row.room_number || 'Unknown room', rssi: [] });
+            }
+            byRoom.get(key).rssi.push(row.rssi);
+        }
+
+        const roomThresholds = await PresenceModel.getRoomThresholds(
+            [...byRoom.values()].map(r => r.roomId).filter(Boolean)
+        );
+
+        const rooms = [...byRoom.values()].map(entry => {
+            const sorted = [...entry.rssi].sort((a, b) => a - b);
+            const at = q => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))];
+            const tuned = roomThresholds.get(entry.roomId);
+            const threshold = tuned ?? defaultThreshold;
+
+            return {
+                roomId: entry.roomId,
+                room: entry.room,
+                samples: sorted.length,
+                min: sorted[0],
+                p10: at(0.10),
+                median: at(0.50),
+                max: sorted[sorted.length - 1],
+                threshold,
+                thresholdSource: tuned === null || tuned === undefined ? 'default' : 'room',
+                exitThreshold: threshold - exitMargin,
+                // How much of the window fell below each line. A tag that is
+                // genuinely in the room and still spends time under the enter
+                // threshold is the signature of a threshold set too tight.
+                belowEnter: sorted.filter(v => v < threshold).length,
+                belowExit: sorted.filter(v => v < threshold - exitMargin).length,
+                // What the enter threshold would have to be for these readings
+                // to count. Based on the 10th percentile rather than the single
+                // weakest sample, which is by definition the worst luck in the
+                // window and would drag the suggestion down on one glitch — but
+                // never left above the weakest either, so a short tail is still
+                // covered.
+                suggested: Math.min(at(0.10) - 5, sorted[0] - 2),
+
+                // The scanner firmware discards anything under -85 dBm, so a
+                // threshold below that is not a setting — it is a request for
+                // readings the scanner will never send. When the suggestion
+                // lands there the answer is more transmit power or a closer
+                // scanner, and saying so beats offering a number that cannot work.
+                belowScannerFloor: Math.min(at(0.10) - 5, sorted[0] - 2) < SCANNER_RSSI_FLOOR,
+            };
+        }).sort((a, b) => b.samples - a.samples);
+
+        res.json({
+            success: true,
+            minutes,
+            exitMargin,
+            rooms,
+            // Newest first from the model; reversed so a chart reads left to right.
+            series: rows.map(r => ({ rssi: r.rssi, at: r.sampled_at, room: r.room_number })).reverse(),
+        });
+    },
+
+    async pruneBeacons(req, res) {
+        const removed = await PresenceModel.pruneUnassigned({
+            olderThanDays: Number(req.body.olderThanDays) || 0,
+            includeRecent: req.body.includeRecent === true,
+        });
+
+        try {
+            const me = await UserModel.getUserByPublicId(req.session.userId);
+            await AuditLogModel.log(me.internal_id, me.role,
+                `Pruned ${removed} unassigned BLE tag(s)`, 'settings');
+        } catch (err) {
+            console.error('[AuditLog] Failed to log beacon prune:', err);
+        }
+
+        res.json({ success: true, removed, counts: await PresenceModel.beaconCounts() });
+    },
+
     async getBeaconsJson(req, res) {
         try {
             const data = await AdminController._beaconsPageData(buildAdminUser(req.session));
@@ -195,7 +454,8 @@ const AdminController = {
             });
         } catch (err) {
             console.error('[AdminController.renderBeaconsPage]', err);
-            res.status(500).send('Failed to load the BLE devices page.');
+            // Rendered by the error page rather than written as bare text.
+            throw err;
         }
     },
 
@@ -529,11 +789,14 @@ const AdminController = {
 
     async createRoom(req, res) {
         try {
-            const { roomNumber, department, roomType, bleStatus, assignedFaculty, status, capacity } = req.body;
+            const { roomNumber, floorNumber, department, roomType, bleStatus, assignedFaculty, status, capacity } = req.body;
 
             const errors = {};
 
             if (!roomNumber) errors.roomNumber = 'Room Number is required.';
+            // The column defaults to 1, so this check — not the schema — is what
+            // actually makes the floor required. See the migration's note.
+            Object.assign(errors, validateFloor(floorNumber));
             if (!department) errors.department = 'Department is required.';
             if (!roomType) errors.roomType = 'Room Type is required.';
             if (bleStatus == null || bleStatus === '') errors.bleStatus = 'BLE Scanner status is required.';
@@ -547,6 +810,7 @@ const AdminController = {
             // await for the room model to finish inserting new room
             await RoomModel.insertRoomByAdmin({
                 roomNumber,
+                floorNumber: Number(floorNumber),
                 department,
                 roomType,
                 bleStatus,
@@ -578,11 +842,12 @@ const AdminController = {
     async updateRoom(req, res) {
         try {
             const { roomId } = req.params;
-            const { roomNumber, department, roomType, bleStatus, assignedFaculty, status, capacity } = req.body;
+            const { roomNumber, floorNumber, department, roomType, bleStatus, assignedFaculty, status, capacity } = req.body;
 
             const errors = {};
 
             if (!roomNumber) errors.roomNumber = 'Room Number is required.';
+            Object.assign(errors, validateFloor(floorNumber));
             if (!department) errors.department = 'Department is required.';
             if (!roomType) errors.roomType = 'Room Type is required.';
             if (!status) errors.status = 'Status is required.';
@@ -595,6 +860,7 @@ const AdminController = {
             // await for the room model to finish updating new room
             await RoomModel.updateRoom(roomId, {
                 roomNumber,
+                floorNumber: Number(floorNumber),
                 department,
                 roomType,
                 bleStatus,
@@ -663,7 +929,8 @@ const AdminController = {
             });
         } catch (err) {
             console.error('[AdminController.renderReportsPage]', err);
-            res.status(500).send('Failed to load reports page.');
+            // Rendered by the error page rather than written as bare text.
+            throw err;
         }
     },
 
@@ -689,7 +956,8 @@ const AdminController = {
             });
         } catch (err) {
             console.error('[AdminController.renderConsultationRoomPage]', err);
-            res.status(500).send('Failed to load the consultation room page.');
+            // Rendered by the error page rather than written as bare text.
+            throw err;
         }
     },
 

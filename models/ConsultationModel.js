@@ -58,6 +58,9 @@ function groupConsultationRows(rows) {
             timeEnd: to12Hour(row.end_time),
             status: row.status,
             isBooked: !!row.appointment_id,
+            // Lets a booked slot link straight to the booking it holds.
+            // Null where the query did not select it.
+            appointmentId: row.appointment_id ?? null,
             // 'pending' | 'confirmed' | undefined (no live appointment, or the
             // query didn't select it — student booking views don't need it)
             appointmentStatus: row.appointment_status,
@@ -86,6 +89,7 @@ const ConsultationModel = {
             u.first_name, u.last_name, u.middle_name,
             u.position, u.email, u.department_id, u.availability_status,
             u.default_meeting_link,
+            (ga.user_id IS NOT NULL) AS google_connected,
             EXISTS (
                 SELECT 1 FROM rooms r
                 WHERE r.department_id = u.department_id
@@ -107,6 +111,7 @@ const ConsultationModel = {
          FROM consultation_hours ch
          JOIN users u ON ch.instructor_id = u.id
          LEFT JOIN departments d ON u.department_id = d.id
+         LEFT JOIN google_accounts ga ON ga.user_id = u.id AND ga.last_error IS NULL
          LEFT JOIN appointments a ON ch.id = a.consultation_hour_id AND a.status IN (${SLOT_HOLDING_SQL})
          LEFT JOIN instructor_unavailability iu ON iu.instructor_id = u.id AND iu.unavail_date = ch.consultation_date
          WHERE ch.id = ?`,
@@ -136,6 +141,9 @@ const ConsultationModel = {
                 department_name: row.department_name,
                 availability_status: row.availability_status,
                 default_meeting_link: row.default_meeting_link,
+                // Either venue works for an online consultation: a scheduled
+                // Meet from the connected calendar, or the static room link.
+                online_ready: Boolean(row.default_meeting_link || Number(row.google_connected)),
             },
         };
     },

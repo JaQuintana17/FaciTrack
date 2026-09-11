@@ -163,6 +163,16 @@ async function sendOtpCode({ email, name, code, expiresInMinutes }) {
 
 const BASE_URL = process.env.APP_BASE_URL || 'http://localhost:3000';
 
+// Emails also go out from the reminder cron, where there is no request to
+// derive a host from — so unlike the calendar feed this cannot fall back to
+// req.get('host'). A missing or stale value yields links that look correct and
+// lead nowhere, so state the effective value once at startup.
+if (process.env.APP_BASE_URL) {
+    console.log(`[Email] Email links will point to ${BASE_URL}`);
+} else {
+    console.warn(`[Email] APP_BASE_URL is not set — email links will point to ${BASE_URL}. Set it in .env to the host users actually reach.`);
+}
+
 /**
  * Absolute link back into the app for this notification.
  * The path comes from the shared helper so email cannot drift from the bell
