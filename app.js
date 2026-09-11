@@ -1,5 +1,6 @@
 // Import required modules
 require('dotenv').config();
+require('./configs/checkEnv')();
 const express = require('express');
 const session = require('express-session');
 const path = require('path');
@@ -10,6 +11,7 @@ const auditNavigation = require('./middleware/auditNavigation');
 const passport = require('./configs/passport');
 const startReminderJob = require('./jobs/reminder');
 const startCalendarSyncJob = require('./jobs/calendar-sync');
+const startPresenceSweepJob = require('./jobs/presence-sweep');
 
 // Initialize Express app
 const app = express();
@@ -19,6 +21,12 @@ ensureSeedUsers(); // remove soon
 // Set EJS as templating engine
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
+
+// Behind a tunnel or reverse proxy (ngrok in testing, whatever CSPC puts in
+// front of this later), the real scheme arrives in X-Forwarded-Proto. Without
+// this, req.protocol reports "http" on an https request and anything built
+// from it — the OAuth callback especially — comes out wrong.
+app.set('trust proxy', 1);
 
 // Middleware: Serve static files from public folder
 app.use(express.static(path.join(__dirname, 'public')));
@@ -35,6 +43,20 @@ app.use((req, res, next) => {
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('X-XSS-Protection', '1; mode=block');
     next();
+});
+
+/**
+ * Reachability probe for public/js/connection-status.js.
+ *
+ * Mounted above the session, logging and notification middleware so that
+ * polling it costs nothing and writes no log noise. It deliberately does not
+ * touch the database: this answers "can the browser reach the server", and
+ * folding a database check in here would report the whole app as offline over
+ * a problem the user cannot do anything about from a phone.
+ */
+app.get('/ping', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.status(204).end();
 });
 
 // Middleware: Global logging
@@ -66,6 +88,9 @@ app.use(auditNavigation);
 
 startReminderJob();
 startCalendarSyncJob();
+// Absence is a timeout, and it has to keep running when every scanner is off —
+// which is exactly when somebody would otherwise be left parked in a room.
+startPresenceSweepJob();
 
 // Routes 
 // app.use('/', require('./routes/index'));
@@ -77,6 +102,16 @@ app.use('/calendar', require('./routes/calendar-feed'));
 // Shared-secret authenticated: the BLE room scanners are devices with no
 // session, so this also sits above the role guards. See routes/presence.js.
 app.use('/api/presence', require('./routes/presence'));
+// The Faculty Lounge board: a screen on a wall, so no session either. It
+// publishes a name, In or Out, and the availability the instructor set —
+// never a room. See routes/display.js.
+app.use('/display', require('./routes/display'));
+// Profile photos: authenticated, but the same for every role — the sidebar
+// avatar is one shared control — so this sits above the per-role mounts.
+app.use('/', require('./routes/profile'));
+// Who is in. Read by every role's pages, scoped to the viewer's department,
+// so one answer serves them all. See routes/presence-view.js.
+app.use('/', require('./routes/presence-view'));
 app.use('/student', requireRole('Student'), require('./routes/student'));
 app.use('/instructor', requireRole('Instructor'), require('./routes/instructor'));
 app.use('/export', require('./routes/export'));
@@ -95,20 +130,10 @@ app.use((req, res) => {
     res.status(404).json({ status: 'error', message: 'Not found' });
 });
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-    console.error(`[Error Log]: ${err.message}`);
-    console.error('URL:', req.url);
-    console.error('Method:', req.method);
-    console.error('Stack:', err.stack);
-
-    const statusCode = err.status || 500;
-
-    res.status(statusCode).json({
-        status: 'error',
-        message: err.message
-    });
-});
+// Error handling middleware. Renders a page for browsers and JSON for fetch
+// callers, and tells "the database is unreachable" apart from "this broke".
+// See middleware/errorHandler.js.
+app.use(require('./middleware/errorHandler')());
 
 // Start server
 app.listen(PORT, () => {
