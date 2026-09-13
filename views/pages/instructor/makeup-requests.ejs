@@ -53,35 +53,46 @@
         </div>
       <% } else { %>
 
-        <div class="mk-toolbar">
-          <div class="mk-tabs" role="tablist">
-            <button class="mk-tab active" data-tab="all">All (<%= counts.all %>)</button>
-            <button class="mk-tab" data-tab="pending">Pending (<%= counts.pending %>)</button>
-            <button class="mk-tab" data-tab="approved">Approved (<%= counts.approved %>)</button>
-            <button class="mk-tab" data-tab="declined">Declined (<%= counts.declined %>)</button>
-            <% if (counts.withdrawn) { %>
-              <button class="mk-tab" data-tab="withdrawn">Withdrawn (<%= counts.withdrawn %>)</button>
-            <% } %>
-          </div>
-
-          <div class="mk-search">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <div class="mk-filter-bar">
+          <div class="mk-search-wrap">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path>
             </svg>
             <input type="search" id="mkSearch" class="mk-search-input"
                    placeholder="Search subject, section, room or date" aria-label="Search requests">
             <button type="button" id="mkSearchClear" class="mk-search-clear" hidden aria-label="Clear search">&times;</button>
           </div>
+
+          <select class="mk-filter-select" id="mkStatusFilter" aria-label="Filter by status">
+            <option value="all">All Statuses</option>
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="declined">Declined</option>
+            <% if (counts.withdrawn) { %>
+              <option value="withdrawn">Withdrawn</option>
+            <% } %>
+          </select>
+
+          <select class="mk-filter-select" id="mkTypeFilter" aria-label="Filter by class type">
+            <option value="all">All Class Types</option>
+            <option value="lecture">Lecture</option>
+            <option value="laboratory">Laboratory</option>
+            <option value="online">Online</option>
+          </select>
         </div>
 
         <p class="mk-empty" id="mkFilterEmpty" hidden></p>
-        <% ['pending', 'approved', 'declined', 'withdrawn'].forEach(function (bucket) { %>
-          <p class="mk-empty mk-panel-empty" data-status="<%= bucket %>" hidden>Nothing <%= bucket %>.</p>
-        <% }); %>
 
         <% requests.forEach(function (r) { %>
+          <%
+            // Collect unique class types across all sessions for this request
+            var classTypes = r.sessions.map(function(s){ return (s.class_type || '').toLowerCase(); })
+                              .filter(function(t,i,a){ return t && a.indexOf(t)===i; });
+          %>
           <div class="mk-req" id="req-<%= r.id %>"
-               data-status="<%= r.status %>" data-search="<%= haystack(r) %>">
+               data-status="<%= r.status %>"
+               data-class-type="<%= classTypes.join(' ') %>"
+               data-search="<%= haystack(r) %>">
             <div class="mk-req-head">
               <div>
                 <p class="mk-req-who">

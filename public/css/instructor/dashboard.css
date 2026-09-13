@@ -367,7 +367,7 @@
     padding: 2rem clamp(1.5rem, 3vw, 3rem);
     display: flex;
     flex-direction: column;
-    gap: 2rem;
+    gap: 1.25rem;
     width: 100%;
 }
 

@@ -1,65 +1,78 @@
 /**
- * Status tabs and search for both make-up request lists.
+ * Filter bar logic for both make-up request list pages
+ * (instructor + dean).
  *
- * Every request card renders once with a `data-status` and a lowercased
- * `data-search` haystack, so filtering is instant and needs no round trip.
- * The instructor and dean pages share this — only the tabs differ.
+ * Filters:
+ *   - Search  : text match against pre-built data-search haystack
+ *   - Status  : data-status  (all | pending | approved | declined | withdrawn)
+ *   - Class Type : data-class-type  (all | lecture | laboratory | online)
+ *
+ * Every card is rendered once with data-status, data-class-type, and
+ * data-search so all filtering is instant with no round trips.
  */
 (function () {
     'use strict';
 
-    var tabs = document.querySelectorAll('.mk-tab');
-    var cards = document.querySelectorAll('.mk-req');
-    var searchInput = document.getElementById('mkSearch');
-    var clearBtn = document.getElementById('mkSearchClear');
-    var emptyBox = document.getElementById('mkFilterEmpty');
-    if (!tabs.length && !searchInput) return;
+    var cards        = document.querySelectorAll('.mk-req');
+    var searchInput  = document.getElementById('mkSearch');
+    var clearBtn     = document.getElementById('mkSearchClear');
+    var statusSelect = document.getElementById('mkStatusFilter');
+    var typeSelect   = document.getElementById('mkTypeFilter');
+    var emptyBox     = document.getElementById('mkFilterEmpty');
 
+    // Nothing to do if the list is absent (empty-state path)
+    if (!cards.length) return;
+
+    var query      = '';
     var activeStatus = 'all';
-    var query = '';
+    var activeType   = 'all';
 
     function apply() {
         var shown = 0;
 
         cards.forEach(function (card) {
-            var matchesTab = activeStatus === 'all' || card.dataset.status === activeStatus;
-            var matchesQuery = !query || (card.dataset.search || '').indexOf(query) !== -1;
-            var visible = matchesTab && matchesQuery;
+            var matchesStatus = activeStatus === 'all' ||
+                                card.dataset.status === activeStatus;
+
+            // data-class-type is a space-separated list of types on the card
+            var matchesType = activeType === 'all' ||
+                              (card.dataset.classType || '').split(' ').indexOf(activeType) !== -1;
+
+            var matchesQuery = !query ||
+                               (card.dataset.search || '').indexOf(query) !== -1;
+
+            var visible = matchesStatus && matchesType && matchesQuery;
             card.hidden = !visible;
             if (visible) shown++;
         });
 
-        // The per-status "nothing here" blocks belong to their own tab only
-        document.querySelectorAll('.mk-panel-empty').forEach(function (box) {
-            box.hidden = !(box.dataset.status === activeStatus && !query && !shown);
-        });
-
         if (emptyBox) {
-            emptyBox.hidden = shown > 0 || !query;
-            if (!emptyBox.hidden) emptyBox.textContent = 'Nothing matches "' + searchInput.value.trim() + '".';
+            emptyBox.hidden = shown > 0;
+            if (!emptyBox.hidden) {
+                emptyBox.textContent = query
+                    ? 'Nothing matches \u201c' + searchInput.value.trim() + '\u201d.'
+                    : 'No requests match the selected filters.';
+            }
         }
+
         if (clearBtn) clearBtn.hidden = !query;
     }
 
-    tabs.forEach(function (tab) {
-        tab.addEventListener('click', function () {
-            tabs.forEach(function (t) { t.classList.remove('active'); });
-            tab.classList.add('active');
-            activeStatus = tab.dataset.tab;
-            document.body.dataset.mkTab = activeStatus;
-            apply();
-        });
-    });
-
+    // ── Search ──
     if (searchInput) {
         searchInput.addEventListener('input', function () {
             query = this.value.trim().toLowerCase();
             apply();
         });
         searchInput.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape') { this.value = ''; query = ''; apply(); }
+            if (e.key === 'Escape') {
+                this.value = '';
+                query = '';
+                apply();
+            }
         });
     }
+
     if (clearBtn) {
         clearBtn.addEventListener('click', function () {
             searchInput.value = '';
@@ -69,8 +82,23 @@
         });
     }
 
-    var initial = document.querySelector('.mk-tab.active');
-    if (initial) activeStatus = initial.dataset.tab;
-    document.body.dataset.mkTab = activeStatus;
+    // ── Status select ──
+    if (statusSelect) {
+        statusSelect.addEventListener('change', function () {
+            activeStatus = this.value;
+            apply();
+        });
+        activeStatus = statusSelect.value || 'all';
+    }
+
+    // ── Class type select ──
+    if (typeSelect) {
+        typeSelect.addEventListener('change', function () {
+            activeType = this.value;
+            apply();
+        });
+    }
+
+    // Initial render
     apply();
 }());

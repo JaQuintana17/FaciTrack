@@ -87,7 +87,10 @@
                 (data.sectionName ? ' · ' + escapeHtml(data.sectionName) : '') +
               '</span>' +
               '<div class="mk-session-tools">' +
-                '<button type="button" class="mk-find" title="Find the soonest free slot">Find a slot</button>' +
+                '<button type="button" class="mk-find" title="Find the soonest free slot">' +
+                  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>' +
+                  'Find a slot' +
+                '</button>' +
                 '<button type="button" class="mk-remove" title="Remove this session">&times;</button>' +
               '</div>' +
             '</div>' +

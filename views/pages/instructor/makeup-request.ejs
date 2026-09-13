@@ -49,12 +49,19 @@
                 soonest free room that suits the class and keeps its usual start time where it can.
               </p>
               <div class="mk-class-list">
+                <div class="mk-class-header">
+                  <span class="mk-class-header-check"></span>
+                  <span class="mk-class-header-col">Subject Code</span>
+                  <span class="mk-class-header-col">Subject Name</span>
+                  <span class="mk-class-header-col mk-class-header-type">Class Type</span>
+                </div>
                 <% missedClasses.forEach(function (c) { %>
                   <label class="mk-class" for="cls<%= c.id %>">
                     <input type="checkbox" id="cls<%= c.id %>" class="mk-class-check"
                            data-block='<%- JSON.stringify(c) %>'>
-                    <span class="mk-class-body">
-                      <span class="mk-class-title"><%= c.subjectCode %> — <%= c.subjectName %></span>
+                    <span class="mk-class-col mk-class-code"><%= c.subjectCode %></span>
+                    <span class="mk-class-col mk-class-name">
+                      <span class="mk-class-title"><%= c.subjectName %></span>
                       <span class="mk-class-meta">
                         <%= c.sectionName || 'No section' %> ·
                         <%= c.day %> <%= c.timeLabel %>
@@ -68,6 +75,7 @@
 
               <div class="mk-generate-bar">
                 <button type="button" class="btn-save-settings mk-generate" id="mkGenerate" disabled>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
                   Find available slots
                 </button>
                 <span class="mk-generate-hint" id="mkGenerateHint">Tick a class to enable this.</span>
