@@ -64,41 +64,88 @@ const diskDriver = {
     },
 };
 
+/**
+ * How much of a file goes in one row.
+ *
+ * Every statement has to fit inside the server's max_allowed_packet, which the
+ * application does not control and cannot rely on: this project's own MariaDB
+ * ships with 1 MB, so a 10 MB make-up document failed with
+ * ER_NET_PACKET_TOO_LARGE and took the connection down with it. 256 KB stays
+ * well inside even that, leaving room for the protocol's own overhead, and a
+ * reader streams rows rather than materialising the result set at once — so
+ * this is what a file may be, not what a server must be configured to allow.
+ */
+const CHUNK_BYTES = Number(process.env.FILE_STORE_CHUNK_BYTES) || 256 * 1024;
+
 const dbDriver = {
     async put({ key, buffer, mimeType, originalName, kind }) {
         assertKey(key);
-        await pool.execute(
-            `INSERT INTO stored_files (file_key, kind, mime_type, original_name, byte_size, data)
-             VALUES (?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE
-                 mime_type = VALUES(mime_type),
-                 original_name = VALUES(original_name),
-                 byte_size = VALUES(byte_size),
-                 data = VALUES(data)`,
-            [key, kind || key.split('/')[0], mimeType || 'application/octet-stream',
-             originalName || null, buffer.length, buffer]
-        );
-        return key;
+
+        const conn = await pool.getConnection();
+        try {
+            await conn.beginTransaction();
+
+            // Replacing a key means the old chunks must go first, or a shorter
+            // file would keep the tail of the one it replaced.
+            await conn.execute('DELETE FROM stored_files WHERE file_key = ?', [key]);
+            await conn.execute(
+                `INSERT INTO stored_files (file_key, kind, mime_type, original_name, byte_size)
+                 VALUES (?, ?, ?, ?, ?)`,
+                [key, kind || key.split('/')[0], mimeType || 'application/octet-stream',
+                 originalName || null, buffer.length]
+            );
+
+            for (let i = 0, index = 0; i < buffer.length; i += CHUNK_BYTES, index++) {
+                await conn.execute(
+                    'INSERT INTO stored_file_chunks (file_key, chunk_index, data) VALUES (?, ?, ?)',
+                    [key, index, buffer.subarray(i, i + CHUNK_BYTES)]
+                );
+            }
+
+            // A zero-byte upload still gets one row, so a file that exists but
+            // is empty reads back as empty rather than as missing.
+            if (buffer.length === 0) {
+                await conn.execute(
+                    'INSERT INTO stored_file_chunks (file_key, chunk_index, data) VALUES (?, ?, ?)',
+                    [key, 0, Buffer.alloc(0)]
+                );
+            }
+
+            await conn.commit();
+            return key;
+        } catch (err) {
+            await conn.rollback();
+            throw err;
+        } finally {
+            conn.release();
+        }
     },
 
     async get(key) {
         assertKey(key);
         const [rows] = await pool.execute(
-            'SELECT data, mime_type, original_name, byte_size FROM stored_files WHERE file_key = ?',
+            'SELECT mime_type, original_name, byte_size FROM stored_files WHERE file_key = ?',
             [key]
         );
         if (!rows.length) return null;
-        const row = rows[0];
+        const meta = rows[0];
+
+        const [chunks] = await pool.execute(
+            'SELECT data FROM stored_file_chunks WHERE file_key = ? ORDER BY chunk_index ASC',
+            [key]
+        );
+
         return {
-            buffer: row.data,
-            mimeType: row.mime_type,
-            originalName: row.original_name,
-            size: row.byte_size,
+            buffer: Buffer.concat(chunks.map(c => c.data)),
+            mimeType: meta.mime_type,
+            originalName: meta.original_name,
+            size: meta.byte_size,
         };
     },
 
     async remove(key) {
         assertKey(key);
+        // The chunks go with it: the foreign key cascades.
         await pool.execute('DELETE FROM stored_files WHERE file_key = ?', [key]);
     },
 };

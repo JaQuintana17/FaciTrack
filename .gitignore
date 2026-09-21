@@ -13,3 +13,6 @@ firmware/**/*.ino
 # by hand or the 3D building view will fail to load.
 Meshy_AI_*/
 public/models/*.glb
+
+# Database dumps taken before migrations. Real data — never committed.
+backups/
