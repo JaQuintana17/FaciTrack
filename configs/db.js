@@ -1,4 +1,69 @@
+const fs = require('fs');
+const path = require('path');
 const mysql = require('mysql2/promise');
+
+/**
+ * The connection pool.
+ *
+ * Two things here exist only because the app can run somewhere other than a
+ * developer's laptop: TLS, and a pool sized for the host rather than for one
+ * long-lived process.
+ */
+
+/**
+ * TLS for a managed database.
+ *
+ * Aiven refuses plaintext connections outright, so without this every query
+ * fails and the whole app renders the "cannot reach its database" page.
+ *
+ * Aiven hands you a CA certificate. Point DB_SSL_CA at the file, or paste its
+ * contents into DB_SSL_CA_CERT when the host has no writable disk to put a
+ * file on — Vercel being exactly that case. Verification stays on in both:
+ * turning it off would accept any certificate and quietly undo the point of
+ * connecting over TLS at all.
+ */
+function buildSslOptions() {
+    if (process.env.DB_SSL === 'false') return undefined;
+
+    const inlineCert = process.env.DB_SSL_CA_CERT;
+    if (inlineCert && inlineCert.trim()) {
+        // Environment variables flatten newlines; the PEM needs them back.
+        return { ca: inlineCert.replace(/\\n/g, '\n'), rejectUnauthorized: true };
+    }
+
+    const caPath = process.env.DB_SSL_CA;
+    if (caPath) {
+        const resolved = path.isAbsolute(caPath) ? caPath : path.join(__dirname, '..', caPath);
+        try {
+            return { ca: fs.readFileSync(resolved, 'utf8'), rejectUnauthorized: true };
+        } catch (err) {
+            console.error(`[DB] DB_SSL_CA points at ${resolved}, which could not be read: ${err.message}`);
+            throw err;   // failing loudly beats falling back to an unverified connection
+        }
+    }
+
+    // TLS was asked for without a CA. Node then checks against its built-in
+    // roots, which is right for a provider using a public certificate and
+    // wrong for Aiven's own CA — so say so rather than let it fail obscurely.
+    if (process.env.DB_SSL === 'true') {
+        console.warn('[DB] DB_SSL is on but no CA was given. Set DB_SSL_CA or DB_SSL_CA_CERT if your provider uses a private CA (Aiven does).');
+        return { rejectUnauthorized: true };
+    }
+
+    return undefined;
+}
+
+/**
+ * How many connections one instance may hold.
+ *
+ * On a single server, ten is a sensible pool. Serverless changes the sum:
+ * every warm instance keeps its own pool, so the database sees
+ * connectionLimit × instances, and a managed plan's connection cap — in the
+ * low tens on the smaller Aiven plans — is reached by a handful of concurrent
+ * visitors. Small pools per instance are what keep that total survivable.
+ */
+const DEFAULT_POOL = process.env.VERCEL ? 2 : 10;
+const connectionLimit = Number(process.env.DB_POOL_SIZE) || DEFAULT_POOL;
 
 const pool = mysql.createPool({
   host: process.env.DB_HOSTNAME,
@@ -6,9 +71,14 @@ const pool = mysql.createPool({
   user: process.env.DB_USERNAME,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
+  ssl: buildSslOptions(),
   waitForConnections: true,
-  connectionLimit: 10,
+  connectionLimit,
   queueLimit: 0,
+  // A pooled connection that outlives the instance holding it is a connection
+  // the database counts and nobody can use.
+  idleTimeout: 30000,
+  enableKeepAlive: true,
   dateStrings: true
 });
 

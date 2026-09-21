@@ -3,7 +3,9 @@ require('dotenv').config();
 require('./configs/checkEnv')();
 const express = require('express');
 const session = require('express-session');
+const MySQLStore = require('express-mysql-session')(session);
 const path = require('path');
+const pool = require('./configs/db');
 const { ensureSeedUsers } = require('./services/auth');
 const { authContext, requireRole } = require('./middleware/auth');
 const attachNotifications = require('./middleware/attachNotifications');
@@ -16,6 +18,13 @@ const startPresenceSweepJob = require('./jobs/presence-sweep');
 // Initialize Express app
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Serverless hosts set this. It marks the places where one long-lived process
+// cannot be assumed: background timers, on-disk writes, open connections.
+const IS_SERVERLESS = Boolean(process.env.VERCEL);
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const SESSION_TTL_MS = Number(process.env.SESSION_TTL_MS) || 1000 * 60 * 60 * 8;
+
 ensureSeedUsers(); // remove soon
 
 // Set EJS as templating engine
@@ -65,13 +74,47 @@ app.use((req, res, next) => {
     next();
 });
 
+/**
+ * Where sessions live.
+ *
+ * express-session defaults to an in-memory store, which works only while one
+ * process serves every request. It does not survive a restart, and on a
+ * serverless host it does not survive at all: each invocation may run on a
+ * different instance with its own empty memory, so a signed-in tester is
+ * signed out again on their next click. It presents as "login is broken".
+ *
+ * The sessions table lives in the same database as everything else, so there
+ * is one thing to back up and one thing that can be down.
+ */
+const sessionStore = new MySQLStore({
+    createDatabaseTable: true,
+    // Sweep expired rows rather than letting the table grow without bound.
+    clearExpired: true,
+    checkExpirationInterval: 1000 * 60 * 15,
+    expiration: SESSION_TTL_MS,
+    schema: {
+        tableName: 'sessions',
+        columnNames: { session_id: 'session_id', expires: 'expires', data: 'data' },
+    },
+}, pool);
+
+sessionStore.onReady().catch((err) => {
+    console.error('[Session] The session store could not start:', err.message);
+});
+
 app.use(session({
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
+    store: sessionStore,
     cookie: {
-        secure: false,
-        maxAge: 1000 * 60 * 60 * 8
+        // Production is served over HTTPS, so the cookie should refuse to
+        // travel any other way. Left off locally, where there is no TLS and a
+        // secure cookie would simply never be sent.
+        secure: IS_PRODUCTION,
+        httpOnly: true,
+        sameSite: 'lax',
+        maxAge: SESSION_TTL_MS
     },
 }));
 app.use(passport.initialize());
@@ -86,11 +129,30 @@ app.use(attachNotifications);
 // Middleware: audit navigations
 app.use(auditNavigation);
 
-startReminderJob();
-startCalendarSyncJob();
-// Absence is a timeout, and it has to keep running when every scanner is off —
-// which is exactly when somebody would otherwise be left parked in a room.
-startPresenceSweepJob();
+/**
+ * Background work.
+ *
+ * node-cron and setInterval both need a process that is still there when the
+ * timer fires. A serverless instance is torn down once it goes idle, so these
+ * would never run — and starting them would only produce cold-start noise and
+ * connections nobody closes. There, the same work is driven by HTTP instead;
+ * see routes/tasks.js and the schedule in vercel.json.
+ *
+ * PRESENCE_SWEEP_ENABLED exists separately because the BLE module can be
+ * switched off for a deployment that has no scanners, and its absence sweep is
+ * the one job that does nothing useful without them.
+ */
+if (!IS_SERVERLESS) {
+    startReminderJob();
+    startCalendarSyncJob();
+
+    // Absence is a timeout, and it has to keep running when every scanner is
+    // off — which is exactly when somebody would otherwise be left parked in
+    // a room.
+    if (process.env.PRESENCE_SWEEP_ENABLED !== 'false') startPresenceSweepJob();
+} else {
+    console.log('[Jobs] Serverless host detected — scheduled work runs over HTTP via /tasks (see vercel.json).');
+}
 
 // Routes 
 // app.use('/', require('./routes/index'));
@@ -99,6 +161,10 @@ app.use('/notifications', require('./routes/notification'));
 // Token-authenticated, so it sits above the role guards — calendar clients
 // subscribe with no session. See routes/calendar-feed.js.
 app.use('/calendar', require('./routes/calendar-feed'));
+// Scheduled work for hosts with no long-lived process. Carries its own shared
+// secret rather than a session, so it sits above the role guards.
+// See routes/tasks.js.
+app.use('/tasks', require('./routes/tasks'));
 // Shared-secret authenticated: the BLE room scanners are devices with no
 // session, so this also sits above the role guards. See routes/presence.js.
 app.use('/api/presence', require('./routes/presence'));
@@ -136,7 +202,17 @@ app.use((req, res) => {
 // See middleware/errorHandler.js.
 app.use(require('./middleware/errorHandler')());
 
-// Start server
-app.listen(PORT, () => {
-    console.log(`🚀 FaciTrack server running on http://localhost:${PORT}`);
-});
+/**
+ * Start listening — but only where a port means something.
+ *
+ * A serverless host imports this module and calls the exported handler per
+ * request; binding a port there either fails or holds the instance open for
+ * nothing. Exporting the app keeps both shapes working from one file.
+ */
+if (!IS_SERVERLESS) {
+    app.listen(PORT, () => {
+        console.log(`🚀 FaciTrack server running on http://localhost:${PORT}`);
+    });
+}
+
+module.exports = app;
