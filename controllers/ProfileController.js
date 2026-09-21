@@ -1,20 +1,26 @@
 const path = require('path');
-const fs = require('fs/promises');
 const crypto = require('crypto');
 const sharp = require('sharp');
 const UserModel = require('../models/UserModel');
+const fileStore = require('../services/file-store');
 
 /**
  * Profile photos.
  *
- * Files live outside public/ and are handed out by serve() below, the same way
- * make-up documents are — nothing under storage/ is web-reachable by accident.
- * The column stores the finished web path ("/avatars/<uuid>.jpg"), so every
- * existing <img src="<%= ...profilePhoto %>"> keeps working untouched.
+ * Files are handed out by serve() below rather than sitting under public/, so
+ * nothing is web-reachable by accident — the same arrangement make-up
+ * documents use. The column stores the finished web path ("/avatars/<uuid>
+ * .jpg"), so every existing <img src="<%= ...profilePhoto %>"> keeps working
+ * untouched.
+ *
+ * Where the bytes actually land is services/file-store.js: on disk where there
+ * is one, in the database on a host where there is not.
  */
 
-const AVATAR_DIR = path.join(__dirname, '..', 'storage', 'uploads', 'avatars');
 const WEB_PREFIX = '/avatars/';
+
+/** The web path the column stores, turned into the key the store uses. */
+const keyFor = (name) => `avatars/${name}`;
 
 // Rendered between 40px and 96px across the app, so 256 covers retina without
 // keeping a multi-megabyte camera original to fill a thumbnail.
@@ -29,8 +35,8 @@ async function deleteStored(webPath) {
     if (!webPath || !webPath.startsWith(WEB_PREFIX)) return;
     const name = path.basename(webPath);
     if (!STORED_NAME.test(name)) return;
-    // Best effort: a failed delete costs disk space, not correctness.
-    await fs.unlink(path.join(AVATAR_DIR, name)).catch(() => {});
+    // Best effort: a failed delete costs storage, not correctness.
+    await fileStore.remove(keyFor(name)).catch(() => {});
 }
 
 const ProfileController = {
@@ -52,8 +58,12 @@ const ProfileController = {
                 .toBuffer();
 
             filename = `${crypto.randomUUID()}.jpg`;
-            await fs.mkdir(AVATAR_DIR, { recursive: true });
-            await fs.writeFile(path.join(AVATAR_DIR, filename), processed);
+            await fileStore.put({
+                key: keyFor(filename),
+                buffer: processed,
+                mimeType: 'image/jpeg',
+                kind: 'avatar',
+            });
 
             const webPath = WEB_PREFIX + filename;
             const result = await UserModel.updateProfilePicture(req.session.userId, webPath);
@@ -116,16 +126,24 @@ const ProfileController = {
      * directory, deans across their department, admins everywhere. The filename
      * is a UUID we generated, so it is not guessable from a user id.
      */
-    serve(req, res) {
+    async serve(req, res) {
         const name = req.params.file;
         if (!STORED_NAME.test(name)) return res.status(404).end();
 
-        // A replacement upload gets a fresh UUID and therefore a fresh URL, so a
-        // cached copy can never become stale.
-        res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
-        res.sendFile(path.join(AVATAR_DIR, name), (err) => {
-            if (err && !res.headersSent) res.status(404).end();
-        });
+        try {
+            const file = await fileStore.get(keyFor(name));
+            if (!file) return res.status(404).end();
+
+            // A replacement upload gets a fresh UUID and therefore a fresh URL,
+            // so a cached copy can never become stale.
+            res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+            res.setHeader('Content-Type', file.mimeType || 'image/jpeg');
+            res.setHeader('Content-Length', file.buffer.length);
+            res.end(file.buffer);
+        } catch (err) {
+            console.error('[ProfileController.serve]', err);
+            if (!res.headersSent) res.status(404).end();
+        }
     },
 };
 

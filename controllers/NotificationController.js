@@ -47,8 +47,49 @@ const NotificationController = {
         }
     },
 
+    /**
+     * The polling transport.
+     *
+     * Where a host cannot hold a connection open — a serverless function is
+     * capped at a minute or so — this is what the client falls back to. It
+     * returns whatever arrived after the last id the caller saw, in the same
+     * shape the stream pushes, so the handlers on the page do not care which
+     * transport delivered them.
+     */
+    async pollNotifications(req, res) {
+        if (!req.session?.userId) return res.status(401).json({ error: 'Not signed in.' });
+
+        try {
+            const after = parseInt(req.query.after, 10) || 0;
+            const [notifications, unreadCount] = await Promise.all([
+                NotificationModel.getSince(req.session.userId, after),
+                NotificationModel.getUnreadCount(req.session.userId),
+            ]);
+
+            res.set('Cache-Control', 'no-store');
+            res.json({ notifications, unreadCount });
+        } catch (err) {
+            console.error('[NotificationController.pollNotifications]', err);
+            res.status(500).json({ error: 'Could not load notifications.' });
+        }
+    },
+
     async stream(req, res) {
         if (!req.session?.userId) return res.status(401).end();
+
+        /**
+         * A host with no long-lived connections says so, once.
+         *
+         * Answering 204 rather than an event stream makes EventSource fail
+         * permanently instead of reconnecting: a serverless function would
+         * otherwise cut the stream every minute and the browser would redial
+         * it forever, burning an invocation each time. The client reads that
+         * permanent close as "poll instead" — see public/js/realtime.js.
+         */
+        if (process.env.VERCEL) {
+            res.set('X-Realtime-Transport', 'poll');
+            return res.status(204).end();
+        }
 
         const user = await UserModel.getUserByPublicId(req.session.userId);
         if (!user) return res.status(401).end();

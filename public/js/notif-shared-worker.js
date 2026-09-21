@@ -26,6 +26,15 @@ function ensureConnection() {
 
     eventSource.onerror = function () {
         broadcast({ type: 'connection:error' });
+
+        // CLOSED means the browser has given up rather than scheduled a retry.
+        // A host that cannot hold a stream open answers the request in a way
+        // that produces exactly this, so the pages are told to stop waiting on
+        // the worker and poll for themselves instead.
+        if (eventSource.readyState === EventSource.CLOSED) {
+            broadcast({ type: 'connection:closed' });
+            eventSource = null;
+        }
     };
 
     eventSource.onopen = function () {

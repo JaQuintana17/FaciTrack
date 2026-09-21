@@ -1,7 +1,9 @@
-const fs = require('fs');
+
 const path = require('path');
+const crypto = require('crypto');
 
 const pool = require('../configs/db');
+const fileStore = require('../services/file-store');
 
 const MakeupRequestModel = require('../models/MakeupRequestModel');
 const WorkloadModel = require('../models/WorkloadModel');
@@ -51,9 +53,13 @@ async function bookingWindow() {
 }
 
 /** Delete an upload we are no longer keeping; never let it break the response. */
-function discard(filePath) {
-    if (!filePath) return;
-    fs.promises.unlink(filePath).catch(err => {
+function discard(fileKey) {
+    if (!fileKey) return;
+    // A legacy row holds an absolute path, which is not a key this store will
+    // accept. Those few files are left for manual cleanup rather than logged
+    // as a failure on every edit.
+    if (path.isAbsolute(fileKey)) return;
+    fileStore.remove(fileKey).catch(err => {
         console.error('[Makeup] Could not remove upload:', err.message);
     });
 }
@@ -64,18 +70,33 @@ function discardAll(documents) {
 
 /**
  * The uploads on this request, flattened into what the model stores.
- * multer's `fields` config keeps them grouped by input name.
+ *
+ * multer holds them in memory (see routes/instructor.js) and they are written
+ * here, because only services/file-store.js knows whether this host has a disk
+ * worth writing to.
+ *
+ * Writing before the request is known to be valid can leave a stored file with
+ * no row pointing at it, which is why every failure path below calls
+ * discardAll() — the same cleanup the on-disk version already needed.
+ *
+ * `path` still names the field so the model and discardAll() are unchanged;
+ * what it holds is now a storage key rather than a filesystem path.
  */
-function collectUploads(req) {
+async function collectUploads(req) {
     const files = req.files || {};
-    const take = (list, kind) => (list || []).map(f => ({
-        kind,
-        path: f.path,
-        originalName: f.originalname,
-        mimeType: f.mimetype,
-        size: f.size,
-    }));
-    return take(files.documents, 'support').concat(take(files.polling, 'polling'));
+    const take = (list, kind) => (list || []).map(async (f) => {
+        const key = `makeup/${crypto.randomUUID()}${path.extname(f.originalname || '.pdf')}`;
+        await fileStore.put({
+            key,
+            buffer: f.buffer,
+            mimeType: f.mimetype,
+            originalName: f.originalname,
+            kind: 'makeup',
+        });
+        return { kind, path: key, originalName: f.originalname, mimeType: f.mimetype, size: f.size };
+    });
+
+    return Promise.all([...take(files.documents, 'support'), ...take(files.polling, 'polling')]);
 }
 
 /**
@@ -310,7 +331,7 @@ const MakeupController = {
     /** Create a request, or replace a pending one when `id` is present. */
     async submitRequest(req, res) {
         const isEdit = Boolean(req.params.id);
-        const uploads = collectUploads(req);
+        const uploads = await collectUploads(req);
         try {
             const window = await bookingWindow();
             const support = uploads.filter(d => d.kind === 'support');
@@ -450,7 +471,15 @@ const MakeupController = {
                 }
             }
 
-            if (!doc.file_path || !fs.existsSync(doc.file_path)) {
+            // Rows written before uploads moved into the file store hold an
+            // absolute path rather than a key; on a host that still has the
+            // file, serving it beats telling an instructor their document is
+            // gone. Nothing new is written in that shape.
+            const file = path.isAbsolute(doc.file_path || '')
+                ? await fileStore.getLegacyPath(doc.file_path)
+                : await fileStore.get(doc.file_path);
+
+            if (!file) {
                 return res.status(404).send('That document is no longer available.');
             }
 
@@ -459,7 +488,8 @@ const MakeupController = {
             res.setHeader('Content-Type', doc.mime_type || 'application/octet-stream');
             res.setHeader('Content-Disposition',
                 `${inline ? 'inline' : 'attachment'}; filename="${path.basename(doc.original_name || 'document')}"`);
-            fs.createReadStream(doc.file_path).pipe(res);
+            res.setHeader('Content-Length', file.buffer.length);
+            res.end(file.buffer);
         } catch (err) {
             console.error('[MakeupController.downloadDocument]', err);
             // Rendered by the error page rather than written as bare text.

@@ -12,6 +12,9 @@ router.get('/more', NotificationController.loadMore);
 
 router.get('/stream', NotificationController.stream);
 
+// The stream's stand-in where a connection cannot be held open.
+router.get('/poll', NotificationController.pollNotifications);
+
 // ── Web Push (PWA device notifications) ──
 router.get('/push/public-key', NotificationController.getPushPublicKey);
 router.post('/push/subscribe', NotificationController.subscribePush);

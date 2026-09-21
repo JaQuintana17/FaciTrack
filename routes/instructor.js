@@ -17,10 +17,9 @@ const GoogleCalendarController = require('../controllers/GoogleCalendarControlle
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // ── Document uploads for make-up class requests ──
-// Stored outside public/ and served only through the authenticated
+// Never under public/, and served only through the authenticated
 // /makeup/document/:docId route — these are signed absence documents.
-const MAKEUP_UPLOAD_DIR = path.join(__dirname, '..', 'storage', 'uploads', 'makeup');
-fs.mkdirSync(MAKEUP_UPLOAD_DIR, { recursive: true });
+// services/file-store.js decides where the bytes land.
 
 // A supporting document is always a PDF; the polling sheet may also be a
 // spreadsheet. Browsers sometimes send octet-stream for .xlsx, so the
@@ -39,12 +38,11 @@ const DOC_TYPES = {
 };
 
 const makeupUpload = multer({
-    storage: multer.diskStorage({
-        destination: (req, file, cb) => cb(null, MAKEUP_UPLOAD_DIR),
-        filename: (req, file, cb) => {
-            cb(null, crypto.randomUUID() + path.extname(file.originalname || '.pdf'));
-        },
-    }),
+    // Held in memory, then written by services/file-store.js — which knows
+    // whether this host has a disk worth writing to. Writing here instead
+    // would put the file somewhere a serverless host discards before the
+    // request that saves the row has even finished.
+    storage: multer.memoryStorage(),
     limits: { fileSize: 10 * 1024 * 1024, files: 6 },
     fileFilter: (req, file, cb) => {
         const rule = DOC_TYPES[file.fieldname];

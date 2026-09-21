@@ -70,6 +70,40 @@ const NotificationModel = {
         }));
     },
 
+    /**
+     * Notifications newer than the last one this client saw.
+     *
+     * Backs the polling transport, which stands in for the event stream where
+     * a host cannot hold a connection open long enough for one — see
+     * public/js/realtime.js. Ordered oldest first so a client that missed
+     * several replays them in the order they happened, and capped so a tab
+     * left open over a weekend cannot ask for an unbounded result.
+     */
+    async getSince(publicId, afterId = 0, limit = 30) {
+        const [[user]] = await pool.execute(
+            'SELECT id FROM users WHERE public_id = ?', [publicId]
+        );
+        if (!user) return [];
+
+        const [rows] = await pool.execute(
+            `SELECT id, type, message, is_read, related_appointment_id, created_at
+               FROM notifications
+              WHERE user_id = ? AND id > ?
+           ORDER BY id ASC
+              LIMIT ?`,
+            [user.id, Number(afterId) || 0, limit]
+        );
+
+        return rows.map(r => ({
+            id: r.id,
+            type: r.type,
+            message: r.message,
+            time: formatRelativeTime(r.created_at),
+            read: !!r.is_read,
+            relatedAppointmentId: r.related_appointment_id,
+        }));
+    },
+
     async getUnreadCount(publicId) {
         const [[user]] = await pool.execute(
             'SELECT id FROM users WHERE public_id = ?', [publicId]
