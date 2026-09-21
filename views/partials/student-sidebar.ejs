@@ -384,41 +384,19 @@
         }
     }
 
-    let notifWorker = null;
-
-    if (window.SharedWorker) {
-        notifWorker = new SharedWorker('/js/notif-shared-worker.js');
-        notifWorker.port.start();
-
-        notifWorker.port.onmessage = function(e) {
-            const { type, payload } = e.data;
-            if (type === 'notification:new') {
-                prependNotificationItem(payload);
-                unreadCount++;
-                updateBadge();
-                updateSubtitle();
-            } else if (type === 'connection:error') {
-                console.warn('[Notifications] SSE connection lost, retrying...');
-            }
-        };
-
-        window.addEventListener('beforeunload', function() {
-            notifWorker.port.postMessage('close');
-        });
-    } else {
-        // Fallback for browsers without SharedWorker support (e.g. some mobile browsers)
-        const notifStream = new EventSource('/notifications/stream');
-        notifStream.addEventListener('notification:new', function(e) {
-            const notif = JSON.parse(e.data);
+    // Realtime owns the connection: one shared stream per tab, or polling on a
+    // host that cannot hold one open. This previously opened its own, which
+    // duplicated the notification panel's and had no fallback.
+    window.Realtime
+        .on('notification:new', function (notif) {
             prependNotificationItem(notif);
             unreadCount++;
             updateBadge();
             updateSubtitle();
+        })
+        .on('connection:error', function () {
+            console.warn('[Notifications] Live updates interrupted.');
         });
-        notifStream.onerror = function() {
-            console.warn('[Notifications] SSE connection lost, retrying...');
-        };
-    }
 
     function prependNotificationItem(notif) {
         if (!body) return;

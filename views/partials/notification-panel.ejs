@@ -300,8 +300,8 @@ const _tabs = [
     updateBadge();
 
     // ── Live updates ──
-    // A SharedWorker keeps one SSE stream across tabs; browsers without it fall
-    // back to a stream per tab.
+    // Handled by /js/realtime.js, which shares one stream across tabs where it
+    // can and polls where a stream cannot be held open.
     function iconSvg(type) {
         switch (type) {
             case 'new-request':
@@ -364,18 +364,12 @@ const _tabs = [
         updateSubtitle();
     }
 
-    if (window.SharedWorker) {
-        var worker = new SharedWorker('/js/notif-shared-worker.js');
-        worker.port.start();
-        worker.port.onmessage = function (e) {
-            if (e.data && e.data.type === 'notification:new') received(e.data.payload);
-            else if (e.data && e.data.type === 'connection:error') console.warn('[Notifications] SSE lost, retrying…');
-        };
-        window.addEventListener('beforeunload', function () { worker.port.postMessage('close'); });
-    } else {
-        var stream = new EventSource('/notifications/stream');
-        stream.addEventListener('notification:new', function (e) { received(JSON.parse(e.data)); });
-        stream.onerror = function () { console.warn('[Notifications] SSE lost, retrying…'); };
-    }
+    // Realtime decides how to get these — one shared stream, or polling on a
+    // host that cannot hold one open. This used to open its own EventSource,
+    // which meant a second connection per tab and no fallback when the stream
+    // could not be held.
+    window.Realtime
+        .on('notification:new', received)
+        .on('connection:error', function () { console.warn('[Notifications] Live updates interrupted.'); });
 })();
 </script>
