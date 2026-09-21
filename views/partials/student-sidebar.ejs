@@ -35,10 +35,10 @@
             <span class="nav-badge"><%= appointmentCount %></span>
             <% } %>
         </a>
-        <%# The Faculty Lounge page reports presence at a department's lounge,
-            so it has nothing to show until a department is chosen. The route
-            says the same thing for anyone arriving on a saved link. %>
-        <% if (student.departmentId) { %>
+        <%# Always shown, even before a department is chosen. Hiding it made the
+            feature look like it did not exist: a student with no department saw
+            no link, no page and no explanation, and had no reason to go looking
+            in Settings. The page itself says what is missing and how to fix it. %>
         <a href="/student/availability" class="nav-item <%= activePage === 'availability' ? 'active' : '' %>">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"></circle>
@@ -46,7 +46,6 @@
             </svg>
             <span>Faculty Lounge</span>
         </a>
-        <% } %>
         <a href="/student/settings" class="nav-item <%= activePage === 'settings' ? 'active' : '' %>">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="3"></circle>

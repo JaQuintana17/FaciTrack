@@ -62,6 +62,9 @@ function facultyRow(row) {
         position: row.position || 'Faculty',
         department: row.department || '',
         status: row.status,
+        // Selected by the query all along, but dropped here — so the monitoring
+        // board had nothing to render and fell back to a silhouette for everyone.
+        photo: row.profile_picture || null,
         officeRoom: row.office_room_number
             ? [row.office_building, row.office_room_number].filter(Boolean).join(', ')
             : 'No office assigned',

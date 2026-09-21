@@ -177,3 +177,10 @@
   .bx-modal-foot { flex-direction:column; align-items:stretch; }
   .bx-modal-foot .bx-btn { width:100%; }
 }
+
+/* Held in the room by the exit margin rather than by a signal that clears the
+   threshold. Amber, not green: they count as in, but they could not enter on
+   this reading — which is exactly what an admin tuning a room needs to see. */
+.bx-pill.holding {
+  background: #fef3c7; color: #92400e; border-color: #fcd34d; margin-left: .25rem;
+}

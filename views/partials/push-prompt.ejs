@@ -1,0 +1,122 @@
+<%#
+  Asking for notification permission, the safe way round.
+
+  Calling Notification.requestPermission() cold is a one-shot gamble: a browser
+  denial is permanent and cannot be re-prompted from script, so a badly-timed
+  ask loses the channel for that person forever. This asks first, in our own
+  words, and only reaches for the browser prompt once somebody has said yes.
+
+  Rendered on every signed-in page (partials/script includes it) but hidden
+  until public/js/push-prompt.js decides it is worth showing — see the bail-out
+  list there. Only students and instructors are ever asked automatically, so
+  only their reasons are listed.
+%>
+<div class="pp-overlay" id="pushPrompt" hidden>
+  <div class="pp-card" role="dialog" aria-modal="true"
+       aria-labelledby="ppTitle" aria-describedby="ppBody">
+
+    <div class="pp-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+        <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+      </svg>
+    </div>
+
+    <h3 class="pp-title" id="ppTitle">Turn on notifications?</h3>
+
+    <div class="pp-body" id="ppBody">
+      <p class="pp-lede">FaciTrack can let you know on this device when something needs you.</p>
+      <ul class="pp-list">
+        <li data-pp-role="Student">When an instructor confirms, declines or moves your consultation</li>
+        <li data-pp-role="Instructor">When a student requests a consultation, and before one starts</li>
+        <li data-pp-role="any">A reminder shortly before a consultation begins</li>
+      </ul>
+      <p class="pp-note">You can turn this off any time in Settings.</p>
+    </div>
+
+    <%# Only shown when the browser refuses, where "try again" is not an option
+        and the only way back is through the browser's own site settings. %>
+    <p class="pp-error" id="ppError" hidden></p>
+
+    <div class="pp-actions">
+      <button type="button" class="pp-btn" id="ppLater">Not now</button>
+      <button type="button" class="pp-btn primary" id="ppEnable">Enable</button>
+    </div>
+  </div>
+</div>
+
+<style>
+  .pp-overlay {
+    position: fixed; inset: 0; z-index: 2000;
+    display: flex; align-items: center; justify-content: center;
+    padding: 1rem;
+    background: rgba(15, 23, 42, .55);
+    animation: pp-fade .18s ease-out;
+  }
+  .pp-card {
+    background: #fff; border-radius: var(--radius-lg);
+    box-shadow: 0 24px 60px rgba(10, 61, 98, .28);
+    width: 100%; max-width: 27rem; padding: 1.6rem 1.5rem 1.25rem;
+    text-align: center; font-family: var(--font-body);
+    animation: pp-rise .22s cubic-bezier(.34, 1.4, .64, 1);
+  }
+  @keyframes pp-fade { from { opacity: 0 } }
+  @keyframes pp-rise { from { opacity: 0; transform: translateY(12px) scale(.97) } }
+  @media (prefers-reduced-motion: reduce) {
+    .pp-overlay, .pp-card { animation: none }
+  }
+
+  .pp-icon {
+    width: 3.1rem; height: 3.1rem; margin: 0 auto .9rem;
+    border-radius: 50%; background: #e8f1f8; color: var(--primary-blue);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .pp-icon svg { width: 1.55rem; height: 1.55rem; }
+
+  .pp-title {
+    margin: 0 0 .45rem; font-size: 1.1rem; font-weight: 700;
+    color: var(--gray-900); letter-spacing: -.01em;
+  }
+  .pp-lede { margin: 0 0 .85rem; font-size: .875rem; color: var(--gray-600); line-height: 1.55; }
+
+  /* Left-aligned inside a centred card: a list of reasons is read, not scanned. */
+  .pp-list {
+    margin: 0 0 .9rem; padding: 0; list-style: none;
+    text-align: left; display: flex; flex-direction: column; gap: .45rem;
+  }
+  .pp-list li {
+    position: relative; padding-left: 1.4rem;
+    font-size: .8125rem; color: var(--gray-700); line-height: 1.5;
+  }
+  .pp-list li::before {
+    content: ''; position: absolute; left: .35rem; top: .5rem;
+    width: .3rem; height: .3rem; border-radius: 50%; background: var(--primary-blue);
+  }
+
+  .pp-note { margin: 0; font-size: .75rem; color: var(--gray-500); }
+
+  .pp-error {
+    margin: .9rem 0 0; padding: .6rem .75rem; border-radius: var(--radius-md);
+    background: #fef2f2; color: #991b1b; font-size: .8125rem; line-height: 1.5;
+    text-align: left;
+  }
+
+  .pp-actions { display: flex; gap: .6rem; margin-top: 1.25rem; }
+  .pp-btn {
+    flex: 1; padding: .65rem 1rem; border-radius: var(--radius-md);
+    border: 1.5px solid var(--gray-300); background: #fff; color: var(--gray-700);
+    font-family: var(--font-body); font-size: .875rem; font-weight: 600; cursor: pointer;
+  }
+  .pp-btn:hover { border-color: var(--gray-400); }
+  .pp-btn.primary {
+    background: var(--primary-blue); border-color: var(--primary-blue); color: #fff;
+  }
+  .pp-btn.primary:hover { filter: brightness(1.08); }
+  .pp-btn[disabled] { opacity: .6; cursor: default; }
+  .pp-btn:focus-visible { outline: 2px solid var(--primary-blue); outline-offset: 2px; }
+
+  @media (max-width: 26rem) {
+    .pp-actions { flex-direction: column-reverse; }
+  }
+</style>

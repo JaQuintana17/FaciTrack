@@ -513,10 +513,17 @@ const PresenceModel = {
                     b.last_seen_at, b.last_rssi, b.ibeacon_major, b.ibeacon_minor,
                     TIMESTAMPDIFF(SECOND, b.last_seen_at, NOW()) AS secs_since_seen,
                     r.room_number AS last_room,
+                    -- The threshold of the room the reading was taken in. The
+                    -- page used to judge every signal against the system-wide
+                    -- default, so a reading between a tuned room's cutoff and
+                    -- the default showed as strong while presence correctly
+                    -- treated it as below the line.
+                    r.rssi_threshold AS last_room_threshold,
                     u.public_id   AS instructor_id,
                     CONCAT(u.first_name, ' ', u.last_name) AS instructor_name,
                     fp.is_present,
-                    present_room.room_number AS present_room
+                    present_room.room_number AS present_room,
+                    present_room.rssi_threshold AS present_room_threshold
                FROM ble_beacons b
                LEFT JOIN rooms r ON r.id = b.last_room_id
                LEFT JOIN users u ON u.id = b.instructor_id

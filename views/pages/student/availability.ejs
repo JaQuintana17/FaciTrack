@@ -93,16 +93,18 @@
             </div>
 
 <% if (departmentMissing) { %>
-            <%# Reached by a saved link or a stale tab — the sidebar hides the
-                entry until a department is set. Say why rather than showing an
-                empty list that looks like nobody is in. %>
+            <%# The normal first visit, not an error: the sidebar link is always
+                there, so this is where a student who has not set a department
+                lands. It names what the page does before asking for anything,
+                so the feature is discoverable rather than invisible. %>
             <div class="content-card">
                 <div class="card-body" style="text-align:center;padding:3rem 1.5rem;">
                     <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto 1rem;display:block;color:var(--gray-300);"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                    <h3 style="font-size:1rem;color:var(--gray-800);margin:0 0 .5rem;">Choose your department first</h3>
+                    <h3 style="font-size:1rem;color:var(--gray-800);margin:0 0 .5rem;">Set your department to use this page</h3>
                     <p style="font-size:.875rem;color:var(--gray-500);line-height:1.65;margin:0 auto 1.25rem;max-width:32rem;">
-                        This page shows which instructors are in or out of their department's
-                        Faculty Lounge. Until your department is set there is no lounge to watch.
+                        The Faculty Lounge shows which of your instructors are at the lounge
+                        right now, and the availability each of them has set. It needs to know
+                        which department's lounge to watch — that is the only thing missing.
                     </p>
                     <a href="/student/settings" class="btn-primary" style="display:inline-flex;align-items:center;gap:.4rem;padding:.6rem 1.1rem;border-radius:var(--radius-md);text-decoration:none;font-size:.875rem;font-weight:600;">
                         Go to Settings

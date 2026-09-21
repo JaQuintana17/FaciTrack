@@ -211,8 +211,18 @@
                                 <tr data-id="<%= b.id %>" class="<%= b.instructor_id ? '' : 'unassigned' %><%= b.online ? '' : ' is-offline' %>">
                                     <td>
                                         <span class="bx-pill <%= b.online ? 'ok' : 'off' %>"><%= b.online ? 'Live' : 'Quiet' %></span>
-                                        <% if (b.instructor_id && b.is_present) { %>
-                                            <span class="bx-pill in-room" title="Currently counted as in this room">In <%= b.present_room || 'room' %></span>
+                                        <% if (b.instructor_id && b.is_present) {
+                                             // Judged against the room presence actually used, never the
+                                             // system default, and only when there is a reading to judge.
+                                             const enterAt = b.present_room_threshold ?? rssiThreshold;
+                                             const held = b.last_rssi !== null && b.last_rssi !== undefined
+                                                       && b.last_rssi < enterAt; %>
+                                            <% if (held) { %>
+                                            <span class="bx-pill holding"
+                                                  title="Below <%= enterAt %> dBm, so this tag could not enter the room now — the <%= exitMargin %> dB exit margin is what is keeping it in. It drops out below <%= enterAt - exitMargin %> dBm.">In <%= b.present_room || 'room' %> · holding</span>
+                                            <% } else { %>
+                                            <span class="bx-pill in-room" title="Heard at <%= enterAt %> dBm or better in this room">In <%= b.present_room || 'room' %></span>
+                                            <% } %>
                                         <% } %>
                                     </td>
                                     <td>
@@ -247,7 +257,12 @@
                                     </td>
                                     <td>
                                         <% if (b.last_rssi !== null && b.last_rssi !== undefined) { %>
-                                            <span class="bx-signal <%= b.last_rssi >= rssiThreshold ? 'strong' : 'weak' %>"><%= b.last_rssi %> dBm</span>
+                                            <%# Against the threshold of the room the reading came from.
+                                                Comparing a tuned room's reading to the system default is
+                                                how a signal below the line still showed as strong. %>
+                                            <% const judgedAt = b.last_room_threshold ?? rssiThreshold; %>
+                                            <span class="bx-signal <%= b.last_rssi >= judgedAt ? 'strong' : 'weak' %>"
+                                                  title="<%= b.last_room ? b.last_room + ' counts ' + judgedAt + ' dBm or better as in the room' : 'Judged against the system default of ' + judgedAt + ' dBm' %>"><%= b.last_rssi %> dBm</span>
                                         <% } else { %>
                                             <span class="bx-muted">—</span>
                                         <% } %>

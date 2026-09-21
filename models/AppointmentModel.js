@@ -144,7 +144,7 @@ const AppointmentModel = {
             LEFT JOIN consultation_hours fch ON fap.consultation_hour_id = fch.id
             WHERE ap.student_id = ?
             ORDER BY
-                FIELD(ap.status, 'pending', 'confirmed', 'rescheduled', 'declined', 'completed', 'cancelled'),
+                FIELD(ap.status, 'pending', 'confirmed', 'rescheduled', 'declined', 'expired', 'completed', 'cancelled'),
                 ch.consultation_date ASC,
                 ch.start_time ASC`;
         const [rows] = await pool.execute(query, [userId]);
@@ -312,7 +312,7 @@ const AppointmentModel = {
             LEFT JOIN departments d ON r.department_id = d.id
             WHERE ap.instructor_id = ?
             ORDER BY
-                FIELD(ap.status, 'pending', 'confirmed', 'rescheduled', 'declined', 'completed', 'cancelled'),
+                FIELD(ap.status, 'pending', 'confirmed', 'rescheduled', 'declined', 'expired', 'completed', 'cancelled'),
                 ch.consultation_date ASC,
                 ch.start_time ASC`;
 
@@ -936,6 +936,56 @@ const AppointmentModel = {
      * information. Requests whose consultation time has already passed are
      * skipped — nobody can approve those now.
      */
+    /**
+     * Requests whose consultation has been and gone while still pending.
+     *
+     * The end time, not the start: a consultation whose window has completely
+     * passed could not have happened, whereas one that started ten minutes ago
+     * still has most of its slot left and an instructor might legitimately
+     * accept it. Judging it on the end is the version that is never wrong.
+     *
+     * Returns what was expired so the caller can tell the students waiting.
+     */
+    async expireUnansweredRequests() {
+        const conn = await pool.getConnection();
+        try {
+            await conn.beginTransaction();
+
+            // Locked for the same reason the presence sweep locks: this runs on
+            // a timer, and an instructor pressing Approve at the same moment
+            // must either win outright or find nothing left to expire.
+            const [stale] = await conn.execute(
+                `SELECT a.id, a.student_id, a.instructor_id, a.topic,
+                        ch.consultation_date, ch.start_time, ch.end_time,
+                        CONCAT(u.first_name, ' ', u.last_name) AS instructor_name
+                   FROM appointments a
+                   JOIN consultation_hours ch ON ch.id = a.consultation_hour_id
+                   JOIN users u ON u.id = a.instructor_id
+                  WHERE a.status = 'pending'
+                    AND TIMESTAMP(ch.consultation_date, ch.end_time) < NOW()
+                  FOR UPDATE`
+            );
+
+            if (!stale.length) {
+                await conn.commit();
+                return [];
+            }
+
+            await conn.query(
+                "UPDATE appointments SET status = 'expired' WHERE id IN (?)",
+                [stale.map(r => r.id)]
+            );
+
+            await conn.commit();
+            return stale;
+        } catch (err) {
+            await conn.rollback();
+            throw err;
+        } finally {
+            conn.release();
+        }
+    },
+
     async getPendingAppointmentsForEscalation(afterHours = 48) {
         const [rows] = await pool.execute(
             `SELECT a.id, a.created_at,

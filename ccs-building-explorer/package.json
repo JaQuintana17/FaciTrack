@@ -1,0 +1,19 @@
+{
+  "name": "ccs-building-explorer",
+  "version": "1.0.0",
+  "description": "FaciTrack Interactive 3D CCS Building Explorer for CSPC Academic Building IV",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "keywords": ["facitrack", "3d", "three.js", "cspc", "ccs"],
+  "author": "FaciTrack Team",
+  "license": "MIT"
+}

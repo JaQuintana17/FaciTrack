@@ -885,3 +885,13 @@
   font-size: .68rem; font-weight: 700; cursor: pointer; white-space: nowrap; flex-shrink: 0;
 }
 .pop-link-copy:hover { border-color: var(--primary-blue); color: var(--primary-blue); }
+
+/* ── Expired: a request whose consultation passed unanswered ────────────────
+   Deliberately muted. A decline is a decision and reads red; this is the
+   absence of one, and colouring it the same would misreport what happened. */
+.apt-stat-icon.expired    { background: #f1f5f9; color: #64748b; }
+.apt-badge.expired        { background: #f1f5f9; border-color: #cbd5e1; color: #475569; }
+.apt-legend-dot.expired   { background: #94a3b8; }
+.apt-lv-status.expired    { background: #f1f5f9; color: #475569; }
+.pop-stripe.expired       { background: linear-gradient(90deg,#64748b,#94a3b8); }
+.pop-status-pill.expired  { background: #f1f5f9; color: #475569; }

@@ -66,6 +66,60 @@ async function sendCompletionNudges() {
  * the configured interval until they approve or decline, so a student is
  * never left waiting indefinitely on a request that was simply missed.
  */
+/**
+ * Close off requests whose consultation has been and gone unanswered.
+ *
+ * Until this existed, 'pending' covered two unrelated situations: a request an
+ * instructor has yet to answer, and one they never answered at all. Both sat in
+ * the same queue offering Approve and Decline, on a consultation whose time had
+ * already passed — buttons that cannot mean anything once the slot is behind
+ * you. Separating them is what lets every page stop offering the impossible.
+ *
+ * The student is told, because they are the one who was waiting and the one who
+ * has to book again. The instructor is not sent a separate notice: they were
+ * already nudged hourly while it was pending and escalated to the dean, and a
+ * third message after the fact would be noise rather than news. It still shows
+ * as expired in their own list and in the dean's report.
+ */
+async function expireUnansweredRequests() {
+    const expired = await AppointmentModel.expireUnansweredRequests();
+    if (!expired.length) return;
+
+    for (const apt of expired) {
+        const dateLabel = formatFullDate(apt.consultation_date);
+        const timeLabel = `${to12Hour(apt.start_time)} – ${to12Hour(apt.end_time)}`;
+
+        try {
+            await notifyUser(
+                apt.student_id,
+                'expired',
+                `Your consultation request with ${apt.instructor_name} on ${dateLabel} at ${timeLabel} was not answered in time. Book another slot if you still need it.`,
+                apt.id,
+                {
+                    pushTitle: 'Request expired',
+                    email: {
+                        heading: 'Consultation request expired',
+                        status: 'declined',
+                        message: `Your request was not answered before the consultation time passed. Nothing was booked — you can request another slot whenever you are ready.`,
+                        details: [
+                            { label: 'Instructor', value: apt.instructor_name },
+                            { label: 'Date', value: dateLabel },
+                            { label: 'Time', value: timeLabel },
+                            { label: 'Topic', value: apt.topic },
+                        ],
+                    },
+                }
+            );
+        } catch (err) {
+            // One student's notification failing must not strand the rest;
+            // the appointment is already expired either way.
+            console.error('[ReminderJob] Could not notify about expiry:', err.message);
+        }
+    }
+
+    console.log('[ReminderJob] Expired ' + expired.length + ' unanswered request(s).');
+}
+
 async function sendPendingRequestNudges() {
     const everyHours = await appSettings.get('pending_nudge_every_hours');
     const waiting = await AppointmentModel.getPendingAppointmentsAwaitingAction(everyHours);
@@ -159,7 +213,20 @@ function startReminderJob() {
         } catch (err) {
             console.error('[ReminderJob] Upcoming reminders failed:', err);
         }
+        try {
+            // Every minute rather than hourly: a request expires at a definite
+            // moment, and leaving Approve live for up to an hour past it is
+            // exactly the thing being fixed.
+            await expireUnansweredRequests();
+        } catch (err) {
+            console.error('[ReminderJob] Expiring unanswered requests failed:', err);
+        }
     });
+
+    // Anything that went stale while the server was down is closed off at
+    // startup rather than waiting for the first tick.
+    expireUnansweredRequests().catch(err =>
+        console.error('[ReminderJob] Startup expiry sweep failed:', err.message));
 
     // Follow-up nudges — hourly; each one's own throttle decides who is due.
     // Kept in separate try blocks so one failing query cannot stop the others.
@@ -209,4 +276,5 @@ module.exports.sendUpcomingReminders = sendUpcomingReminders;
 module.exports.sendCompletionNudges = sendCompletionNudges;
 module.exports.sendMissingLinkNudges = sendMissingLinkNudges;
 module.exports.sendPendingRequestNudges = sendPendingRequestNudges;
+module.exports.expireUnansweredRequests = expireUnansweredRequests;
 module.exports.escalateUnansweredToDean = escalateUnansweredToDean;

@@ -3419,6 +3419,12 @@
     color: #2563eb;
 }
 
+/* A request that ran out of time. Muted on purpose — nothing was refused. */
+.notif-panel-icon.expired {
+    background: linear-gradient(135deg, #f1f5f9, #e2e8f0);
+    color: #64748b;
+}
+
 .notif-panel-icon.alert {
     background: linear-gradient(135deg, #ffedd5, #fed7aa);
     color: #ea580c;

@@ -47,16 +47,33 @@ function isDatabaseUnavailable(err) {
  * Does this caller want a page, or JSON?
  *
  * fetch() and XHR get JSON so their own error handling keeps working; a
- * browser navigating to a URL gets the page. Mirrors how the 404 handler
- * already decides, so the two cannot answer the same caller differently.
+ * browser navigating to a URL gets the page. The 404 handler in app.js calls
+ * this same function, so the two cannot answer one caller differently.
+ *
+ * Sec-Fetch-Dest on its own is not enough to rule a navigation out. Installed
+ * as a PWA, the service worker re-issues the navigation through fetch(), and
+ * it arrives with Sec-Fetch-Dest: empty even though it is still a browser
+ * asking for a page. Reading that as "not a document" is what put raw JSON on
+ * screen when the database went down. The Accept header survives the detour,
+ * so it is what decides.
  */
 function wantsHtml(req) {
+    // An explicit XHR is never after a page.
     if (req.xhr) return false;
     if (req.get('X-Requested-With') === 'XMLHttpRequest') return false;
-    // fetch() sets this on same-origin API calls; a navigation sets 'document'
-    const dest = req.get('Sec-Fetch-Dest');
-    if (dest && dest !== 'document') return false;
-    return Boolean(req.accepts('html'));
+
+    // A plain navigation says so outright.
+    if (req.get('Sec-Fetch-Dest') === 'document') return true;
+
+    // Listing json first means a caller stating no preference — Accept: */*,
+    // which is what a bare fetch() sends — resolves to json, while one that
+    // ranks text/html above it gets the page. Only a browser sends that
+    // ranking, so an API call cannot be mistaken for a navigation.
+    const preferred = req.accepts(['json', 'html']);
+    if (preferred) return preferred === 'html';
+
+    // Accepts nothing we can produce. The page reads fine either way.
+    return true;
 }
 
 function buildErrorHandler({ isProduction = process.env.NODE_ENV === 'production' } = {}) {

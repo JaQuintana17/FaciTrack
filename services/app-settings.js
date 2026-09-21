@@ -58,6 +58,13 @@ const DEFINITIONS = {
         type: 'int', fallback: 6, min: 0, max: 30,
         label: 'Room switch margin (dB)',
     },
+    presence_sighting_fresh_sec: {
+        // Must sit BELOW the scanner's report interval (10s in the shipped
+        // firmware) or a departure is not noticed until the second report,
+        // which doubles how long somebody lingers on a board after leaving.
+        type: 'int', fallback: 8, min: 3, max: 60,
+        label: 'Treat a sighting as current for (seconds)',
+    },
     presence_absent_after_sec: {
         type: 'int', fallback: 120, min: 30, max: 3600,
         label: 'Mark absent after (seconds)',

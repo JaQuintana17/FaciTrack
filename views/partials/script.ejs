@@ -1,6 +1,13 @@
 <script src="/js/main.js?v=<%= Date.now() %>"></script>
 <script src="/js/connection-status.js?v=<%= Date.now() %>"></script>
 <script src="/js/export-system.js?v=<%= Date.now() %>"></script>
+<%# Asking to enable notifications. Included here rather than per page so every
+    signed-in view can offer it — the landing and login pages do not include
+    this partial, so it never runs for somebody who is not signed in. The modal
+    stays hidden until push-prompt.js decides it is worth showing. %>
+<%- include('./push-prompt') %>
+<script src="/js/push-subscribe.js?v=<%= Date.now() %>"></script>
+<script src="/js/push-prompt.js?v=<%= Date.now() %>"></script>
 <script>
     function confirmDelete(name) {
         return confirm(`Are you sure you want to delete ${name}?`);

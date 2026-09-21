@@ -31,21 +31,23 @@ const ROOM_CLAIM_FRESH_SEC = 30;
  * How old a sighting may be and still count as "the scanner can hear this".
  *
  * The firmware keeps a tag in its report for thirty seconds after it last
- * actually heard it, sending the age alongside each reading. The server used
- * to ignore that age entirely, so a tag that walked out twenty-five seconds
- * ago still counted as present at its last remembered strength — presence was
- * up to half a minute behind the room even while the scanner reported.
+ * actually heard it, sending the age alongside each reading. Ignoring that age
+ * is what used to leave presence half a minute behind the room even while the
+ * scanner reported correctly.
  *
- * A tag advertising several times a second is heard many times inside a single
- * report, so going this long without one hearing means it is genuinely gone,
- * not momentarily blocked. Reports arrive every ten seconds, so this is one
- * and a half cycles: long enough to ride out a missed report, short enough
- * that nobody lingers on a board after leaving.
+ * This is the single biggest lever on how fast somebody shows as gone, because
+ * a departure is noticed on the first report where the tag looks stale. It is
+ * a setting rather than a constant for that reason — but it is a trade, not a
+ * free win: a tag advertising several times a second is heard repeatedly inside
+ * every report, so a short window is safe for a healthy tag and produces false
+ * departures for a weak one that is only heard now and then. Lower it while
+ * signal is good; raise it if people start flickering.
  *
- * A scanner too old to send the field reports 0, which reads as fresh — old
+ * A scanner too old to send the field reports 0, which reads as fresh, so old
  * firmware keeps behaving exactly as it did before.
+ *
+ * See presence_sighting_fresh_sec in services/app-settings.js.
  */
-const FRESH_SIGHTING_MS = 15000;
 
 /** Constant-time compare, so a wrong key cannot be found one character at a time. */
 function keyMatches(supplied) {
@@ -111,15 +113,17 @@ const PresenceController = {
             }
 
             const sightings = parseBeacons(req.body?.beacons);
-            const [defaultThreshold, exitMargin, switchMargin, absentAfter, logging, scannerStaleAfter] =
+            const [defaultThreshold, exitMargin, switchMargin, freshSec, absentAfter, logging, scannerStaleAfter] =
                 await Promise.all([
                     appSettings.get('presence_rssi_threshold'),
                     appSettings.get('presence_rssi_exit_margin'),
                     appSettings.get('presence_room_switch_margin'),
+                    appSettings.get('presence_sighting_fresh_sec'),
                     appSettings.get('presence_absent_after_sec'),
                     appSettings.get('presence_logging_enabled'),
                     appSettings.get('presence_scanner_offline_after_sec'),
                 ]);
+            const freshSightingMs = freshSec * 1000;
 
             // A room tuned individually wins over the system-wide default: a
             // large laboratory and a small consultation room do not share a
@@ -167,7 +171,7 @@ const PresenceController = {
             // What the scanner can hear *now*, as opposed to what it remembers
             // hearing. Only these decide whether somebody is in the room.
             const heardNow = new Set(
-                sightings.filter(s => s.lastSeenMs <= FRESH_SIGHTING_MS).map(s => s.mac)
+                sightings.filter(s => s.lastSeenMs <= freshSightingMs).map(s => s.mac)
             );
 
             try {
@@ -319,8 +323,10 @@ const PresenceController = {
                 heard: sightings.length,
                 // Sightings the scanner is remembering rather than hearing. A
                 // number that is persistently high means tags are advertising
-                // too slowly to be heard inside a report.
+                // too slowly to be heard inside a report — or that this window
+                // has been tightened past what the signal can sustain.
                 stale: sightings.length - heardNow.size,
+                freshWindowSec: freshSec,
                 inRoom: sightings.filter(s => s.rssi >= threshold && heardNow.has(s.mac)).length,
                 recognised: assigned.length,
                 unassigned: beacons.filter(b => !b.instructor_id).length,

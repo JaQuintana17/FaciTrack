@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="FaciTrack Interactive 3D Explorer — CSPC CCS Academic Building IV" />
+  <title>FaciTrack — CCS Building Explorer</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="css/ccs-building-style.css" />
+  <link rel="stylesheet" href="css/ccs-building-ui.css" />
+
+  <!--
+    Import map — maps bare "three" and "three/addons/*" specifiers to
+    the jsDelivr CDN so we can use ES6 import syntax without a bundler.
+  -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+
+<body>
+<!-- ════════════════════════════════════════════════════════════════════════
+     LOADING OVERLAY
+     Shown while Three.js initialises; hidden by ccs-building-ui.js
+     ════════════════════════════════════════════════════════════════════════ -->
+<div id="loading-overlay" role="status" aria-live="polite">
+  <div class="loading-logo">
+    <div class="logo-block">FT</div>
+    <div>
+      <h2>FaciTrack</h2>
+      <p>CCS Building Explorer</p>
+    </div>
+  </div>
+  <div class="loading-spinner" aria-hidden="true"></div>
+  <p class="loading-text">Building the scene&hellip;</p>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════
+     APP SHELL
+     ════════════════════════════════════════════════════════════════════════ -->
+<div id="app">
+
+  <!-- ── Three.js canvas host ─────────────────────────────────────────── -->
+  <div id="canvas-container" aria-label="Interactive 3D building view"></div>
+
+  <!-- ── Top navigation bar ──────────────────────────────────────────── -->
+  <header id="topbar" role="banner">
+
+    <!-- Brand -->
+    <a class="topbar-brand" href="/" aria-label="FaciTrack home">
+      <div class="brand-icon" aria-hidden="true">FT</div>
+      <div>
+        <div class="brand-name">FaciTrack</div>
+        <div class="brand-sub">CSPC &mdash; CCS</div>
+      </div>
+    </a>
+
+    <!-- Centre title -->
+    <div class="topbar-title" aria-hidden="true">
+      <h1>CCS Building Explorer</h1>
+      <span>Academic Building IV &mdash; Interactive 3D View</span>
+    </div>
+
+    <!-- Search -->
+    <div class="topbar-search" role="search">
+      <label for="search-input" class="sr-only">Search room</label>
+      <div class="search-wrap">
+        <img src="icons/search.svg" alt="" aria-hidden="true" />
+        <input
+          id="search-input"
+          type="text"
+          placeholder="Search room… (CCS201)"
+          autocomplete="off"
+          spellcheck="false"
+          aria-label="Search room by code"
+        />
+      </div>
+      <button id="search-btn" aria-label="Submit search">Search</button>
+    </div>
+
+    <!-- Mobile hamburger -->
+    <button id="menu-toggle" aria-label="Toggle navigation menu" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+
+  </header>
+
+  <!-- ── Left sidebar ─────────────────────────────────────────────────── -->
+  <nav id="sidebar" role="navigation" aria-label="Building navigation">
+
+    <div class="sidebar-section-label">Floors</div>
+
+    <button class="sidebar-btn" data-floor="0" aria-pressed="false">
+      <span class="floor-dot" aria-hidden="true"></span>
+      Ground Floor
+      <span class="floor-label-pill">G</span>
+    </button>
+
+    <button class="sidebar-btn" data-floor="1" aria-pressed="false">
+      <span class="floor-dot" aria-hidden="true"></span>
+      Second Floor
+      <span class="floor-label-pill">2F</span>
+    </button>
+
+    <button class="sidebar-btn" data-floor="2" aria-pressed="false">
+      <span class="floor-dot" aria-hidden="true"></span>
+      Third Floor
+      <span class="floor-label-pill">3F</span>
+    </button>
+
+    <button class="sidebar-btn" data-floor="3" aria-pressed="false">
+      <span class="floor-dot" aria-hidden="true"></span>
+      Fourth Floor
+      <span class="floor-label-pill">4F</span>
+    </button>
+
+    <div class="sidebar-section-label" style="margin-top:8px;">View</div>
+
+    <button class="sidebar-btn" id="reset-btn" aria-label="Reset camera to default view">
+      <img src="icons/reset.svg" alt="" aria-hidden="true" />
+      Reset View
+    </button>
+
+  </nav>
+
+  <!-- ── Room info panel (right floating card) ────────────────────────── -->
+  <aside
+    id="room-panel"
+    class="panel-hidden"
+    role="complementary"
+    aria-label="Room information"
+    aria-live="polite"
+  >
+    <div class="panel-header">
+      <div class="panel-header-left">
+        <span class="panel-room-badge" id="panel-room">—</span>
+      </div>
+      <button id="panel-close" aria-label="Close room panel">&#x2715;</button>
+    </div>
+
+    <div class="panel-body">
+
+      <div class="panel-field">
+        <span class="panel-label">Faculty</span>
+        <span class="panel-value" id="panel-faculty">—</span>
+      </div>
+
+      <div class="panel-divider" role="separator"></div>
+
+      <div class="panel-field">
+        <span class="panel-label">Floor</span>
+        <span class="panel-value" id="panel-floor">—</span>
+      </div>
+
+      <div class="panel-field">
+        <span class="panel-label">Room Use</span>
+        <span class="panel-value" id="panel-description">—</span>
+      </div>
+
+      <div class="panel-divider" role="separator"></div>
+
+      <div class="panel-field">
+        <span class="panel-label">Availability</span>
+        <span id="panel-status">—</span>
+      </div>
+
+    </div>
+
+    <div class="panel-footer">
+      <span class="live-dot" aria-hidden="true"></span>
+      Live status &mdash; synced with FaciTrack
+    </div>
+  </aside>
+
+  <!-- ── Toast notification ───────────────────────────────────────────── -->
+  <div id="toast" class="toast toast-hidden" role="alert" aria-live="assertive"></div>
+
+  <!-- ── Compass widget ───────────────────────────────────────────────── -->
+  <div id="compass" title="Compass" aria-hidden="true">&#x1F9ED;</div>
+
+  <!-- ── Bottom hint bar ──────────────────────────────────────────────── -->
+  <div id="hint-bar" role="note" aria-label="Navigation hints">
+    <div class="hint-item">
+      <span class="hint-key">Left drag</span>
+      Rotate
+    </div>
+    <div class="hint-item">
+      <span class="hint-key">Scroll</span>
+      Zoom
+    </div>
+    <div class="hint-item">
+      <span class="hint-key">Right drag</span>
+      Pan
+    </div>
+    <div class="hint-item">
+      <span class="hint-key">Click room</span>
+      Details
+    </div>
+  </div>
+
+</div><!-- /#app -->
+
+<!-- ════════════════════════════════════════════════════════════════════════
+     ACCESSIBILITY — visually-hidden helper class (used on search label)
+     ════════════════════════════════════════════════════════════════════════ -->
+<style>
+  .sr-only {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip: rect(0,0,0,0);
+    white-space: nowrap;
+    border: 0;
+  }
+</style>
+
+<!-- ════════════════════════════════════════════════════════════════════════
+     MAIN ENTRY — ES6 module bootstrap
+     Imports and wires every module together in the correct order.
+     ════════════════════════════════════════════════════════════════════════ -->
+<script type="module">
+  import { createScene }          from './js/ccs-building-scene.js';
+  import { createCamera }         from './js/ccs-building-camera.js';
+  import { createControls }       from './js/ccs-building-controls.js';
+  import { buildBuilding }        from './js/ccs-building-loader.js';
+  import { initInteractions }     from './js/ccs-building-interactions.js';
+  import { startAnimationLoop }   from './js/ccs-building-animation.js';
+  import { hideLoadingOverlay, initSidebarToggle } from './js/ccs-building-ui.js';
+
+  // ── Boot sequence ──────────────────────────────────────────────────────
+  (async function init() {
+    try {
+      // 1. Renderer + scene + lights + ground
+      createScene();
+
+      // 2. Camera
+      createCamera();
+
+      // 3. OrbitControls (depends on camera + renderer)
+      createControls();
+
+      // 4. Build the procedural CCS building geometry
+      const buildingGroup = buildBuilding();
+
+      // 5. Wire up mouse/touch/keyboard interactions
+      initInteractions(buildingGroup);
+
+      // 6. Mobile sidebar toggle
+      initSidebarToggle();
+
+      // 7. Start the render loop
+      startAnimationLoop(buildingGroup);
+
+      // 8. Hide the loading screen (slight delay for first frame)
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          hideLoadingOverlay();
+        });
+      });
+
+    } catch (err) {
+      console.error('[CCS Explorer] Boot error:', err);
+      const overlay = document.getElementById('loading-overlay');
+      if (overlay) {
+        overlay.querySelector('.loading-text').textContent =
+          'Failed to load. Please refresh the page.';
+        overlay.querySelector('.loading-spinner').style.display = 'none';
+      }
+    }
+  })();
+</script>
+
+</body>
+</html>

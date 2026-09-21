@@ -1,0 +1,297 @@
+/* ==========================================================================
+   ccs-building-ui.css
+   Floating panels, room info card, status badges, toast notifications
+   ========================================================================== */
+
+/* ── Room Info Panel (right floating card) ── */
+#room-panel {
+  position: absolute;
+  top: 50%;
+  right: 20px;
+  transform: translateY(-50%) translateX(0);
+  z-index: 10;
+  width: 280px;
+  background: linear-gradient(
+    145deg,
+    rgba(10, 61, 98, 0.90) 0%,
+    rgba(13, 33, 55, 0.95) 100%
+  );
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 18px;
+  padding: 0;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.38),
+              0 0 0 1px rgba(26, 188, 156, 0.12);
+  overflow: hidden;
+  transition: opacity 0.3s ease, transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.panel-hidden {
+  opacity: 0 !important;
+  transform: translateY(-50%) translateX(24px) !important;
+  pointer-events: none !important;
+}
+
+.panel-visible {
+  opacity: 1 !important;
+  transform: translateY(-50%) translateX(0) !important;
+  pointer-events: all !important;
+}
+
+/* Panel header strip */
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 12px;
+  background: rgba(26, 188, 156, 0.12);
+  border-bottom: 1px solid rgba(255,255,255,0.10);
+}
+
+.panel-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.panel-room-badge {
+  background: var(--teal, #1ABC9C);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 7px;
+  letter-spacing: 0.3px;
+}
+
+.panel-room-number {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.90);
+}
+
+/* Close button */
+#panel-close {
+  width: 26px;
+  height: 26px;
+  background: rgba(255,255,255,0.10);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: rgba(255,255,255,0.70);
+  font-size: 14px;
+  line-height: 1;
+  transition: background 0.2s ease, color 0.2s ease;
+  flex-shrink: 0;
+}
+
+#panel-close:hover {
+  background: rgba(231, 76, 60, 0.25);
+  color: #e74c3c;
+  border-color: rgba(231, 76, 60, 0.4);
+}
+
+/* Panel body */
+.panel-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.panel-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.panel-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.40);
+}
+
+.panel-value {
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.92);
+  line-height: 1.3;
+}
+
+/* Description field — slightly muted */
+#panel-description {
+  font-size: 12px;
+  color: rgba(255,255,255,0.55);
+  font-style: italic;
+}
+
+/* ── Status Badge ── */
+#panel-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: 0.3px;
+  width: fit-content;
+  transition: background-color 0.3s ease;
+}
+
+#panel-status::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.70);
+  flex-shrink: 0;
+  animation: statusPulse 2s ease-in-out infinite;
+}
+
+@keyframes statusPulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+/* ── Panel divider ── */
+.panel-divider {
+  height: 1px;
+  background: rgba(255,255,255,0.08);
+  margin: 0 -16px;
+}
+
+/* ── Live status indicator strip at bottom of panel ── */
+.panel-footer {
+  padding: 10px 16px;
+  background: rgba(0,0,0,0.15);
+  border-top: 1px solid rgba(255,255,255,0.07);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: rgba(255,255,255,0.40);
+}
+
+.live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--teal, #1ABC9C);
+  animation: statusPulse 1.6s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+/* ── Toast notification ── */
+#toast {
+  position: fixed;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%) translateY(0);
+  z-index: 50;
+  padding: 10px 22px;
+  border-radius: 24px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: 'Inter', sans-serif;
+  color: #fff;
+  white-space: nowrap;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+  pointer-events: none;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.toast-hidden {
+  opacity: 0 !important;
+  transform: translateX(-50%) translateY(10px) !important;
+}
+
+.toast-visible {
+  opacity: 1 !important;
+  transform: translateX(-50%) translateY(0) !important;
+}
+
+.toast-success { background: rgba(26, 188, 156, 0.92); }
+.toast-error   { background: rgba(231, 76, 60, 0.92); }
+.toast-info    { background: rgba(41, 128, 185, 0.92); }
+
+/* ── Floor badge pills (inside sidebar, small indicators) ── */
+.floor-label-pill {
+  display: inline-block;
+  background: rgba(26,188,156,0.15);
+  border: 1px solid rgba(26,188,156,0.30);
+  color: #1ABC9C;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 10px;
+  margin-left: auto;
+  letter-spacing: 0.2px;
+}
+
+/* ── Compass / orientation widget ── */
+#compass {
+  position: absolute;
+  bottom: 56px;
+  right: 20px;
+  z-index: 9;
+  width: 44px;
+  height: 44px;
+  background: rgba(10, 61, 98, 0.70);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  user-select: none;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.30);
+}
+
+/* ── Responsive panel adjustments ── */
+@media (max-width: 768px) {
+  #room-panel {
+    top: auto;
+    bottom: 70px;
+    right: 50%;
+    transform: translateX(50%);
+    width: calc(100vw - 32px);
+    max-width: 340px;
+  }
+
+  .panel-hidden {
+    transform: translateX(50%) translateY(30px) !important;
+  }
+
+  .panel-visible {
+    transform: translateX(50%) translateY(0) !important;
+  }
+
+  #compass {
+    bottom: auto;
+    top: 72px;
+    right: 12px;
+    width: 36px;
+    height: 36px;
+    font-size: 15px;
+  }
+}
+
+@media (max-width: 480px) {
+  #toast {
+    bottom: 80px;
+    font-size: 12px;
+    padding: 8px 16px;
+  }
+}

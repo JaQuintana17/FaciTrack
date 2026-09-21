@@ -258,3 +258,8 @@
   .apt-link-actions { width: 100%; }
   .apt-link-btn { flex: 1; text-align: center; }
 }
+
+/* A request the instructor never answered before its time passed. Slate rather
+   than red: nothing was refused and nobody did anything wrong — it simply ran
+   out of time, and it should not shout like a decline. */
+.apt-status-expired { background:#f1f5f9;color:#475569;border:1px solid #cbd5e1; }

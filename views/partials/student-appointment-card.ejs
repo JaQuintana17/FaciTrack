@@ -83,7 +83,7 @@
             once it is over or called off the link is shown but not pushed, so
             a past booking can still be looked up without inviting anyone into
             a meeting that is finished. %>
-        <% if (apt.mode === 'Online' && apt.status !== 'declined') { %>
+        <% if (apt.mode === 'Online' && apt.status !== 'declined' && apt.status !== 'expired') { %>
         <div class="apt-list-row">
             <div class="apt-list-icon">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
@@ -114,6 +114,16 @@
             <div>
                 <p class="apt-list-label">Notes</p>
                 <p class="apt-list-value" style="font-weight:400;"><%= apt.notes %></p>
+            </div>
+        </div>
+        <% } else if (apt.status === 'expired') { %>
+            <div class="apt-list-row">
+            <div class="apt-list-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 7 12 12 15 14"/></svg>
+            </div>
+            <div>
+                <p class="apt-list-label">What happened</p>
+                <p class="apt-list-value" style="font-weight:400;">This request was not answered before the consultation time passed. Nothing was booked — you can request another slot.</p>
             </div>
         </div>
         <% } else if (apt.status === 'declined') { %>

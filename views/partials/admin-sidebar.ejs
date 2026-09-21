@@ -12,6 +12,11 @@
         <div style="margin-top:.75rem;padding:.5rem .75rem;background:linear-gradient(135deg,rgba(10,61,98,.08),rgba(30,136,229,.12));border-radius:var(--radius-md);border:1px solid rgba(10,61,98,.15)">
             <p style="font-size:.7rem;font-weight:700;color:var(--primary-blue);text-transform:uppercase;letter-spacing:.06em;margin:0">CCS — Pilot Department</p>
         </div>
+        <!-- Mobile hamburger toggle -->
+        <button class="sidebar-mobile-toggle" id="sidebarToggle" aria-label="Toggle navigation" aria-expanded="false">
+            <svg class="icon-menu" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+            <svg class="icon-close" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
     </div>
     <nav class="sidebar-nav">
         <a href="/admin/dashboard" class="nav-item <%= activePage === 'dashboard' ? 'active' : '' %>">
@@ -57,3 +62,8 @@
         </a>
     </div>
 </aside>
+
+<%# Carries the hamburger’s click handler, plus the tap-outside and
+    tap-a-nav-item closers. Shared with the student, instructor and dean
+    sidebars — without it the toggle button renders but nothing listens to it. %>
+<%- include("./sidebar") %>

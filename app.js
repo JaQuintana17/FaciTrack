@@ -118,9 +118,10 @@ app.use('/export', require('./routes/export'));
 app.use('/dean', requireRole('Dean'), require('./routes/dean'));
 app.use('/admin', requireRole('Admin'), require('./routes/admin'));
 app.use('/superadmin', require('./routes/superadmin'));
-// 404: nothing above matched. Answer fetch/XHR callers with JSON, browsers with the page.
+// 404: nothing above matched. Answer fetch/XHR callers with JSON, browsers with
+// the page — using the error handler's test so the two agree on who is asking.
 app.use((req, res) => {
-    if (req.accepts('html')) {
+    if (require('./middleware/errorHandler').wantsHtml(req)) {
         return res.status(404).render('pages/404', {
             title: 'FaciTrack - Page Not Found',
             role: req.session?.role || null,

@@ -274,6 +274,9 @@ const AdminController = {
             instructors,
             scannerConfigured: Boolean(process.env.PRESENCE_INGEST_KEY),
             rssiThreshold: settings.presence_rssi_threshold,
+            // The tag list says when somebody is held in a room by the margin
+            // rather than by a signal that clears the threshold.
+            exitMargin: settings.presence_rssi_exit_margin,
             scannerOfflineAfter,
             tagOfflineAfter,
             stats: {

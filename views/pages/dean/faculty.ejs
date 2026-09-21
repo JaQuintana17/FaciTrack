@@ -50,7 +50,9 @@
   border-bottom:1px solid #e2e8f0;flex-shrink:0;
   transition:opacity .4s ease,transform .4s ease;
 }
-.fs-header.faded{opacity:0;transform:translateY(-100%);pointer-events:none}
+/* Deliberately no faded state: the title, the room and the clock are content,
+   not chrome, and a board that hides them once nobody touches the mouse is
+   answering a question nobody asked. Only .fs-close-btn fades. */
 .fs-header-left{display:flex;align-items:center;gap:.625rem;min-width:0}
 .fs-board-title{font-size:1.05rem;font-weight:800;color:#1e293b;margin:0;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fs-board-sub{font-size:.72rem;font-weight:600;color:#64748b;margin:0}
@@ -83,7 +85,7 @@
   flex:1;overflow-y:auto;padding:3.75rem 1.25rem 1rem;background:#f0f4f8;
   transition:padding-top .4s ease;
 }
-.fs-header.faded + .fs-body{padding-top:1rem}
+
 .fs-body::-webkit-scrollbar{width:5px}
 .fs-body::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
 
@@ -121,6 +123,11 @@
 .fs-card.out .fs-photo{background:#f1f5f9;border-color:#e2e8f0}
 .fs-photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .fs-photo svg{position:absolute;inset:0;margin:auto;width:50%;height:50%}
+.fs-initials{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:2rem;font-weight:800;letter-spacing:.02em;color:#1e40af;
+}
+.fs-card.out .fs-initials{color:#64748b}
 .fs-card.in  .fs-photo svg{color:rgba(255,255,255,.7)}
 .fs-card.out .fs-photo svg{color:#94a3b8}
 
@@ -136,23 +143,28 @@
 .fs-card.out .fs-name{color:#1e293b}
 
 .fs-pos{
-  font-size:.72rem;font-weight:500;text-align:center;margin:0;
+  font-size:.78rem;font-weight:500;text-align:center;margin:0;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;
 }
-.fs-card.in  .fs-pos{color:rgba(255,255,255,.75)}
-.fs-card.out .fs-pos{color:#64748b}
+/* .92 rather than .75: at this size a three-quarter white is grey mush on blue. */
+.fs-card.in  .fs-pos{color:rgba(255,255,255,.92)}
+.fs-card.out .fs-pos{color:#475569}
 
+/* Where somebody is, as a chip. Bigger, solid colour, and visually separate
+   from the position line so the two stop reading as one paragraph. */
 .fs-room{
-  font-size:.7rem;font-weight:600;text-align:center;margin:0;
-  width:100%;overflow-wrap:anywhere;line-height:1.3;
+  font-size:.82rem;font-weight:700;text-align:center;margin:.1rem 0 0;
+  max-width:100%;overflow-wrap:anywhere;line-height:1.35;
+  padding:.16rem .5rem;border-radius:999px;
 }
-.fs-card.in  .fs-room{color:rgba(255,255,255,.7)}
-.fs-card.out .fs-room{color:#2563eb}
+.fs-card.in  .fs-room{color:#fff;background:rgba(255,255,255,.22)}
+.fs-card.out .fs-room{color:#1d4ed8;background:#e8f0fe}
+.fs-card.unknown .fs-room{color:#64748b;background:#f1f5f9}
 
 .fs-time{
-  font-size:.75rem;font-weight:600;text-align:center;margin:0;
+  font-size:.78rem;font-weight:600;text-align:center;margin:0;
 }
-.fs-card.in  .fs-time{color:rgba(255,255,255,.9)}
+.fs-card.in  .fs-time{color:rgba(255,255,255,.95)}
 .fs-card.out .fs-time{color:#94a3b8}
 
 /* ── Section label ── */
@@ -202,8 +214,23 @@
   display:flex;align-items:center;justify-content:center;flex-shrink:0;
 }
 .fs-mini-photo svg{width:55%;height:55%;color:#94a3b8}
-.fs-mini-name{font-size:.75rem;font-weight:700;color:#1e293b;margin:0;white-space:nowrap}
-.fs-mini-sub {font-size:.65rem;color:#64748b;margin:0;white-space:nowrap}
+.fs-mini-photo img{width:100%;height:100%;object-fit:cover}
+.fs-mini-initials{
+  font-size:.8rem;font-weight:800;color:#475569;letter-spacing:.02em;
+}
+.fs-mini-name{font-size:.8rem;font-weight:700;color:#1e293b;margin:0;white-space:nowrap}
+.fs-mini-sub {font-size:.7rem;color:#475569;margin:0;white-space:nowrap}
+
+/* Shown once a panel holds more than it can display at a glance. Sized like a
+   mini card so the row keeps its rhythm rather than ending on a stray button. */
+.fs-mini-more{
+  display:flex;align-items:center;gap:.35rem;
+  background:#fff;border:1px dashed #cbd5e1;border-radius:8px;
+  padding:.35rem .7rem;cursor:pointer;
+  font-family:var(--font-body);font-size:.78rem;font-weight:700;color:#475569;
+}
+.fs-mini-more:hover{border-color:#94a3b8;color:#1e293b;background:#f8fafc}
+.fs-mini-more:focus-visible{outline:2px solid #2563eb;outline-offset:2px}
 
 .fs-no-results{text-align:center;padding:2rem;color:#94a3b8;font-size:.875rem}
 /* ── Modal ── */
@@ -347,8 +374,6 @@
         const inRoomFac  = faculty.filter(f => f.bleStatus === 'in-room');
         const outRoomFac = faculty.filter(f => f.bleStatus === 'out-of-room');
         const noDataFac  = faculty.filter(f => f.bleStatus === 'unknown');
-        const onTravel   = faculty.filter(f => f.availability === 'travel');
-        const onLeave    = faculty.filter(f => f.availability === 'leave');
         const initials   = n => n.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase();
       %>
 
@@ -572,7 +597,6 @@
       <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
         <div class="fs-legend" id="fsLegend">
           <div class="fs-legend-item"><span class="fs-legend-dot in"></span> In</div>
-          <div class="fs-legend-item"><span class="fs-legend-dot out"></span> Out</div>
         </div>
         <div class="fs-clock-wrap">
           <span class="fs-clock" id="fsClock">--:--</span><span class="fs-ampm" id="fsAmpm"></span>
@@ -606,17 +630,9 @@
           <span class="fs-bottom-dot travel"></span>
           On Official Travel
         </div>
-        <div class="fs-bottom-grid" id="fsTravelGrid">
-          <% if (!onTravel.length) { %>
-          <p class="fs-bottom-empty">No employees on travel</p>
-          <% } %>
-          <% onTravel.forEach(function(f){ %>
-          <div class="fs-mini-card travel">
-            <div class="fs-mini-photo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
-            <div><p class="fs-mini-name"><%= f.name %></p><p class="fs-mini-sub"><%= f.position %></p></div>
-          </div>
-          <% }); %>
-        </div>
+        <%# Filled by renderBottomPanels(), so a status set while the board is
+            up appears without a reload. %>
+        <div class="fs-bottom-grid" id="fsTravelGrid"></div>
       </div>
 
       <div class="fs-bottom-panel">
@@ -624,17 +640,7 @@
           <span class="fs-bottom-dot leave"></span>
           On Leave
         </div>
-        <div class="fs-bottom-grid" id="fsLeaveGrid">
-          <% if (!onLeave.length) { %>
-          <p class="fs-bottom-empty">No employees on leave</p>
-          <% } %>
-          <% onLeave.forEach(function(f){ %>
-          <div class="fs-mini-card leave">
-            <div class="fs-mini-photo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
-            <div><p class="fs-mini-name"><%= f.name %></p><p class="fs-mini-sub"><%= f.position %></p></div>
-          </div>
-          <% }); %>
-        </div>
+        <div class="fs-bottom-grid" id="fsLeaveGrid"></div>
       </div>
 
     </div>
@@ -1014,17 +1020,108 @@
   // ── Full screen board ──
   var fadeTimer = null;
   var closeBtn = document.getElementById('previewClose');
-  var fsHeader = document.getElementById('fsHeader');
   var clockInterval = null;
 
-  /** The chrome follows the mouse: visible while it moves, gone once it stops. */
+  /* ── The travel and leave panels ──────────────────────────────────────
+     Rendered here rather than on the server so a status changed while the
+     board is up appears without a reload — the live feed already merges
+     availability into facultyData, and renderBoard() calls this.
+
+     Each panel shows a handful and then offers the rest, so a department with
+     a dozen people away does not push the main grid off the screen. The
+     expanded state is per panel and survives a re-render, because a dean who
+     opened one to read it should not have it close under them when somebody
+     across campus walks into a room. */
+
+  var PANEL_VISIBLE = 6;
+  var panelExpanded = { travel: false, leave: false };
+
+  function miniCard(f, kind) {
+    var card = document.createElement('div');
+    card.className = 'fs-mini-card ' + kind;
+
+    var face = f.photo
+      ? '<img src="' + esc(f.photo) + '" alt="" loading="lazy">'
+      : '<span class="fs-mini-initials">' + esc(initials(f.name)) + '</span>';
+
+    card.innerHTML =
+      '<div class="fs-mini-photo">' + face + '</div>' +
+      '<div><p class="fs-mini-name">' + esc(f.name) + '</p>' +
+      '<p class="fs-mini-sub">' + esc(f.position) + '</p></div>';
+
+    // Same fallback as the main board: a missing file must not leave a hole.
+    var img = card.querySelector('.fs-mini-photo img');
+    if (img) {
+      img.addEventListener('error', function () {
+        img.remove();
+        var holder = card.querySelector('.fs-mini-photo');
+        if (holder && !holder.querySelector('.fs-mini-initials')) {
+          var span = document.createElement('span');
+          span.className = 'fs-mini-initials';
+          span.textContent = initials(f.name);
+          holder.appendChild(span);
+        }
+      });
+    }
+    return card;
+  }
+
+  function fillPanel(gridId, kind, list, emptyText) {
+    var grid = document.getElementById(gridId);
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    if (!list.length) {
+      var none = document.createElement('p');
+      none.className = 'fs-bottom-empty';
+      none.textContent = emptyText;
+      grid.appendChild(none);
+      return;
+    }
+
+    var expanded = panelExpanded[kind];
+    var shown = expanded ? list : list.slice(0, PANEL_VISIBLE);
+    shown.forEach(function (f) { grid.appendChild(miniCard(f, kind)); });
+
+    var hidden = list.length - shown.length;
+    if (hidden > 0 || expanded) {
+      var more = document.createElement('button');
+      more.type = 'button';
+      more.className = 'fs-mini-more';
+      more.textContent = expanded ? 'Show fewer' : '+' + hidden + ' more';
+      more.setAttribute('aria-expanded', String(expanded));
+      more.addEventListener('click', function () {
+        panelExpanded[kind] = !panelExpanded[kind];
+        renderBottomPanels();
+      });
+      grid.appendChild(more);
+    }
+  }
+
+  function renderBottomPanels() {
+    var travel = facultyData.filter(function (f) { return f.availability === 'travel'; });
+    var leave  = facultyData.filter(function (f) { return f.availability === 'leave'; });
+
+    // Alphabetical: a list that reorders itself as people move is unreadable.
+    travel.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    leave.sort(function (a, b) { return a.name.localeCompare(b.name); });
+
+    fillPanel('fsTravelGrid', 'travel', travel, 'Nobody is on official travel');
+    fillPanel('fsLeaveGrid', 'leave', leave, 'Nobody is on leave');
+  }
+
+  /**
+   * Only the close button follows the mouse.
+   *
+   * The header carries the room being shown and the clock — content, not
+   * chrome. Hiding it after three idle seconds made the board harder to read
+   * from across the room, which is the one thing it exists for.
+   */
   function showChrome(){
     closeBtn.classList.remove('faded');
-    fsHeader.classList.remove('faded');
     clearTimeout(fadeTimer);
     fadeTimer = setTimeout(function(){
       closeBtn.classList.add('faded');
-      fsHeader.classList.add('faded');
     }, 3000);
   }
 
@@ -1073,15 +1170,39 @@
         ? (f.detectedRoom || 'In a room')
         : (f.bleStatus === 'out-of-room' ? 'Not in a room' : 'No presence data');
 
+      // A face is what makes this board readable from across a room — a wall
+      // of identical silhouettes is not. Initials stand in when there is no
+      // photo, rather than a generic outline that tells nobody anything.
+      var face = f.photo
+        ? '<img src="' + esc(f.photo) + '" alt="" loading="lazy">'
+        : '<span class="fs-initials">' + esc(initials(f.name)) + '</span>';
+
       card.innerHTML =
-        '<div class="fs-photo">' +
-          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>' +
-        '</div>' +
+        '<div class="fs-photo">' + face + '</div>' +
         '<p class="fs-name">' + esc(f.name) + '</p>' +
         '<p class="fs-room">' + esc(room ? (f.bleLastDetected || 'just now') : whereText) + '</p>';
 
+      // A photo whose file has gone missing must not leave an empty circle —
+      // the row can outlive the upload.
+      var img = card.querySelector('.fs-photo img');
+      if (img) {
+        img.addEventListener('error', function () {
+          img.remove();
+          var holder = card.querySelector('.fs-photo');
+          if (holder && !holder.querySelector('.fs-initials')) {
+            var span = document.createElement('span');
+            span.className = 'fs-initials';
+            span.textContent = initials(f.name);
+            holder.appendChild(span);
+          }
+        });
+      }
+
       grid.appendChild(card);
     });
+
+    // The bottom panels follow the same data, so they refresh together.
+    renderBottomPanels();
 
     var empty = document.getElementById('fsNoResults');
     if (empty) {

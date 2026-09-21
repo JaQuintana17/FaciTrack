@@ -126,6 +126,13 @@
                             </div>
 
                             <div class="settings-field">
+                                <label class="settings-label" for="presenceSightingFresh">Treat a sighting as current for (seconds)</label>
+                                <input type="number" class="settings-input" id="presenceSightingFresh" min="3" max="60" step="1"
+                                       value="<%= settings.presence_sighting_fresh_sec %>">
+                                <p class="settings-hint">A scanner keeps reporting a tag for up to 30 seconds after it last actually heard it. Past this age the reading counts as a memory rather than a sighting, and the person is marked out — so this is the main control over how quickly someone shows as gone. <strong>Keep it below your scanners' report interval</strong> (10 seconds in the shipped firmware): at 8 seconds a departure is caught on the very next report, while at 10 or more it waits for the one after, which doubles the delay. Raise it if people flicker out while still in the room — that means the signal is too weak to sustain a short window, and the fix is signal strength, not this number.</p>
+                            </div>
+
+                            <div class="settings-field">
                                 <label class="settings-label" for="presenceAbsentAfter">Mark absent after (seconds)</label>
                                 <input type="number" class="settings-input" id="presenceAbsentAfter" min="30" max="3600" step="1"
                                        value="<%= settings.presence_absent_after_sec %>">
