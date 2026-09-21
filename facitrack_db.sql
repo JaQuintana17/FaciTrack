@@ -37,6 +37,11 @@ CREATE TABLE rooms (
     room_type                ENUM('Laboratory', 'Faculty Office', 'Consultation Room', 'Lecture', 'Faculty Lounge') DEFAULT 'Lecture',
     assigned_faculty         BIGINT NULL,   -- FK added after users exists
     is_ble_scanner_installed TINYINT(1) DEFAULT 0,
+    -- One global cutoff fits no room exactly: a large laboratory with the
+    -- scanner at one end and a small consultation room need different numbers.
+    -- NULL keeps a room on app_settings.presence_rssi_threshold, so nothing has
+    -- to be tuned until it actually needs tuning.
+    rssi_threshold           SMALLINT NULL,
     capacity                 TINYINT UNSIGNED DEFAULT NULL,
     status                   ENUM('Active', 'Inactive') DEFAULT 'Active',
     created_at               DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -164,7 +169,12 @@ CREATE TABLE appointments (
     completion_nudged_at DATETIME NULL,       -- last "please mark complete" nudge
     pending_nudged_at    DATETIME NULL,       -- last "this request is still waiting" nudge
     dean_escalated_at    DATETIME NULL,       -- set once the dean has been told it went unanswered
-    status               ENUM('pending','confirmed','completed','cancelled','declined','rescheduled') NOT NULL DEFAULT 'pending',
+    -- 'expired' is set by jobs/reminder.js once the consultation's end time has
+    -- passed while still pending. It keeps "never answered" apart from "waiting
+    -- for an answer", which is what lets the pages stop offering Approve and
+    -- Decline on a slot that is already behind us. Deliberately absent from
+    -- SLOT_HOLDING_STATUSES, so an unanswered request stops holding its slot.
+    status               ENUM('pending','confirmed','completed','cancelled','declined','rescheduled','expired') NOT NULL DEFAULT 'pending',
     created_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     FOREIGN KEY (consultation_hour_id) REFERENCES consultation_hours(id) ON DELETE RESTRICT,
@@ -240,14 +250,116 @@ CREATE TABLE workload_blocks (
 );
 
 -- ------------------------------------------------------------
--- Presence monitoring (BLE module — schema only, no code yet)
+-- Presence monitoring (BLE)
+--
+-- A battery tag on each instructor, and an ESP32 scanner in each room that
+-- reports what it can hear. The scanners decide nothing: they post signal
+-- strengths and controllers/PresenceController.js works out who is where,
+-- so the rules live in one place and can be changed without reflashing a board.
+--
+-- Presence never touches users.availability_status. What a scanner observed and
+-- what an instructor said about themselves are two separate facts, and nothing
+-- in this system derives one from the other.
 -- ------------------------------------------------------------
 
+-- One row per physical scanner, upserted on every report. A room going dark
+-- then shows up as a stale row rather than as tags that mysteriously went
+-- quiet — which is what tells a dead scanner apart from an empty room.
+CREATE TABLE ble_scanners (
+    id                INT UNSIGNED AUTO_INCREMENT,
+    scanner_id        VARCHAR(60) NOT NULL,     -- the board's own ID, set in firmware
+    room_id           INT UNSIGNED NULL,        -- matched from the room name it reports
+    last_seen_at      DATETIME NULL,
+    last_uptime_sec   INT UNSIGNED NULL,
+    last_beacon_count SMALLINT UNSIGNED NULL,
+    last_ip           VARCHAR(45) NULL,
+    report_count      INT UNSIGNED NOT NULL DEFAULT 0,
+    first_seen_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_scanner (scanner_id),
+    CONSTRAINT fk_scanner_room FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE SET NULL
+);
+
+-- The tags themselves. A tag is bound to at most one instructor, and an
+-- instructor to at most one tag, so presence always resolves to one person.
+--
+-- Unknown addresses are only written down while an admin has opened a discovery
+-- window: a scanner hears every phone that walks past, and most of those
+-- addresses rotate every few minutes, so recording them filled the table
+-- without ever yielding anything assignable.
+CREATE TABLE ble_beacons (
+    id            INT UNSIGNED AUTO_INCREMENT,
+    mac_address   CHAR(17) NOT NULL,
+    instructor_id BIGINT NULL,               -- NULL until an admin assigns it
+    label         VARCHAR(80) NULL,          -- e.g. "CCS Tag 01"
+    ibeacon_major SMALLINT UNSIGNED NULL,
+    ibeacon_minor SMALLINT UNSIGNED NULL,
+    battery_pct   TINYINT UNSIGNED NULL,
+    is_active     TINYINT(1) NOT NULL DEFAULT 1,
+    last_seen_at  DATETIME NULL,
+    last_room_id  INT UNSIGNED NULL,
+    last_rssi     SMALLINT NULL,
+    created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_beacon_mac (mac_address),
+    UNIQUE KEY uq_beacon_instructor (instructor_id),
+    CONSTRAINT fk_beacon_instructor FOREIGN KEY (instructor_id) REFERENCES users(id) ON DELETE SET NULL,
+    CONSTRAINT fk_beacon_last_room  FOREIGN KEY (last_room_id)  REFERENCES rooms(id) ON DELETE SET NULL
+);
+
+-- Raw signal history, so a room's threshold can be measured instead of guessed.
+--
+-- presence_logs records the strength at the moment somebody crossed a line,
+-- which is exactly the wrong sample for calibration: one reading, taken at the
+-- instant the tag happened to cross. Tuning needs the spread of readings from
+-- where a person actually sits — the weakest especially, because that is what a
+-- threshold has to clear.
+--
+-- Throttled on write and pruned by jobs/reminder.js, so this stays a rolling
+-- window rather than growing forever.
+CREATE TABLE ble_rssi_samples (
+    id         BIGINT UNSIGNED AUTO_INCREMENT,
+    beacon_id  INT UNSIGNED NOT NULL,
+    room_id    INT UNSIGNED NULL,
+    scanner_id VARCHAR(60) NULL,
+    rssi       SMALLINT NOT NULL COMMENT 'dBm, smoothed by the scanner',
+    sampled_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_samples_beacon_time (beacon_id, sampled_at),
+    KEY idx_samples_room_time (room_id, sampled_at),
+    CONSTRAINT fk_samples_beacon FOREIGN KEY (beacon_id) REFERENCES ble_beacons(id) ON DELETE CASCADE,
+    CONSTRAINT fk_samples_room   FOREIGN KEY (room_id)   REFERENCES rooms(id) ON DELETE SET NULL
+);
+
+-- The movement history the dean's Presence Logs page reads. Append-only, and
+-- separate from faculty_presence, which holds only the current state.
+CREATE TABLE presence_logs (
+    id            BIGINT UNSIGNED AUTO_INCREMENT,
+    instructor_id BIGINT NOT NULL,
+    room_id       INT UNSIGNED NULL,
+    event         ENUM('entered', 'exited', 'moved') NOT NULL,
+    rssi          SMALLINT NULL,          -- NULL on an exit: nothing was heard
+    scanner_id    VARCHAR(60) NULL,
+    occurred_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_plog_instructor_time (instructor_id, occurred_at),
+    KEY idx_plog_time (occurred_at),
+    CONSTRAINT fk_plog_instructor FOREIGN KEY (instructor_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_plog_room       FOREIGN KEY (room_id)       REFERENCES rooms(id) ON DELETE SET NULL
+);
+
+-- Who each room currently holds. One row per instructor, updated in place.
 CREATE TABLE faculty_presence (
     id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     instructor_id BIGINT NOT NULL,
     room_id       INT UNSIGNED NULL,
     is_present    TINYINT(1) NOT NULL DEFAULT 0,
+    -- The reading the owning room heard. Two scanners can hear one tag, and
+    -- without this the room that POSTed last won — so presence flipped between
+    -- adjacent rooms every few seconds. The room that hears the tag best owns
+    -- it, and this is what the comparison is made against.
+    last_rssi     SMALLINT NULL,
     detected_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_updated  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT fk_presence_instructor FOREIGN KEY (instructor_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -262,7 +374,9 @@ CREATE TABLE faculty_presence (
 CREATE TABLE notifications (
     id                     BIGINT AUTO_INCREMENT,
     user_id                BIGINT NOT NULL,
-    type                   ENUM('new-request','cancellation','unavailability','reminder','makeup','alert','approved','declined','rescheduled') NOT NULL,
+    -- 'expired' is its own type rather than reusing 'declined': nobody declined
+    -- it, and the student needs to know the difference.
+    type                   ENUM('new-request','cancellation','unavailability','reminder','makeup','alert','approved','declined','rescheduled','expired') NOT NULL,
     message                VARCHAR(255) NOT NULL,
     related_appointment_id BIGINT NULL,
     is_read                TINYINT(1) NOT NULL DEFAULT 0,
@@ -407,8 +521,10 @@ CREATE TABLE calendar_connections (
     user_id        BIGINT NOT NULL,
     provider       ENUM('google', 'apple', 'other') NOT NULL DEFAULT 'other',
     display_name   VARCHAR(120) NOT NULL,
-    feed_url       VARBINARY(1024) NOT NULL,   -- encrypted: the URL is a bearer secret
-    feed_hint      VARCHAR(80) NOT NULL,       -- masked tail, safe to show back
+    -- Both NULL for a Google connection, which authenticates with OAuth and has
+    -- no feed URL at all. Set only for a subscribed ICS feed.
+    feed_url       VARBINARY(1024) NULL,       -- encrypted: the URL is a bearer secret
+    feed_hint      VARCHAR(80) NULL,           -- masked tail, safe to show back
     auto_sync      TINYINT(1) NOT NULL DEFAULT 1,
     blocking_rule  ENUM('always', 'never', 'ask') NOT NULL DEFAULT 'ask',
     import_titles  TINYINT(1) NOT NULL DEFAULT 1,   -- off = busy times only
@@ -492,4 +608,60 @@ CREATE TABLE audit_logs (
     INDEX idx_user (user_id),
     INDEX idx_type (type),
     INDEX idx_created (created_at)
+);
+
+-- ------------------------------------------------------------
+-- The Faculty Lounge display board
+--
+-- A screen on a wall outside the lounge, showing who is in. It has no account
+-- and nobody signs in to it, so it identifies itself with a long random token
+-- in a cookie — stored here only as a SHA-256 hash, so a copy of this table is
+-- not a set of working keys.
+--
+-- A new screen shows a pairing code and nothing else until an admin approves it
+-- to a department. That approval is the whole access control: without it the
+-- board is never sent a single name.
+-- ------------------------------------------------------------
+
+CREATE TABLE display_devices (
+    id              BIGINT UNSIGNED AUTO_INCREMENT,
+    device_token    CHAR(64) NOT NULL,        -- sha256 of the cookie value
+    pairing_code    CHAR(6) NULL,             -- shown on screen until approved
+    code_expires_at DATETIME NULL,            -- a lapsed code is reissued on its own
+    label           VARCHAR(120) NULL,
+    department_id   TINYINT UNSIGNED NULL,    -- whose faculty this board shows
+    status          ENUM('pending', 'approved', 'revoked') NOT NULL DEFAULT 'pending',
+    approved_by     BIGINT NULL,
+    approved_at     DATETIME NULL,
+    user_agent      VARCHAR(255) NULL,        -- helps an admin tell two screens apart
+    last_seen_at    DATETIME NULL,
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_display_token (device_token),
+    UNIQUE KEY uq_display_code (pairing_code),
+    INDEX idx_display_status (status),
+    CONSTRAINT fk_display_department FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL,
+    CONSTRAINT fk_display_approver   FOREIGN KEY (approved_by)   REFERENCES users(id)       ON DELETE SET NULL
+);
+
+-- ------------------------------------------------------------
+-- System settings
+--
+-- Values an administrator can change without a redeploy: booking lead time,
+-- the presence thresholds and timeouts, whether email and device notifications
+-- are sent. services/app-settings.js holds the definition of each key — its
+-- type, its bounds and the .env variable it falls back to — so a missing row
+-- means "use the default" and a fresh install needs no seeding.
+--
+-- Keyed by name rather than one row of columns: adding a setting is then a code
+-- change in one file, not a migration.
+-- ------------------------------------------------------------
+
+CREATE TABLE app_settings (
+    setting_key   VARCHAR(60) NOT NULL,
+    setting_value VARCHAR(255) NOT NULL,
+    updated_by    BIGINT NULL,
+    updated_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (setting_key),
+    CONSTRAINT fk_app_settings_user FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
 );
