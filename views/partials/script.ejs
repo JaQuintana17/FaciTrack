@@ -1,5 +1,10 @@
 <script src="/js/main.js?v=<%= Date.now() %>"></script>
 <script src="/js/connection-status.js?v=<%= Date.now() %>"></script>
+<%# One live connection for the whole page, and the one place that knows
+    whether this host can hold a stream open or has to poll instead. Loaded
+    here so the notification panel and the sidebars share it rather than each
+    opening a connection of their own. %>
+<script src="/js/realtime.js?v=<%= Date.now() %>"></script>
 <script src="/js/export-system.js?v=<%= Date.now() %>"></script>
 <%# Asking to enable notifications. Included here rather than per page so every
     signed-in view can offer it — the landing and login pages do not include
