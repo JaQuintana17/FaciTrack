@@ -4,6 +4,7 @@ const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const os = require('os');
 const { createWorker } = require('tesseract.js');
 const WorkloadController = require('../controllers/WorkloadController');
 const WorkloadImportController = require('../controllers/WorkloadImportController');
@@ -497,7 +498,12 @@ router.post('/workload/ocr-import', upload.single('schedule'), async (req, res) 
         return res.status(400).json({ success: false, error: 'Invalid file type. Use JPEG, PNG, or WEBP.' });
     }
     try {
-        const worker = await createWorker('eng');
+        // tesseract.js downloads eng.traineddata on first use and caches it in
+        // the working directory by default — which is why eng.traineddata sits
+        // in the project root. That directory is read-only on a serverless
+        // host, so the download fails and OCR reports a processing error. The
+        // system temp directory is writable on both.
+        const worker = await createWorker('eng', 1, { cachePath: os.tmpdir() });
         const { data: { text } } = await worker.recognize(req.file.buffer);
         await worker.terminate();
         console.log('[OCR] Raw text length:', text.length);

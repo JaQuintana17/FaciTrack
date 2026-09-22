@@ -6,8 +6,7 @@ const session = require('express-session');
 const MySQLStore = require('express-mysql-session')(session);
 const path = require('path');
 const pool = require('./configs/db');
-const { ensureSeedUsers } = require('./services/auth');
-const { authContext, requireRole } = require('./middleware/auth');
+const { requireRole } = require('./middleware/auth');
 const attachNotifications = require('./middleware/attachNotifications');
 const auditNavigation = require('./middleware/auditNavigation');
 const passport = require('./configs/passport');
@@ -25,7 +24,6 @@ const IS_SERVERLESS = Boolean(process.env.VERCEL);
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const SESSION_TTL_MS = Number(process.env.SESSION_TTL_MS) || 1000 * 60 * 60 * 8;
 
-ensureSeedUsers(); // remove soon
 
 // Set EJS as templating engine
 app.set('view engine', 'ejs');
@@ -119,10 +117,6 @@ app.use(session({
 }));
 app.use(passport.initialize());
 app.use(passport.session());
-
-// Legacy cookie-session context — must run after session() so req.session exists.
-// TODO (Phase 1): remove along with the JSON-file auth stack.
-app.use(authContext);
 
 // Middleware: notifications
 app.use(attachNotifications);

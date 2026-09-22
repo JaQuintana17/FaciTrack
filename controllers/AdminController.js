@@ -1,5 +1,5 @@
 const pool = require('../configs/db');
-const b = require('bcrypt');
+const b = require('bcryptjs');
 const UserModel = require('../models/UserModel');
 const DepartmentModel = require('../models/DepartmentModel');
 const RoomModel = require('../models/RoomModel');

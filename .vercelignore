@@ -1,0 +1,37 @@
+# What never needs to reach the deployment.
+#
+# Vercel has a 250 MB uncompressed limit per function, and this project carries
+# a lot that the running app never reads. Keeping it out shortens uploads and
+# leaves headroom for the dependencies that are genuinely needed.
+
+# Raw 3D source assets — nothing in the app references them, and they are
+# already out of git. The .glb files the app does load are handled separately;
+# see the note in .gitignore.
+Meshy_AI_*/
+public/models/
+
+# A standalone prototype with its own package.json, not mounted by app.js.
+ccs-building-explorer/
+
+# Database dumps. Real data, and never needed at runtime.
+backups/
+
+# Applied by hand against the database, not read by the app.
+migrations/
+
+# Arduino sources for the BLE scanners.
+firmware/
+
+# OCR language data: downloaded to the temp directory on first use instead.
+eng.traineddata
+
+# Working notes and documentation.
+*.md
+!README.md
+facitrack_db.sql
+facitrack_db_diagram.sql
+
+# Local tooling
+.playwright-cli/
+.claude/
+.vscode/

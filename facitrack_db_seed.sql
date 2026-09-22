@@ -21,10 +21,10 @@ INSERT INTO users (first_name, last_name, email, role, status, department_id, ha
 SELECT
     'James',
     'Quintana',
-    'jaquintana@cspc.edu.ph',
+    'jaquintana@my.cspc.edu.ph',
     'Admin',
     'Active',
     id,
-    '$2b$10$.2t6joyuGCRggtmoIrNfzef01/8qMcxQwahWPLMTRTKEDG0RbF1B2'
+    '$2b$10$gxUHJOcik0/da9aRmzQSNerL3E6k4J3AMoyFboQt/i87Pqm5znp.6'
 FROM departments
 WHERE short_name = 'CCS';

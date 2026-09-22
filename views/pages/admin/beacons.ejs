@@ -317,7 +317,6 @@
 <div class="toast-container" id="toastContainer"></div>
 <%- include('../../partials/footer') %>
 <%- include('../../partials/script') %>
-<script src="/js/realtime.js?v=<%= Date.now() %>"></script>
 <script>
   window.__RSSI_THRESHOLD__ = <%- JSON.stringify(rssiThreshold) %>;
   window.__SCANNER_OFFLINE_AFTER__ = <%- JSON.stringify(scannerOfflineAfter) %>;

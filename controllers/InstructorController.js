@@ -7,7 +7,7 @@ const NotificationModel = require('../models/NotificationModel');
 const InstructorSettingsModel = require('../models/InstructorSettingsModel');
 const GoogleAccountModel = require('../models/GoogleAccountModel');
 const CalendarModel = require('../models/CalendarModel');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const { to12Hour } = require('../utils/timeFormat');
 const { buildInstructorUser } = require('../utils/sessionUser');
 
