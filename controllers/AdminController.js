@@ -769,15 +769,16 @@ const AdminController = {
         const [departments, rooms] = await Promise.all([
             DepartmentModel.getDepartments(),
             RoomModel.getRooms({
-                fields: `r.id, 
-                        r.room_number, 
-                        r.room_type, 
+                fields: `r.id,
+                        r.room_number,
+                        r.floor_number,
+                        r.room_type,
                         r.department_id,
                         r.capacity,
-                        d.full_name AS department_name, 
-                        d.building AS building_name, 
-                        CONCAT(u.last_name + ', ' + u.first_name) AS assigned_faculty_name, 
-                        r.is_ble_scanner_installed, 
+                        d.full_name AS department_name,
+                        d.building AS building_name,
+                        CONCAT(u.last_name, ', ', u.first_name) AS assigned_faculty_name,
+                        r.is_ble_scanner_installed,
                         r.status`
             })
         ]);
