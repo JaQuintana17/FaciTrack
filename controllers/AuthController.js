@@ -194,6 +194,15 @@ const AuthController = {
     },
 
     async verifyOtp(req, res) {
+        // Already through? Then this is a duplicate submit — a double-click, or
+        // the service worker retrying a slow request during a cold start. The
+        // first request burned the code and established the session; the second
+        // would otherwise find the code consumed and report "no longer valid"
+        // on an account that is in fact logged in. Send it where it belongs.
+        if (req.session.userId) {
+            return AuthController.redirectByRole(res, req.session.role);
+        }
+
         const pending = req.session.pendingOtp;
         if (!pending) {
             return res.redirect('/login');
