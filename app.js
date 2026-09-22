@@ -181,7 +181,25 @@ app.use('/superadmin', require('./routes/superadmin'));
 // 404: nothing above matched. Answer fetch/XHR callers with JSON, browsers with
 // the page — using the error handler's test so the two agree on who is asking.
 app.use((req, res) => {
-    if (require('./middleware/errorHandler').wantsHtml(req)) {
+    const wantsHtml = require('./middleware/errorHandler').wantsHtml(req);
+
+    /**
+     * Recover a mishandled login redirect.
+     *
+     * After login the server answers with a 302 to a dashboard, which the
+     * browser follows as a GET. An out-of-date service worker instead resolves
+     * that redirect itself and re-issues it as a POST, so a signed-in user
+     * lands on POST /<role>/dashboard — a path with only a GET route — and sees
+     * a 404 until they reload. The worker is fixed, but an installed PWA keeps
+     * running the copy it already has, so this makes the server resilient on
+     * its own: a non-GET page navigation from a signed-in session is sent back
+     * to the same URL as a GET (303), which is what should have happened.
+     */
+    if (req.method !== 'GET' && wantsHtml && req.session?.userId) {
+        return res.redirect(303, req.originalUrl);
+    }
+
+    if (wantsHtml) {
         return res.status(404).render('pages/404', {
             title: 'FaciTrack - Page Not Found',
             role: req.session?.role || null,
