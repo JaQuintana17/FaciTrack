@@ -136,7 +136,17 @@ const AuthController = {
             }
 
             await AuthController.establishSession(req, user);
-            AuthController.redirectByRole(res, user.role);
+            // Save before redirecting, the same as the OTP and Google paths.
+            // The dashboard the redirect lands on reads this session on a fresh
+            // request — a different serverless instance — so the write to the
+            // store must be committed before that request can arrive.
+            req.session.save((err) => {
+                if (err) {
+                    console.error('[AuthController.login] session save failed:', err);
+                    return res.redirect('/login');
+                }
+                AuthController.redirectByRole(res, user.role);
+            });
 
         } catch (err) {
             console.error('[AuthController.login]', err);
