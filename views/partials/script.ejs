@@ -23,3 +23,106 @@
     }
 
 </script>
+
+<%# ── Notification panel: mobile sheet, shared across every role ──────────────
+    Each role's sidebar carries its own copy of the panel markup and its own
+    open/close script, so the phone-sheet behaviour lives here, in the one
+    partial they all include, rather than in four places. It reacts to the
+    panel's `open` class, so it does not matter which sidebar's code set it. %>
+<style>
+    /* The dim layer sits behind the sheet on a phone; hidden everywhere else.
+       Addressed by id so it outranks a role stylesheet's own .notif-backdrop
+       rule, which would otherwise show it on desktop too. */
+    #notifBackdrop {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.45);
+        z-index: 1190;                 /* under the panel (1200), over the page */
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.25s ease, visibility 0.25s ease;
+    }
+    #notifBackdrop.open { opacity: 1; visibility: visible; }
+
+    @media (max-width: 768px) {
+        /* Freeze the page behind the sheet so scrolling does not bleed through. */
+        body.notif-open { overflow: hidden; }
+
+        #notifBackdrop { display: block; }
+
+        /* A full-height sheet that scrolls as one piece: the title, filters and
+           list move together rather than the header staying pinned. 100dvh
+           follows the viewport as the browser chrome shows/hides, so it does
+           not jump mid-scroll. */
+        #notifPanel {
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            width: 100% !important;
+            height: 100vh !important;
+            height: 100dvh !important;
+            max-height: 100vh !important;
+            max-height: 100dvh !important;
+            border: none !important;
+            border-radius: 0 !important;
+            transform: none !important;
+            display: block !important;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
+        }
+        /* Not pinned — they scroll up with the list. */
+        #notifPanel .notif-panel-header,
+        #notifPanel .notif-filter-bar { position: static !important; }
+        /* The panel is the scroll container now, so the list is not a second one. */
+        #notifPanelBody { flex: none !important; overflow: visible !important; }
+
+        /* A full sheet has no outside to tap, so the close button — hidden on
+           the desktop dropdown — has to show and be big enough to hit. */
+        #notifPanelClose {
+            display: inline-flex !important;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            min-width: 40px;
+            flex-shrink: 0;
+            border: none;
+            border-radius: 50%;
+            background: #f1f5f9;
+            color: #64748b;
+            cursor: pointer;
+        }
+        #notifPanelClose svg { width: 20px; height: 20px; }
+    }
+</style>
+<script>
+(function () {
+    var panel = document.getElementById('notifPanel');
+    if (!panel) return;   // login/landing have no panel
+
+    // Reuse the backdrop the sidebar already ships; make one if a panel has none.
+    var backdrop = document.getElementById('notifBackdrop');
+    if (!backdrop) {
+        backdrop = document.createElement('div');
+        backdrop.id = 'notifBackdrop';
+        document.body.appendChild(backdrop);
+    }
+
+    // Mirror the panel's open state onto the backdrop and the page. Driven by
+    // the class rather than by each sidebar's own open/close, so one observer
+    // covers all four implementations.
+    function sync() {
+        var open = panel.classList.contains('open');
+        backdrop.classList.toggle('open', open);
+        document.body.classList.toggle('notif-open', open);
+    }
+    new MutationObserver(sync).observe(panel, { attributes: true, attributeFilter: ['class'] });
+
+    // Tapping the dim layer closes the panel; the observer then clears the rest.
+    backdrop.addEventListener('click', function () { panel.classList.remove('open'); });
+
+    sync();
+})();
+</script>
