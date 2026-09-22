@@ -65,6 +65,27 @@ function buildSslOptions() {
 const DEFAULT_POOL = process.env.VERCEL ? 2 : 10;
 const connectionLimit = Number(process.env.DB_POOL_SIZE) || DEFAULT_POOL;
 
+/**
+ * The SQL mode every connection runs under.
+ *
+ * The app was written and tested against MariaDB, whose default mode is
+ * lenient in two ways MySQL 8 is not, and Aiven runs MySQL:
+ *
+ *  - ONLY_FULL_GROUP_BY: MySQL rejects a GROUP BY that selects a column not
+ *    functionally dependent on the grouping key (the instructor directory does
+ *    exactly this, picking one upcoming slot per instructor). MariaDB allows
+ *    it. Without this line that query throws ER_WRONG_FIELD_WITH_GROUP.
+ *  - ANSI_QUOTES: MySQL then reads "text" as a column name, not a string.
+ *
+ * STRICT_TRANS_TABLES stays — MariaDB is strict about bad data too, and
+ * dropping it would let truncation pass silently. This only relaxes the two
+ * differences that are behaviour, not integrity, so the database behaves the
+ * same in both places. DB_SQL_MODE overrides it if a deployment needs to.
+ */
+const SESSION_SQL_MODE =
+    process.env.DB_SQL_MODE ||
+    'STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION';
+
 const pool = mysql.createPool({
   host: process.env.DB_HOSTNAME,
   port: process.env.DB_PORT,
@@ -81,5 +102,17 @@ const pool = mysql.createPool({
   enableKeepAlive: true,
   dateStrings: true
 });
+
+// Applied once per physical connection, before the pool hands it out. The mode
+// is a fixed allow-list of flags, never user input, so it is safe to inline.
+if (/^[A-Z_,]*$/.test(SESSION_SQL_MODE)) {
+    pool.on('connection', (conn) => {
+        conn.query(`SET SESSION sql_mode = '${SESSION_SQL_MODE}'`, (err) => {
+            if (err) console.error('[DB] Could not set session sql_mode:', err.message);
+        });
+    });
+} else {
+    console.error(`[DB] DB_SQL_MODE contains unexpected characters and was ignored: ${SESSION_SQL_MODE}`);
+}
 
 module.exports = pool;

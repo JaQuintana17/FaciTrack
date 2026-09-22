@@ -51,7 +51,7 @@ const UserModel = {
             params.push(Number(offset));
         }
 
-        const [rows] = await pool.execute(query, params);
+        const [rows] = await pool.query(query, params);  // query() not execute(): a built LIMIT/OFFSET param is rejected by MySQL prepared statements
         return rows;
     },
 
@@ -84,7 +84,7 @@ const UserModel = {
         if (limit) { query += ' LIMIT ?'; params.push(Number(limit)); }
         if (offset) { query += ' OFFSET ?'; params.push(Number(offset)); }
 
-        const [rows] = await pool.execute(query, params);
+        const [rows] = await pool.query(query, params);  // query() not execute(): a built LIMIT/OFFSET param is rejected by MySQL prepared statements
         return rows;
     },
 
@@ -141,7 +141,7 @@ const UserModel = {
             params.push(Number(offset));
         }
 
-        const [rows] = await pool.execute(query, params);
+        const [rows] = await pool.query(query, params);  // query() not execute(): a built LIMIT/OFFSET param is rejected by MySQL prepared statements
         return rows;
     },
 
