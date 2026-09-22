@@ -1,3 +1,6 @@
+<%# Loads first so it wraps fetch before anything makes a request: a top
+    progress bar and per-button spinners for anything that takes a moment. %>
+<script src="/js/loading.js?v=<%= Date.now() %>"></script>
 <script src="/js/main.js?v=<%= Date.now() %>"></script>
 <script src="/js/connection-status.js?v=<%= Date.now() %>"></script>
 <%# One live connection for the whole page, and the one place that knows
