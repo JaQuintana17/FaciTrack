@@ -105,6 +105,99 @@ const _tabs = [
     </div>
 </div>
 
+<%# A dim layer behind the panel. On a phone it also stops taps reaching the
+    page underneath; on a wide screen it is hidden, where the panel is a small
+    dropdown. %>
+<div class="notif-backdrop" id="notifBackdrop" aria-hidden="true"></div>
+
+<style>
+/* Notification panel behaviour that has to hold on every role, so it lives with
+   the partial rather than in one role's stylesheet.
+
+   The problem it fixes: on a phone the panel was a floating box pinned below
+   the header, and the page kept scrolling behind it — the header slid away and
+   the list drifted over the content underneath. On a phone it is now a full
+   sheet, the page behind it is frozen, and only the list scrolls. */
+
+/* The id selector (not .notif-backdrop) is deliberate: one role's stylesheet
+   already defines `.notif-backdrop.open { display: block }`, which would show
+   the dim layer on desktop too. Addressing the element by id outranks that, so
+   these rules decide where it shows — hidden by default, on only for the phone
+   sheet. A wide-screen panel is a small dropdown that closes on an outside
+   click and needs neither a backdrop nor a scroll-lock. */
+#notifBackdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    z-index: 1190;                 /* under .notif-panel (1200), over the page */
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.25s ease, visibility 0.25s ease;
+}
+#notifBackdrop.open { opacity: 1; visibility: visible; }
+
+/* Phone: a full-height sheet. 100dvh follows the viewport as the browser's
+   address bar shows and hides, so the sheet does not jump mid-scroll the way a
+   100vh box does. The 100vh line before it is the fallback for older browsers. */
+@media (max-width: 768px) {
+    /* Freeze the page behind the sheet — this is what stops the scroll from
+       bleeding through. Only on a phone, where the panel covers the screen. */
+    body.notif-open { overflow: hidden; }
+
+    /* The dimming layer is a phone thing only. Present (block) so it can fade;
+       opacity/visibility above gate whether it actually shows. */
+    #notifBackdrop { display: block; }
+
+    .notif-panel {
+        top: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        width: 100% !important;
+        height: 100vh !important;
+        height: 100dvh !important;
+        max-height: 100vh !important;
+        max-height: 100dvh !important;
+        border: none !important;         /* a full sheet's side borders would push 2px past the viewport */
+        border-radius: 0 !important;
+        transform: none !important;      /* fade in; a scale on a full sheet looks wrong */
+    }
+
+    /* Title row and filters stay pinned; only the list moves. */
+    .notif-panel-header,
+    .notif-filter-bar {
+        position: sticky;
+        top: 0;
+        background: #fff;
+        z-index: 1;
+    }
+
+    /* A full sheet has no "outside" to tap, so the close button — hidden on the
+       desktop dropdown, which closes on an outside click — has to be here and
+       big enough to hit. */
+    .notif-panel-close {
+        display: inline-flex !important;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        min-width: 40px;
+        flex-shrink: 0;
+        border: none;
+        border-radius: 50%;
+        background: var(--gray-100, #f1f5f9);
+        color: var(--gray-500, #64748b);
+        cursor: pointer;
+    }
+    .notif-panel-close svg { width: 20px; height: 20px; }
+
+    .notif-panel-body {
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;  /* a flick at the end does not scroll the page */
+    }
+}
+</style>
+
 <script>
 (function () {
     'use strict';
@@ -118,6 +211,7 @@ const _tabs = [
     var subtitle = document.getElementById('notifSubtitle');
     var body     = document.getElementById('notifPanelBody');
     var loadMore = document.getElementById('notifLoadMore');
+    var backdrop = document.getElementById('notifBackdrop');
 
     if (!bell || !panel) return;
 
@@ -158,14 +252,24 @@ const _tabs = [
         subtitle.textContent = unreadCount > 0 ? unreadCount + ' unread' : 'All caught up';
     }
 
-    function openPanel() { panel.classList.add('open'); }
-    function closePanel() { panel.classList.remove('open'); }
+    function openPanel() {
+        panel.classList.add('open');
+        if (backdrop) backdrop.classList.add('open');
+        // Freeze the page behind the panel — the phone sheet relies on this.
+        document.body.classList.add('notif-open');
+    }
+    function closePanel() {
+        panel.classList.remove('open');
+        if (backdrop) backdrop.classList.remove('open');
+        document.body.classList.remove('notif-open');
+    }
 
     bell.addEventListener('click', function (e) {
         e.stopPropagation();
         panel.classList.contains('open') ? closePanel() : openPanel();
     });
     if (closeBtn) closeBtn.addEventListener('click', closePanel);
+    if (backdrop) backdrop.addEventListener('click', closePanel);
 
     document.addEventListener('click', function (e) {
         if (panel.classList.contains('open') && !panel.contains(e.target) && !bell.contains(e.target)) closePanel();
