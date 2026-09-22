@@ -51,7 +51,11 @@ const NotificationModel = {
         );
         if (!user) return [];
 
-        const [rows] = await pool.execute(
+        // query() rather than execute(): MySQL's prepared-statement protocol
+        // rejects a bound LIMIT parameter (ER_WRONG_ARGUMENTS), where MariaDB
+        // accepts it. query() escapes the same params client-side and sends
+        // plain SQL, so the integer LIMIT works on both.
+        const [rows] = await pool.query(
             `SELECT id, type, message, is_read, related_appointment_id, created_at
          FROM notifications
          WHERE user_id = ?
@@ -85,13 +89,14 @@ const NotificationModel = {
         );
         if (!user) return [];
 
-        const [rows] = await pool.execute(
+        // query() not execute(): MySQL rejects a bound LIMIT; see getForUser.
+        const [rows] = await pool.query(
             `SELECT id, type, message, is_read, related_appointment_id, created_at
                FROM notifications
               WHERE user_id = ? AND id > ?
            ORDER BY id ASC
               LIMIT ?`,
-            [user.id, Number(afterId) || 0, limit]
+            [user.id, Number(afterId) || 0, Number(limit) || 30]
         );
 
         return rows.map(r => ({
@@ -158,13 +163,14 @@ const NotificationModel = {
             'SELECT id FROM users WHERE public_id = ?', [publicId]
         );
         if (!user) return [];
-        const [rows] = await pool.execute(
+        // query() not execute(): MySQL rejects bound LIMIT/OFFSET; see getForUser.
+        const [rows] = await pool.query(
             `SELECT id, type, message, is_read, created_at, related_appointment_id
          FROM notifications
          WHERE user_id = ? AND is_read = 1
          ORDER BY created_at DESC
          LIMIT ? OFFSET ?`,
-            [user.id, limit, offset]
+            [user.id, Number(limit) || 10, Number(offset) || 0]
         );
         return rows.map(r => ({
             id: r.id,

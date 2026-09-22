@@ -40,7 +40,7 @@ const RoomModel = {
             params.push(Number(offset));
         }
 
-        const [rows] = await pool.execute(query, params);
+        const [rows] = await pool.query(query, params);  // query() not execute(): a built LIMIT/OFFSET param is rejected by MySQL prepared statements
         return rows;
     },
 

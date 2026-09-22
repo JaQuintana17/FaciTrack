@@ -9,14 +9,16 @@ const AuditLogModel = {
     },
 
     async getAll({ limit = 100, offset = 0 } = {}) {
-        const [rows] = await pool.execute(
+        // query() not execute(): MySQL's prepared-statement protocol rejects a
+        // bound LIMIT/OFFSET (ER_WRONG_ARGUMENTS) where MariaDB accepts it.
+        const [rows] = await pool.query(
             `SELECT al.id, al.action, al.type, al.created_at,
                     u.first_name, u.last_name, al.role
              FROM audit_logs al
              LEFT JOIN users u ON al.user_id = u.id
              ORDER BY al.created_at DESC
              LIMIT ? OFFSET ?`,
-            [limit, offset]
+            [Number(limit) || 100, Number(offset) || 0]
         );
         return rows;
     },

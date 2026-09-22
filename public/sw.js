@@ -1,12 +1,12 @@
 // Bump these whenever sw.js changes so the activate handler clears stale caches.
-const CACHE_NAME = 'facitrack-v6';
+const CACHE_NAME = 'facitrack-v7';
 
 /**
  * Rendered pages live apart from static assets, because they are the only
  * cached thing that belongs to one person. Signing out drops this whole cache
  * in one call; the CSS and images are nobody's secret and stay put.
  */
-const PAGE_CACHE = 'facitrack-pages-v6';
+const PAGE_CACHE = 'facitrack-pages-v7';
 
 // Where the signed-in session was last seen. Kept in PAGE_CACHE so that
 // clearing the pages clears the pointer to them too.
@@ -65,11 +65,9 @@ async function handleNavigation(request) {
                 if (signedOutPath) await caches.delete(PAGE_CACHE);
                 else if (HOME_PATH.test(url.pathname)) await rememberHome(url.pathname);
 
-                // Only GET can be stored — Cache.put() rejects anything else,
-                // and a submitted form is a navigation as much as a link is.
-                // Signing in as an admin is the case that finds this: the
-                // password step answers with a page (the code prompt) instead
-                // of a redirect, so it is the one POST that gets this far ok.
+                // Navigations reaching here are GET (the fetch handler sends
+                // form POSTs straight to the network), so this is always
+                // cacheable — the guard stays as a cheap assertion of that.
                 if (request.method === 'GET') {
                     const cache = await caches.open(PAGE_CACHE);
                     await cache.put(request, response.clone());
@@ -178,8 +176,16 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // Navigation requests (HTML pages)
-    if (request.mode === 'navigate') {
+    // Navigation requests (HTML pages) — GET only.
+    //
+    // A form submit is a navigation too, but letting the worker handle a POST
+    // means it fetches the POST and, when the server answers with a redirect
+    // (the OTP step redirects to the dashboard on success), the redirect is
+    // resolved inside the worker rather than by the browser. That surfaced as a
+    // stray POST to the redirect target, which has no POST route, and a 404.
+    // Non-GET navigations go straight to the network, where the browser follows
+    // the 302 as a GET the way it always has.
+    if (request.mode === 'navigate' && request.method === 'GET') {
         event.respondWith(handleNavigation(request));
         return;
     }
