@@ -9,10 +9,5 @@
   },
   "rewrites": [
     { "source": "/(.*)", "destination": "/api/index.js" }
-  ],
-  "crons": [
-    { "path": "/tasks/minute", "schedule": "* * * * *" },
-    { "path": "/tasks/hourly", "schedule": "0 * * * *" },
-    { "path": "/tasks/calendar-sync", "schedule": "*/5 * * * *" }
   ]
 }
